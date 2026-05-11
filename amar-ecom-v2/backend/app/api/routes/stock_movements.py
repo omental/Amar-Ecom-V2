@@ -1,0 +1,49 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
+
+from app.api.deps import DBSession, get_current_user
+from app.api.utils import fetch_one_or_404, normalize_pagination
+from app.models.stock_movement import StockMovement
+from app.schemas.stock_movement import StockMovementRead
+
+
+router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+@router.get("", response_model=list[StockMovementRead])
+async def list_stock_movements(
+    db: DBSession,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    product_id: UUID | None = None,
+    warehouse_id: UUID | None = None,
+    order_id: UUID | None = None,
+    movement_type: str | None = None,
+) -> list[StockMovement]:
+    skip, limit = normalize_pagination(skip, limit)
+    stmt = select(StockMovement)
+
+    if product_id is not None:
+        stmt = stmt.where(StockMovement.product_id == product_id)
+    if warehouse_id is not None:
+        stmt = stmt.where(StockMovement.warehouse_id == warehouse_id)
+    if order_id is not None:
+        stmt = stmt.where(StockMovement.order_id == order_id)
+    if movement_type is not None:
+        stmt = stmt.where(StockMovement.movement_type == movement_type)
+
+    result = await db.execute(
+        stmt.order_by(StockMovement.created_at.desc()).offset(skip).limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+@router.get("/{movement_id}", response_model=StockMovementRead)
+async def get_stock_movement(movement_id: UUID, db: DBSession) -> StockMovement:
+    return await fetch_one_or_404(
+        db,
+        select(StockMovement).where(StockMovement.id == movement_id),
+        "Stock movement not found",
+    )
