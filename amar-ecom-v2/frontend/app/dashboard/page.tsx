@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Boxes,
@@ -33,6 +34,8 @@ type StatsState = {
   shipments: number;
   pendingShipments: number;
   deliveredShipments: number;
+  pendingDispatch: number;
+  unsettledReconciliation: number;
   customersWithFollowUp: number;
   returns: number;
   suppliers: number;
@@ -40,6 +43,9 @@ type StatsState = {
   products: number;
   customers: number;
   inventory: number;
+  lowStockInventory: number;
+  outOfStockInventory: number;
+  recentStockMovements: number;
 };
 
 function getCollectionCount(payload: unknown) {
@@ -80,6 +86,8 @@ export default function DashboardPage() {
     shipments: 0,
     pendingShipments: 0,
     deliveredShipments: 0,
+    pendingDispatch: 0,
+    unsettledReconciliation: 0,
     customersWithFollowUp: 0,
     returns: 0,
     suppliers: 0,
@@ -87,6 +95,9 @@ export default function DashboardPage() {
     products: 0,
     customers: 0,
     inventory: 0,
+    lowStockInventory: 0,
+    outOfStockInventory: 0,
+    recentStockMovements: 0,
   });
   const [statsError, setStatsError] = useState("");
   const [backendStatus, setBackendStatus] = useState<{
@@ -102,15 +113,17 @@ export default function DashboardPage() {
 
     async function checkBackend() {
       try {
-        const [health, products, customers, followUpCustomers, orders, shipments, returns, inventory, suppliers, purchaseOrders, businessSettings] = await Promise.all([
+        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings] = await Promise.all([
           api.get<HealthResponse>("/health"),
           api.get<unknown>("/products?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100&has_follow_up=true"),
           api.get<unknown>("/orders?skip=0&limit=100"),
           api.get<unknown>("/shipments?skip=0&limit=100"),
+          api.get<unknown>("/logistics/pending-dispatch?skip=0&limit=100"),
           api.get<unknown>("/returns?skip=0&limit=100"),
           api.get<unknown>("/inventory?skip=0&limit=100"),
+          api.get<unknown>("/stock-movements?skip=0&limit=20"),
           api.get<unknown>("/suppliers?skip=0&limit=100"),
           api.get<unknown>("/purchase-orders?skip=0&limit=100"),
           api.get<BusinessSettingsResponse>("/settings/business"),
@@ -121,6 +134,9 @@ export default function DashboardPage() {
           ok: health.status === "ok",
           message: `${health.service} (${health.environment})`,
         });
+        const inventoryRows = Array.isArray(inventory) ? inventory : [];
+        const movementRows = Array.isArray(movements) ? movements : [];
+
         setStats({
           products: getCollectionCount(products),
           customers: getCollectionCount(customers),
@@ -145,10 +161,41 @@ export default function DashboardPage() {
                   shipment.status === "delivered",
               ).length
             : 0,
+          pendingDispatch: getCollectionCount(pendingDispatchOrders),
+          unsettledReconciliation: Array.isArray(shipments)
+            ? shipments.filter(
+                (shipment) =>
+                  shipment &&
+                  typeof shipment === "object" &&
+                  "reconciliation_status" in shipment &&
+                  shipment.reconciliation_status !== "settled" &&
+                  shipment.reconciliation_status !== "cancelled",
+              ).length
+            : 0,
           returns: getCollectionCount(returns),
           suppliers: getCollectionCount(suppliers),
           purchaseOrders: getCollectionCount(purchaseOrders),
           inventory: getCollectionCount(inventory),
+          lowStockInventory: inventoryRows.filter(
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              "quantity" in item &&
+              "low_stock_threshold" in item &&
+              typeof item.quantity === "number" &&
+              typeof item.low_stock_threshold === "number" &&
+              item.quantity > 0 &&
+              item.quantity <= item.low_stock_threshold,
+          ).length,
+          outOfStockInventory: inventoryRows.filter(
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              "quantity" in item &&
+              typeof item.quantity === "number" &&
+              item.quantity <= 0,
+          ).length,
+          recentStockMovements: movementRows.length,
         });
         setCompanyName(businessSettings.company_name || "Amar eCom");
         setStatsError("");
@@ -266,6 +313,18 @@ export default function DashboardPage() {
                 {backendStatus.ok ? stats.deliveredShipments : "--"}
               </p>
             </div>
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
+              <p className="text-sm text-sky-700">Pending dispatch</p>
+              <p className="mt-2 text-2xl font-semibold text-sky-900">
+                {backendStatus.ok ? stats.pendingDispatch : "--"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
+              <p className="text-sm text-rose-700">Unsettled reconciliation</p>
+              <p className="mt-2 text-2xl font-semibold text-rose-900">
+                {backendStatus.ok ? stats.unsettledReconciliation : "--"}
+              </p>
+            </div>
           </div>
         </article>
 
@@ -294,6 +353,77 @@ export default function DashboardPage() {
           <p className="mt-4 text-sm leading-7 text-slate-500">
             This gives the team a lightweight CRM pulse while customer activities and order history grow into a fuller workspace.
           </p>
+        </article>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-3">
+        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Inventory Pulse
+              </p>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                Low-stock watch
+              </h2>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
+              <Boxes className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+            <p className="text-sm text-amber-700">Low-stock inventory rows</p>
+            <p className="mt-2 text-2xl font-semibold text-amber-900">
+              {backendStatus.ok ? stats.lowStockInventory : "--"}
+            </p>
+          </div>
+        </article>
+
+        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Inventory Pulse
+              </p>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                Out-of-stock count
+              </h2>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
+              <Boxes className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
+            <p className="text-sm text-rose-700">Out-of-stock inventory rows</p>
+            <p className="mt-2 text-2xl font-semibold text-rose-900">
+              {backendStatus.ok ? stats.outOfStockInventory : "--"}
+            </p>
+          </div>
+        </article>
+
+        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Inventory Pulse
+              </p>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                Recent movements
+              </h2>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
+              <Boxes className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
+            <p className="text-sm text-sky-700">Latest stock movement rows</p>
+            <p className="mt-2 text-2xl font-semibold text-sky-900">
+              {backendStatus.ok ? stats.recentStockMovements : "--"}
+            </p>
+          </div>
         </article>
       </section>
 
@@ -333,6 +463,12 @@ export default function DashboardPage() {
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
             Backend environment: {formatLabel(backendStatus.ok ? "development" : "offline")}
           </div>
+          <Link
+            href="/dashboard/reports"
+            className="mt-5 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            Open Reports
+          </Link>
         </article>
       </section>
     </div>

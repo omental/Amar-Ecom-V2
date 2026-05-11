@@ -51,6 +51,20 @@ This phase adds the customer CRM parity migration:
 
 - `a5c6d7e8f9a0_add_customer_crm_fields_and_activities`
 
+This phase adds the team permissions and activity log migration:
+
+- `b6d7e8f9a0b1_add_permissions_and_activity_logs`
+
+This phase adds the inventory operations hub migration:
+
+- `c7e8f9a0b1c2_add_stock_transfers_and_wastage_logs`
+
+This phase adds the logistics workflow completion migration:
+
+- `d8f9a0b1c2d3_add_logistics_shipment_events_and_reconciliation`
+
+Reports foundation adds endpoints only and does not require a new migration.
+
 ## Start API
 
 ```powershell
@@ -435,6 +449,144 @@ Invoke-RestMethod `
 
 You should see a `stock_in` movement from initial inventory creation.
 
+## Adjust Inventory Stock
+
+```powershell
+$adjustmentBody = @{
+  quantity_delta = 5
+  note = "Manual recount after receiving shelf stock"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/inventory/$($inventoryItem.id)/adjust" `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $adjustmentBody
+```
+
+Expected result:
+
+- the inventory quantity increases by `5`
+- a stock movement is created with `movement_type` = `adjustment`
+- an inventory activity log entry is created when activity logs are enabled
+
+## Create Destination Warehouse For Transfer Tests
+
+```powershell
+$secondaryWarehouseBody = @{
+  name = "Overflow Warehouse"
+  code = "OVR-WH"
+  address = "Gazipur"
+  is_active = $true
+} | ConvertTo-Json
+
+$secondaryWarehouse = Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/warehouses `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $secondaryWarehouseBody
+```
+
+## Create Stock Transfer
+
+```powershell
+$transferBody = @{
+  transfer_number = "TRF-API-1001"
+  from_warehouse_id = $warehouse.id
+  to_warehouse_id = $secondaryWarehouse.id
+  status = "pending"
+  notes = "Move overflow stock closer to dispatch zone"
+  items = @(
+    @{
+      product_id = $product.id
+      variant_id = $null
+      product_name = "Sample Product"
+      sku = "SKU-1001"
+      quantity = 3
+    }
+  )
+} | ConvertTo-Json -Depth 5
+
+$stockTransfer = Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/stock-transfers `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $transferBody
+```
+
+Expected result:
+
+- the transfer is created in `pending` state
+- `stock_moved` is `false`
+
+## Complete Stock Transfer
+
+```powershell
+$transferUpdateBody = @{
+  status = "completed"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/stock-transfers/$($stockTransfer.id)" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $transferUpdateBody
+```
+
+Expected result:
+
+- source warehouse stock decreases by the transfer quantity
+- destination warehouse stock increases by the transfer quantity
+- `stock_moved` becomes `true`
+- movement rows are created with `transfer_out` and `transfer_in`
+
+## Create Wastage Log
+
+```powershell
+$wastageBody = @{
+  wastage_number = "WST-API-1001"
+  product_id = $product.id
+  variant_id = $null
+  warehouse_id = $warehouse.id
+  quantity = 2
+  reason = "Damaged packaging"
+  note = "Pulled from sellable inventory after QC"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/wastage-logs `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wastageBody
+```
+
+Expected result:
+
+- stock is deducted immediately from the selected warehouse
+- `stock_deducted` becomes `true`
+- a movement row is created with `movement_type` = `wastage`
+- an inventory activity log entry is created when activity logs are enabled
+
+## Verify Transfer And Wastage Movement Records
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/stock-movements?product_id=$($product.id)&warehouse_id=$($warehouse.id)" `
+  -Headers $headers
+```
+
+Expected result:
+
+- movement history includes `adjustment`
+- movement history includes `transfer_out`
+- movement history includes `wastage`
+- destination warehouse history includes `transfer_in`
+
 ## Create Order
 
 ```powershell
@@ -684,6 +836,49 @@ $courier = Invoke-RestMethod `
   -Body $courierBody
 ```
 
+## Check Pending Dispatch
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/logistics/pending-dispatch?skip=0&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- orders in `confirmed`, `processing`, or `ready_to_ship` status appear
+- orders with an active shipment are excluded
+- order payload includes customer phone, shipping address, total, and warehouse summary
+
+## Create Shipment From Order Helper
+
+```powershell
+$shipmentFromOrderBody = @{
+  courier_id = $courier.id
+  tracking_number = "TRK-123456789"
+  delivery_charge = 120
+  courier_charge = 80
+  cod_amount = 300
+  collected_amount = 0
+  notes = "Prepared for internal dispatch"
+  order_status = "ready_to_ship"
+} | ConvertTo-Json
+
+$shipment = Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/orders/$($order.id)/create-shipment" `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $shipmentFromOrderBody
+```
+
+Expected result:
+
+- shipment is created and linked to the order
+- recipient fields are prefilled from order/customer values
+- shipment events include `shipment_created`
+- if `order_status` is provided, the order status is updated accordingly
+
 ## Create Shipment For An Order
 
 ```powershell
@@ -691,10 +886,16 @@ $shipmentBody = @{
   shipment_number = "SHP-API-1001"
   order_id = $order.id
   courier_id = $courier.id
+  recipient_name = "Rahim Uddin"
+  recipient_phone = "01700000000"
+  delivery_address = "House 10, Road 12, Dhaka"
   tracking_number = "TRK-123456789"
   status = "ready_to_ship"
   delivery_charge = 120
+  courier_charge = 80
   cod_amount = 300
+  collected_amount = 0
+  reconciliation_status = "pending"
   notes = "Prepared for courier handoff"
 } | ConvertTo-Json
 
@@ -725,6 +926,7 @@ Expected result:
 
 - `status` becomes `shipped`
 - `shipped_at` is set if it was empty
+- shipment events include `status_changed`
 
 ## Update Shipment To Delivered
 
@@ -745,6 +947,143 @@ Expected result:
 
 - `status` becomes `delivered`
 - `delivered_at` is set if it was empty
+- if `collected_amount` was `0` and `cod_amount` is present, `collected_amount` is set automatically
+
+## Update Shipment Reconciliation
+
+```powershell
+$shipmentReconciliationBody = @{
+  courier_charge = 95
+  collected_amount = 300
+  reconciliation_status = "settled"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/shipments/$($shipment.id)" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $shipmentReconciliationBody
+```
+
+Expected result:
+
+- `courier_charge` and `collected_amount` are updated
+- `reconciliation_status` becomes `settled`
+- `reconciled_at` is set
+- shipment events include `reconciliation_updated`
+
+## Verify Shipment Event Timeline
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/shipments/$($shipment.id)" `
+  -Headers $headers
+```
+
+Expected result:
+
+- detail payload includes `events`
+- events include `shipment_created`
+- after updates, events include `status_changed`
+- after reconciliation update, events include `reconciliation_updated`
+
+## Reports: Sales Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/sales-summary?date_from=2026-05-01&date_to=2026-05-31" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns `total_orders`
+- returns `total_sales`
+- returns `average_order_value`
+- returns paid, unpaid, cancelled, and returned counts
+
+## Reports: Order Status
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/order-status" `
+  -Headers $headers
+```
+
+Expected result:
+
+- grouped rows by order `status`
+- each row includes `count` and `total_amount`
+
+## Reports: Inventory
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/inventory" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns inventory totals
+- returns `low_stock_count`
+- returns `out_of_stock_count`
+- returns `inventory_value_at_cost`
+
+## Reports: Stock Movement Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/stock-movements-summary?date_from=2026-05-01&date_to=2026-05-31" `
+  -Headers $headers
+```
+
+Expected result:
+
+- grouped rows by `movement_type`
+- each row includes `movement_count` and `total_quantity`
+
+## Reports: Customers
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/customers" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns total customer count
+- returns follow-up count
+- returns counts for `vip`, `wholesale`, `reseller`, and `blocked`
+
+## Reports: Logistics
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/logistics" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns shipment status totals
+- returns unsettled reconciliation count
+- returns `total_cod_amount`, `total_collected_amount`, and `total_courier_charge`
+
+## Reports: Top Products
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/top-products?limit=10" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns top products by ordered quantity and revenue
+- each row includes `product_name`, `sku`, `total_quantity`, and `total_revenue`
 
 ## Create Supplier
 
@@ -864,4 +1203,105 @@ Invoke-RestMethod `
 
 ```powershell
 venv\Scripts\pytest.exe -q
+```
+
+## Seed Default Permissions
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/permissions/seed-defaults `
+  -Method Post `
+  -Headers $headers
+```
+
+Expected result:
+
+- missing standard permissions are created
+- repeated calls only create missing entries
+
+## List Permissions
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/permissions `
+  -Headers $headers
+```
+
+## Assign Permissions To User
+
+Use IDs from the permission list response above:
+
+```powershell
+$permissionUpdateBody = @{
+  permission_ids = @(
+    "PUT_ORDERS_VIEW_PERMISSION_UUID_HERE",
+    "PUT_CUSTOMERS_VIEW_PERMISSION_UUID_HERE"
+  )
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/users/PUT_USER_UUID_HERE/permissions" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $permissionUpdateBody
+```
+
+Expected result:
+
+- `assigned_permission_keys` includes values such as `orders.view`
+- admin users still report `has_full_access = true`
+
+## Check Login Response Permissions
+
+```powershell
+$teamLoginBody = @{
+  email = "staff.user@example.com"
+  password = "StrongPass123"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/auth/login `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $teamLoginBody
+```
+
+Expected result:
+
+- login response includes top-level `permissions`
+- explicit users receive only assigned permission keys
+- admin and super admin users receive full default access keys
+
+## View Activity Logs
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/activity-logs?module=team&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- recent team and permission changes are listed
+- each row includes `user`, `action`, `module`, `entity_type`, `entity_id`, and `message`
+
+## Verify Activity Logs After Key Actions
+
+Check after these actions:
+
+- create or update a user
+- activate or deactivate a user
+- update user permissions
+- change an order status
+- mark an order as printed
+- create a customer activity
+- update a shipment status
+
+Example:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/activity-logs?module=orders&limit=20" `
+  -Headers $headers
 ```

@@ -111,6 +111,87 @@ npm run dev
 8. Click `View Stock Movements`
 9. Confirm a new `stock_in` movement exists for the created inventory item
 
+## Use Inventory Hub Tabs
+
+1. Open `http://localhost:3000/dashboard/inventory`
+2. Confirm the page shows tabs for:
+   - `Stock Overview`
+   - `Adjustments`
+   - `Transfers`
+   - `Wastage`
+   - `Movement Ledger`
+3. Confirm the summary cards show:
+   - low-stock count
+   - out-of-stock count
+   - movement count
+
+## Adjust Stock From Inventory Hub
+
+1. Open `http://localhost:3000/dashboard/inventory`
+2. In `Stock Overview`, click `Adjust Stock` on an inventory row
+3. Confirm the page switches to the `Adjustments` tab
+4. Choose either:
+   - `New quantity`
+   - `Quantity delta`
+5. Enter a note
+6. Submit the form
+7. Confirm the stock overview table refreshes
+8. Open the `Movement Ledger` tab
+9. Confirm a new `adjustment` movement exists
+
+## Create And Complete Stock Transfer
+
+1. Open `http://localhost:3000/dashboard/inventory`
+2. Go to the `Transfers` tab
+3. Fill in:
+   - `transfer number`
+   - `from warehouse`
+   - `to warehouse`
+   - optional `notes`
+4. Add at least one item:
+   - choose a product
+   - enter quantity
+5. Submit the form
+6. Confirm the transfer appears in the transfer list with `Not moved`
+7. Click `Complete Transfer`
+8. Confirm the success state appears
+9. Confirm the row shows `Moved`
+10. Return to `Stock Overview`
+11. Confirm source stock decreased and destination stock increased
+
+## Create Wastage Log
+
+1. Open `http://localhost:3000/dashboard/inventory`
+2. Go to the `Wastage` tab
+3. Fill in:
+   - `wastage number`
+   - `product`
+   - `warehouse`
+   - `quantity`
+   - optional `reason`
+   - optional `note`
+4. Confirm the warning explains stock will be deducted immediately
+5. Submit the form
+6. Confirm the new wastage log appears
+7. Return to `Stock Overview`
+8. Confirm the matching inventory row quantity is lower
+
+## Verify Movement Ledger Filters
+
+1. Open `http://localhost:3000/dashboard/inventory`
+2. Go to the `Movement Ledger` tab
+3. Filter by:
+   - product
+   - warehouse
+   - movement type
+4. Confirm the table narrows correctly
+5. Confirm you can see records such as:
+   - `stock_in`
+   - `adjustment`
+   - `transfer_out`
+   - `transfer_in`
+   - `wastage`
+
 ## Create Customer
 
 1. Open `http://localhost:3000/dashboard/customers`
@@ -183,6 +264,8 @@ npm run dev
 2. Find an incomplete activity
 3. Click `Mark completed`
 4. Confirm the activity now shows as completed
+5. Open `http://localhost:3000/dashboard/activity-logs`
+6. Confirm a `customers` activity entry exists
 
 ## Confirm Customer Order History
 
@@ -203,6 +286,40 @@ npm run dev
    - `is active`
 3. Submit the form
 4. Confirm the new user appears in the team table
+
+## Seed Default Permissions
+
+1. Open `http://localhost:3000/dashboard/users`
+2. In `Permission foundation`, click `Seed Default Permissions`
+3. Confirm a success message appears
+
+## Assign Team Permissions
+
+1. Open `http://localhost:3000/dashboard/users`
+2. Click `Permissions` for a non-admin user
+3. Confirm permissions are grouped by module
+4. Enable a few actions such as:
+   - `Orders / View`
+   - `Customers / View`
+   - `Shipments / Update`
+5. Click `Save Permissions`
+6. Confirm the success message appears
+
+## View Activity Logs
+
+1. Open `http://localhost:3000/dashboard/activity-logs`
+2. Confirm the page loads a table with:
+   - `date`
+   - `user`
+   - `module`
+   - `action`
+   - `entity`
+   - `entity id`
+   - `message`
+3. Change the module filter
+4. Confirm the table refreshes with matching entries
+5. Change the user filter if desired
+6. Confirm the table narrows to that user’s activity
 
 ## Create Supplier
 
@@ -281,6 +398,8 @@ npm run dev
 3. Confirm the badge changes to `Inactive`
 4. Click `Activate` for an inactive user
 5. Confirm the badge changes back to `Active`
+6. Open `http://localhost:3000/dashboard/activity-logs`
+7. Confirm `team` activity entries were created
 
 ## Test Inactive Login
 
@@ -348,6 +467,74 @@ npm run dev
 4. Submit the form
 5. Confirm the courier appears in the table
 
+## Use Logistics Workspace
+
+1. Open `http://localhost:3000/dashboard/logistics`
+2. Confirm tabs exist for:
+   - `Pending Dispatch`
+   - `Shipments`
+   - `Couriers`
+   - `Reconciliation`
+3. Confirm the performance cards show:
+   - total shipments
+   - pending shipments
+   - delivered shipments
+   - unsettled reconciliation count
+
+## Create Shipment From Pending Dispatch
+
+1. Create or update an order so its status is `Confirmed`, `Processing`, or `Ready to Ship`
+2. Open `http://localhost:3000/dashboard/logistics`
+3. In `Pending Dispatch`, confirm the order appears
+4. Click `Create Shipment`
+5. Fill in:
+   - `courier`
+   - optional `tracking number`
+   - optional `shipment number`
+   - `courier charge`
+   - `COD amount`
+   - optional `notes`
+   - optional `update order status`
+6. Submit the form
+7. Confirm the order disappears from pending dispatch
+8. Switch to the `Shipments` tab
+9. Confirm the new shipment appears with recipient and reconciliation details
+
+## Open Reports Dashboard
+
+1. Open `http://localhost:3000/dashboard/reports`
+2. Confirm the page loads sections for:
+   - `Sales Summary`
+   - `Order Status`
+   - `Inventory Health`
+   - `Customer CRM`
+   - `Logistics`
+   - `Top Products`
+   - `Stock Movement Summary`
+3. Confirm the top date filters appear with:
+   - `date from`
+   - `date to`
+   - `refresh`
+
+## Refresh Reports By Date
+
+1. On `/dashboard/reports`, set a `date from`
+2. Optionally set a `date to`
+3. Click `Refresh`
+4. Confirm the reports reload without leaving the page
+5. Confirm at least `Sales Summary` and `Stock Movement Summary` respond to the selected date range
+
+## Export Reports CSV
+
+1. Open `/dashboard/reports`
+2. In `Order Status`, click `Export CSV`
+3. Confirm a CSV file downloads
+4. In `Top Products`, click `Export CSV`
+5. Confirm a CSV file downloads
+6. In `Stock Movement Summary`, click `Export CSV`
+7. Confirm a CSV file downloads
+8. Open any exported file and confirm the column headers match the visible report table
+
 ## Create Shipment
 
 1. Open `http://localhost:3000/dashboard/shipments`
@@ -371,12 +558,19 @@ npm run dev
    - `shipment number`
    - linked `order`
    - `courier`
+   - `recipient name`
+   - `recipient phone`
+   - `delivery address`
    - `tracking number`
    - `status`
    - `delivery charge`
+   - `courier charge`
    - `cod amount`
+   - `collected amount`
+   - `reconciliation status`
    - `shipped at`
    - `delivered at`
+   - event timeline
    - `notes`
    - `created at`
 4. Click `Open Linked Order`
@@ -390,6 +584,7 @@ npm run dev
    - shipping/contact section
    - warehouse information
    - shipments related to the order if any exist
+   - recipient and delivery summary if a shipment exists
    - order items
    - subtotal, discount, delivery charge, and total
    - status and payment badges
@@ -408,6 +603,8 @@ npm run dev
 6. Confirm the event timeline includes a `status_changed` entry
 7. Go back to `/dashboard/inventory`
 8. Confirm the matching inventory quantity has been reduced for the warehouse assigned to the order
+9. Open `http://localhost:3000/dashboard/activity-logs`
+10. Confirm an `orders` activity entry exists for the status change
 
 ## Print Invoice
 
@@ -425,6 +622,8 @@ npm run dev
 7. Return to the order detail page
 8. Confirm `printed_count` increased and `last printed` updated
 9. Confirm the event timeline includes `order_printed`
+10. Open `http://localhost:3000/dashboard/activity-logs`
+11. Confirm an `orders` activity entry exists for printing
 
 ## Open Return Detail
 
@@ -467,6 +666,23 @@ npm run dev
 7. Save and confirm `delivered at` is now populated
 8. Open `/dashboard/orders/{id}`
 9. Confirm the shipment appears in the order detail shipment section and links back to shipment detail
+10. Open `http://localhost:3000/dashboard/activity-logs`
+11. Confirm a `shipments` activity entry exists for the status change
+
+## Update Shipment Reconciliation
+
+1. Open `http://localhost:3000/dashboard/logistics`
+2. Go to the `Reconciliation` tab
+3. Pick a shipment and click `Update`
+4. Change:
+   - `courier charge`
+   - `collected amount`
+   - `reconciliation status`
+5. Save the update
+6. Confirm the row refreshes with the new reconciliation badge
+7. Open the shipment detail page
+8. Confirm `reconciled at` updates when status is `Matched` or `Settled`
+9. Confirm the event timeline includes a reconciliation event
 
 ## Verify Stock Movement History
 
@@ -500,8 +716,16 @@ npm run dev
 5. Confirm the logistics widget shows:
    - `Pending shipments`
    - `Delivered shipments`
+   - `Pending dispatch`
+   - `Unsettled reconciliation`
 6. Confirm the CRM card shows:
    - `Customers with follow-up dates`
+7. Confirm the inventory pulse area shows:
+   - `Low-stock watch`
+   - `Out-of-stock count`
+   - `Recent movements`
+8. Confirm the dashboard includes a link to:
+   - `Open Reports`
 
 ## Test Settings Page
 
@@ -526,6 +750,9 @@ npm run dev
 6. Confirm the success message appears
 7. Open `http://localhost:3000/dashboard`
 8. Confirm the dashboard intro text now reflects the updated `company name`
+9. Confirm the quick links area includes:
+   - `Activity Logs`
+   - `Team Permissions`
 
 ## Notes
 
@@ -538,6 +765,13 @@ npm run dev
 - Print tracking uses a browser-print flow and increments `printed_count` through the backend when the print action is used from the invoice page or order detail
 - Customer CRM detail includes recent order history and a manual activity timeline
 - Customer follow-up counts on the dashboard are currently based on customers with `follow_up_date` set
+- Inventory operations now run from the inventory hub, but transfers only move stock when a transfer is explicitly completed
+- Wastage logs deduct stock immediately and do not currently support reversal from the UI
+- Team permissions are assignment-based and do not yet hide every page or button in the UI
+- Activity logs currently cover selected high-value actions rather than every route in the system
+- Pending dispatch excludes orders that already have an active shipment unless that shipment was cancelled or returned
+- Reports in this phase are operational summaries, not full finance reports or accounting statements
+- CSV export is browser-generated from the currently loaded report data
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled
 - Logistics in this phase is internal-only tracking; no external courier API integration is performed
 - Purchase receiving can create a missing inventory row safely for the selected warehouse when stock is first received from a purchase order

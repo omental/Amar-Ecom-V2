@@ -102,10 +102,16 @@ type Shipment = {
   shipment_number: string;
   order_id: string;
   courier_id: string | null;
+  recipient_name: string | null;
+  recipient_phone: string | null;
+  delivery_address: string | null;
   tracking_number: string | null;
   status: string;
   delivery_charge: number | string;
+  courier_charge: number | string;
   cod_amount: number | string;
+  collected_amount: number | string;
+  reconciliation_status: string;
   shipped_at: string | null;
   delivered_at: string | null;
   created_at: string;
@@ -267,11 +273,11 @@ export default function OrderDetailPage() {
               Print Invoice
             </Link>
             <Link
-              href={`/dashboard/shipments?order_id=${order.id}`}
+              href={shipments.length > 0 ? "/dashboard/logistics" : `/dashboard/shipments?order_id=${order.id}`}
               className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
             >
               <PackagePlus className="h-4 w-4" />
-              {shipments.length > 0 ? "Create/View Shipment" : "Create Shipment"}
+              {shipments.length > 0 ? "Open Logistics" : "Create Shipment"}
             </Link>
             <a
               href="#update-status"
@@ -450,10 +456,10 @@ export default function OrderDetailPage() {
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-slate-950">Shipments</h2>
               <Link
-                href={`/dashboard/shipments?order_id=${order.id}`}
+                href={shipments.length > 0 ? "/dashboard/logistics" : `/dashboard/shipments?order_id=${order.id}`}
                 className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
               >
-                Create or view shipments
+                {shipments.length > 0 ? "Open logistics workspace" : "Create shipment"}
               </Link>
             </div>
             <div className="mt-5 space-y-3">
@@ -478,9 +484,16 @@ export default function OrderDetailPage() {
                         <p className="mt-1 text-slate-500">
                           Tracking: {shipment.tracking_number || "Pending"}
                         </p>
+                        <p className="mt-1 text-slate-500">
+                          Recipient: {shipment.recipient_name || order.customer?.name || "No recipient"}
+                        </p>
+                        <p className="mt-1 text-slate-500">
+                          Delivery: {shipment.delivery_address || order.shipping_address || "No address"}
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <StatusBadge status={shipment.status} />
+                        <StatusBadge status={shipment.reconciliation_status} />
                         <Link
                           href={`/dashboard/shipments/${shipment.id}`}
                           className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"

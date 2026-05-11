@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Building2, Loader2, Settings2 } from "lucide-react";
 
@@ -394,6 +395,27 @@ export default function SettingsPage() {
                 </div>
               </div>
             </FormCard>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Link
+                href="/dashboard/activity-logs"
+                className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm font-semibold text-slate-700 shadow-[var(--shadow-soft)] transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                Activity Logs
+                <p className="mt-2 text-sm font-normal leading-6 text-slate-500">
+                  Review recent admin and workflow actions.
+                </p>
+              </Link>
+              <Link
+                href="/dashboard/users"
+                className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm font-semibold text-slate-700 shadow-[var(--shadow-soft)] transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                Team Permissions
+                <p className="mt-2 text-sm font-normal leading-6 text-slate-500">
+                  Open the team workspace to assign module permissions.
+                </p>
+              </Link>
+            </div>
 
             {error ? <ErrorAlert message={error} /> : null}
             {success ? (

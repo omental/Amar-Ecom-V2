@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +22,8 @@ async def list_stock_movements(
     warehouse_id: UUID | None = None,
     order_id: UUID | None = None,
     movement_type: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list[StockMovement]:
     skip, limit = normalize_pagination(skip, limit)
     stmt = select(StockMovement)
@@ -33,6 +36,10 @@ async def list_stock_movements(
         stmt = stmt.where(StockMovement.order_id == order_id)
     if movement_type is not None:
         stmt = stmt.where(StockMovement.movement_type == movement_type)
+    if date_from is not None:
+        stmt = stmt.where(StockMovement.created_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(StockMovement.created_at <= date_to)
 
     result = await db.execute(
         stmt.order_by(StockMovement.created_at.desc()).offset(skip).limit(limit)

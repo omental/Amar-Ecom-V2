@@ -106,6 +106,310 @@ def test_protected_route_accepts_with_token() -> None:
     assert isinstance(response.json(), list)
 
 
+def test_team_permissions_and_activity_logs_flow() -> None:
+    try:
+        headers = auth_headers()
+
+        with TestClient(app) as client:
+            seed_response = client.post(
+                "/api/v1/permissions/seed-defaults",
+                headers=headers,
+            )
+            assert seed_response.status_code == 201, seed_response.text
+            permissions = seed_response.json()
+            assert any(item["module"] == "orders" and item["action"] == "view" for item in permissions)
+
+            create_user_response = client.post(
+                "/api/v1/users",
+                headers=headers,
+                json={
+                    "full_name": "Permission Test User",
+                    "email": unique_email(),
+                    "password": "StrongPass123",
+                    "role": "staff",
+                    "is_active": True,
+                },
+            )
+            assert create_user_response.status_code == 201, create_user_response.text
+            created_user = create_user_response.json()
+
+            permissions_response = client.get("/api/v1/permissions", headers=headers)
+            assert permissions_response.status_code == 200, permissions_response.text
+            all_permissions = permissions_response.json()
+            selected_permissions = [
+                item["id"]
+                for item in all_permissions
+                if (item["module"], item["action"]) in {("orders", "view"), ("customers", "view")}
+            ]
+            assert len(selected_permissions) == 2
+
+            assign_response = client.patch(
+                f"/api/v1/users/{created_user['id']}/permissions",
+                headers=headers,
+                json={"permission_ids": selected_permissions},
+            )
+            assert assign_response.status_code == 200, assign_response.text
+            assigned = assign_response.json()
+            assert "orders.view" in assigned["assigned_permission_keys"]
+            assert assigned["has_full_access"] is False
+
+            get_user_permissions_response = client.get(
+                f"/api/v1/users/{created_user['id']}/permissions",
+                headers=headers,
+            )
+            assert get_user_permissions_response.status_code == 200, get_user_permissions_response.text
+            assigned_lookup = get_user_permissions_response.json()
+            assert "customers.view" in assigned_lookup["assigned_permission_keys"]
+
+            login_response = client.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": created_user["email"],
+                    "password": "StrongPass123",
+                },
+            )
+            assert login_response.status_code == 200, login_response.text
+            login_payload = login_response.json()
+            assert "orders.view" in login_payload["permissions"]
+            assert "customers.view" in login_payload["permissions"]
+
+            update_user_response = client.patch(
+                f"/api/v1/users/{created_user['id']}",
+                headers=headers,
+                json={"is_active": False},
+            )
+            assert update_user_response.status_code == 200, update_user_response.text
+
+            activity_logs_response = client.get(
+                "/api/v1/activity-logs?module=team&limit=20",
+                headers=headers,
+            )
+            assert activity_logs_response.status_code == 200, activity_logs_response.text
+            logs = activity_logs_response.json()
+            assert any(log["action"] == "permissions_updated" for log in logs)
+            assert any(log["action"] in {"user_created", "user_deactivated"} for log in logs)
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["permissions", "user_permissions", "activity_logs"]):
+            pytest.skip("Apply the latest team permissions migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_inventory_adjustment_transfer_and_wastage_flow() -> None:
+    try:
+        headers = auth_headers()
+
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Inventory Ops Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"inventory-ops-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Inventory operations category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Inventory Ops Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"inventory-ops-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Inventory operations brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Inventory Ops Product",
+                    "slug": f"inventory-ops-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"IO-{uuid.uuid4().hex[:8]}",
+                    "description": "Inventory operations product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 199.00,
+                    "cost_price": 110.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            source_warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Source Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"SWH-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert source_warehouse_response.status_code == 201, source_warehouse_response.text
+            source_warehouse = source_warehouse_response.json()
+
+            destination_warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Destination Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"DWH-{uuid.uuid4().hex[:8]}",
+                    "address": "Chattogram",
+                    "is_active": True,
+                },
+            )
+            assert destination_warehouse_response.status_code == 201, destination_warehouse_response.text
+            destination_warehouse = destination_warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": source_warehouse["id"],
+                    "quantity": 15,
+                    "low_stock_threshold": 4,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+            inventory_item = inventory_response.json()
+
+            adjust_response = client.post(
+                f"/api/v1/inventory/{inventory_item['id']}/adjust",
+                headers=headers,
+                json={
+                    "quantity_delta": 5,
+                    "note": "Cycle count correction",
+                },
+            )
+            assert adjust_response.status_code == 200, adjust_response.text
+            adjusted_inventory = adjust_response.json()
+            assert adjusted_inventory["quantity"] == 20
+
+            transfer_response = client.post(
+                "/api/v1/stock-transfers",
+                headers=headers,
+                json={
+                    "transfer_number": f"TRF-{uuid.uuid4().hex[:8]}",
+                    "from_warehouse_id": source_warehouse["id"],
+                    "to_warehouse_id": destination_warehouse["id"],
+                    "status": "pending",
+                    "notes": "Move replenishment stock",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 6,
+                        }
+                    ],
+                },
+            )
+            assert transfer_response.status_code == 201, transfer_response.text
+            transfer = transfer_response.json()
+            assert transfer["stock_moved"] is False
+
+            complete_transfer_response = client.patch(
+                f"/api/v1/stock-transfers/{transfer['id']}",
+                headers=headers,
+                json={"status": "completed"},
+            )
+            assert complete_transfer_response.status_code == 200, complete_transfer_response.text
+            completed_transfer = complete_transfer_response.json()
+            assert completed_transfer["stock_moved"] is True
+            assert completed_transfer["status"] == "completed"
+
+            source_inventory_detail_response = client.get(
+                f"/api/v1/inventory/{inventory_item['id']}",
+                headers=headers,
+            )
+            assert source_inventory_detail_response.status_code == 200, source_inventory_detail_response.text
+            assert source_inventory_detail_response.json()["quantity"] == 14
+
+            destination_inventory_list_response = client.get(
+                f"/api/v1/inventory?skip=0&limit=100",
+                headers=headers,
+            )
+            assert destination_inventory_list_response.status_code == 200, destination_inventory_list_response.text
+            destination_matches = [
+                item
+                for item in destination_inventory_list_response.json()
+                if item["product_id"] == product["id"] and item["warehouse_id"] == destination_warehouse["id"]
+            ]
+            assert destination_matches
+            assert destination_matches[0]["quantity"] == 6
+
+            wastage_response = client.post(
+                "/api/v1/wastage-logs",
+                headers=headers,
+                json={
+                    "wastage_number": f"WST-{uuid.uuid4().hex[:8]}",
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": source_warehouse["id"],
+                    "quantity": 2,
+                    "reason": "Damaged packaging",
+                    "note": "Disposed after inspection",
+                },
+            )
+            assert wastage_response.status_code == 201, wastage_response.text
+            wastage_log = wastage_response.json()
+            assert wastage_log["stock_deducted"] is True
+
+            source_inventory_after_wastage_response = client.get(
+                f"/api/v1/inventory/{inventory_item['id']}",
+                headers=headers,
+            )
+            assert source_inventory_after_wastage_response.status_code == 200, source_inventory_after_wastage_response.text
+            assert source_inventory_after_wastage_response.json()["quantity"] == 12
+
+            adjustment_movements_response = client.get(
+                f"/api/v1/stock-movements?product_id={product['id']}&warehouse_id={source_warehouse['id']}&movement_type=adjustment",
+                headers=headers,
+            )
+            assert adjustment_movements_response.status_code == 200, adjustment_movements_response.text
+            assert any(movement["movement_type"] == "adjustment" for movement in adjustment_movements_response.json())
+
+            transfer_out_movements_response = client.get(
+                f"/api/v1/stock-movements?product_id={product['id']}&warehouse_id={source_warehouse['id']}&movement_type=transfer_out",
+                headers=headers,
+            )
+            assert transfer_out_movements_response.status_code == 200, transfer_out_movements_response.text
+            assert any(movement["movement_type"] == "transfer_out" for movement in transfer_out_movements_response.json())
+
+            transfer_in_movements_response = client.get(
+                f"/api/v1/stock-movements?product_id={product['id']}&warehouse_id={destination_warehouse['id']}&movement_type=transfer_in",
+                headers=headers,
+            )
+            assert transfer_in_movements_response.status_code == 200, transfer_in_movements_response.text
+            assert any(movement["movement_type"] == "transfer_in" for movement in transfer_in_movements_response.json())
+
+            wastage_movements_response = client.get(
+                f"/api/v1/stock-movements?product_id={product['id']}&warehouse_id={source_warehouse['id']}&movement_type=wastage",
+                headers=headers,
+            )
+            assert wastage_movements_response.status_code == 200, wastage_movements_response.text
+            assert any(movement["movement_type"] == "wastage" for movement in wastage_movements_response.json())
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["stock_transfers", "stock_transfer_items", "wastage_logs", "activity_logs"]):
+            pytest.skip("Apply the latest inventory operations migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
 def test_customer_crm_activity_flow() -> None:
     try:
         headers = auth_headers()
@@ -269,6 +573,14 @@ def test_customer_crm_activity_flow() -> None:
             assert any(order["payment_status"] == "paid" for order in detail["orders"])
             assert any(item["id"] == activity["id"] for item in detail["activities"])
 
+            customer_logs_response = client.get(
+                "/api/v1/activity-logs?module=customers&entity_type=customer_activity&limit=20",
+                headers=headers,
+            )
+            assert customer_logs_response.status_code == 200, customer_logs_response.text
+            customer_logs = customer_logs_response.json()
+            assert any(log["action"] == "customer_activity_created" for log in customer_logs)
+
             update_activity_response = client.patch(
                 f"/api/v1/customers/{customer['id']}/activities/{activity['id']}",
                 headers=headers,
@@ -297,7 +609,7 @@ def test_customer_crm_activity_flow() -> None:
     except ProgrammingError as exc:
         if any(
             token in str(exc)
-            for token in ["customer_type", "follow_up_date", "last_contacted_at", "customer_activities"]
+            for token in ["customer_type", "follow_up_date", "last_contacted_at", "customer_activities", "activity_logs"]
         ):
             pytest.skip("Apply the latest customer CRM migration before running this test.")
         raise
@@ -593,6 +905,15 @@ def test_order_warehouse_assignment_and_fulfillment() -> None:
             assert printed_order["last_printed_at"] is not None
             assert any(event["event_type"] == "order_printed" for event in printed_order["events"])
 
+            order_logs_response = client.get(
+                "/api/v1/activity-logs?module=orders&limit=20",
+                headers=headers,
+            )
+            assert order_logs_response.status_code == 200, order_logs_response.text
+            order_logs = order_logs_response.json()
+            assert any(log["action"] == "order_status_changed" for log in order_logs)
+            assert any(log["action"] == "order_printed" for log in order_logs)
+
             inventory_detail_response = client.get(
                 f"/api/v1/inventory/{inventory_item_id}",
                 headers=headers,
@@ -612,7 +933,7 @@ def test_order_warehouse_assignment_and_fulfillment() -> None:
                 for movement in movements
             )
     except ProgrammingError as exc:
-        if any(token in str(exc) for token in ["warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events"]):
+        if any(token in str(exc) for token in ["warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events", "activity_logs"]):
             pytest.skip("Apply the latest migrations before running this test.")
         raise
 
@@ -804,6 +1125,50 @@ def test_courier_and_shipment_flow() -> None:
     try:
         headers = auth_headers()
         with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Logistics Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"logistics-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Logistics flow category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Logistics Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"logistics-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Logistics flow brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Logistics Flow Product",
+                    "slug": f"logistics-flow-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"LG-{uuid.uuid4().hex[:8]}",
+                    "description": "Logistics flow product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 300.00,
+                    "cost_price": 200.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
             courier_response = client.post(
                 "/api/v1/couriers",
                 headers=headers,
@@ -818,30 +1183,68 @@ def test_courier_and_shipment_flow() -> None:
             assert courier_response.status_code == 201, courier_response.text
             courier = courier_response.json()
 
-            order_list_response = client.get("/api/v1/orders?skip=0&limit=1", headers=headers)
-            assert order_list_response.status_code == 200, order_list_response.text
-            orders = order_list_response.json()
-            if not orders:
-                pytest.skip("Create at least one order before running shipment integration test.")
-            order = orders[0]
-
-            shipment_response = client.post(
-                "/api/v1/shipments",
+            order_response = client.post(
+                "/api/v1/orders",
                 headers=headers,
                 json={
-                    "shipment_number": f"SHP-{uuid.uuid4().hex[:8]}",
-                    "order_id": order["id"],
+                    "order_number": f"ORD-LGX-{uuid.uuid4().hex[:8]}",
+                    "customer_id": None,
+                    "warehouse_id": None,
+                    "customer_phone": "01744444444",
+                    "shipping_address": "House 7, Dhaka",
+                    "notes": "Logistics dispatch test",
+                    "tags": "dispatch-test",
+                    "status": "confirmed",
+                    "payment_status": "unpaid",
+                    "source": "manual",
+                    "subtotal": 300,
+                    "discount": 0,
+                    "delivery_charge": 60,
+                    "total": 360,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 300,
+                            "total_price": 300,
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+            order = order_response.json()
+
+            pending_dispatch_response = client.get(
+                "/api/v1/logistics/pending-dispatch?skip=0&limit=20",
+                headers=headers,
+            )
+            assert pending_dispatch_response.status_code == 200, pending_dispatch_response.text
+            pending_dispatch_orders = pending_dispatch_response.json()
+            assert any(item["id"] == order["id"] for item in pending_dispatch_orders)
+
+            shipment_response = client.post(
+                f"/api/v1/orders/{order['id']}/create-shipment",
+                headers=headers,
+                json={
                     "courier_id": courier["id"],
                     "tracking_number": f"TRK-{uuid.uuid4().hex[:10]}",
-                    "status": "ready_to_ship",
                     "delivery_charge": 120,
+                    "courier_charge": 80,
                     "cod_amount": 300,
+                    "collected_amount": 0,
                     "notes": "Prepared for dispatch",
+                    "order_status": "ready_to_ship",
                 },
             )
             assert shipment_response.status_code == 201, shipment_response.text
             shipment = shipment_response.json()
             assert shipment["courier"]["id"] == courier["id"]
+            assert shipment["recipient_phone"] == "01744444444"
+            assert shipment["delivery_address"] == "House 7, Dhaka"
+            assert any(event["event_type"] == "shipment_created" for event in shipment["events"])
 
             shipped_response = client.patch(
                 f"/api/v1/shipments/{shipment['id']}",
@@ -852,6 +1255,7 @@ def test_courier_and_shipment_flow() -> None:
             shipped_shipment = shipped_response.json()
             assert shipped_shipment["status"] == "shipped"
             assert shipped_shipment["shipped_at"] is not None
+            assert any(event["event_type"] == "status_changed" for event in shipped_shipment["events"])
 
             delivered_response = client.patch(
                 f"/api/v1/shipments/{shipment['id']}",
@@ -862,6 +1266,22 @@ def test_courier_and_shipment_flow() -> None:
             delivered_shipment = delivered_response.json()
             assert delivered_shipment["status"] == "delivered"
             assert delivered_shipment["delivered_at"] is not None
+            assert float(delivered_shipment["collected_amount"]) == 300
+
+            reconciliation_response = client.patch(
+                f"/api/v1/shipments/{shipment['id']}",
+                headers=headers,
+                json={
+                    "courier_charge": 95,
+                    "collected_amount": 300,
+                    "reconciliation_status": "settled",
+                },
+            )
+            assert reconciliation_response.status_code == 200, reconciliation_response.text
+            reconciled_shipment = reconciliation_response.json()
+            assert reconciled_shipment["reconciliation_status"] == "settled"
+            assert reconciled_shipment["reconciled_at"] is not None
+            assert any(event["event_type"] == "reconciliation_updated" for event in reconciled_shipment["events"])
 
             deactivate_response = client.delete(
                 f"/api/v1/couriers/{courier['id']}",
@@ -876,7 +1296,7 @@ def test_courier_and_shipment_flow() -> None:
             assert courier_detail_response.status_code == 200, courier_detail_response.text
             assert courier_detail_response.json()["is_active"] is False
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
-        if any(token in str(exc) for token in ["couriers", "shipments", "return_requests", "warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events"]):
+        if any(token in str(exc) for token in ["couriers", "shipments", "shipment_events", "return_requests", "warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events", "activity_logs"]):
             pytest.skip("Apply the latest migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
@@ -1039,8 +1459,211 @@ def test_supplier_and_purchase_order_receiving_flow() -> None:
                 "customer_phone",
                 "printed_count",
                 "order_events",
+                "activity_logs",
             ]
         ):
+            pytest.skip("Apply the latest migrations before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_reports_foundation_endpoints() -> None:
+    try:
+        headers = auth_headers()
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Reports Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"reports-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Reports test category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Reports Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"reports-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Reports test brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            customer_response = client.post(
+                "/api/v1/customers",
+                headers=headers,
+                json={
+                    "name": "Reports Customer",
+                    "phone": "01755555555",
+                    "email": "reports.customer@example.com",
+                    "address": "Dhaka",
+                    "city": "Dhaka",
+                    "customer_type": "vip",
+                    "tags": "reports",
+                    "notes": "Reports test customer",
+                    "follow_up_date": "2026-05-20",
+                },
+            )
+            assert customer_response.status_code == 201, customer_response.text
+            customer = customer_response.json()
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Reports Flow Product",
+                    "slug": f"reports-flow-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"RP-{uuid.uuid4().hex[:8]}",
+                    "description": "Reports flow product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 500.00,
+                    "cost_price": 320.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Reports Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"RPT-WH-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 12,
+                    "low_stock_threshold": 3,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-RPT-{uuid.uuid4().hex[:8]}",
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": "01755555555",
+                    "shipping_address": "Reports shipping address",
+                    "notes": "Reports order",
+                    "tags": "reports",
+                    "status": "confirmed",
+                    "payment_status": "paid",
+                    "source": "manual",
+                    "subtotal": 500,
+                    "discount": 20,
+                    "delivery_charge": 60,
+                    "total": 540,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 2,
+                            "unit_price": 250,
+                            "total_price": 500,
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+            order = order_response.json()
+
+            courier_response = client.post(
+                "/api/v1/couriers",
+                headers=headers,
+                json={
+                    "name": f"Reports Courier {uuid.uuid4().hex[:8]}",
+                    "code": f"RPT-CR-{uuid.uuid4().hex[:8]}",
+                    "contact_phone": "01799999999",
+                    "website": "https://courier.example.com",
+                    "is_active": True,
+                },
+            )
+            assert courier_response.status_code == 201, courier_response.text
+            courier = courier_response.json()
+
+            shipment_response = client.post(
+                f"/api/v1/orders/{order['id']}/create-shipment",
+                headers=headers,
+                json={
+                    "courier_id": courier["id"],
+                    "delivery_charge": 60,
+                    "courier_charge": 40,
+                    "cod_amount": 540,
+                    "collected_amount": 540,
+                    "notes": "Reports shipment",
+                    "order_status": "shipped",
+                },
+            )
+            assert shipment_response.status_code == 201, shipment_response.text
+
+            sales_summary_response = client.get("/api/v1/reports/sales-summary", headers=headers)
+            assert sales_summary_response.status_code == 200, sales_summary_response.text
+            sales_summary = sales_summary_response.json()
+            assert sales_summary["total_orders"] >= 1
+
+            order_status_response = client.get("/api/v1/reports/order-status", headers=headers)
+            assert order_status_response.status_code == 200, order_status_response.text
+            assert any(item["status"] == "shipped" for item in order_status_response.json())
+
+            inventory_report_response = client.get("/api/v1/reports/inventory", headers=headers)
+            assert inventory_report_response.status_code == 200, inventory_report_response.text
+            inventory_report = inventory_report_response.json()
+            assert inventory_report["total_products"] >= 1
+            assert inventory_report["total_inventory_items"] >= 1
+
+            stock_movement_summary_response = client.get(
+                "/api/v1/reports/stock-movements-summary",
+                headers=headers,
+            )
+            assert stock_movement_summary_response.status_code == 200, stock_movement_summary_response.text
+            assert len(stock_movement_summary_response.json()) >= 1
+
+            customer_report_response = client.get("/api/v1/reports/customers", headers=headers)
+            assert customer_report_response.status_code == 200, customer_report_response.text
+            customer_report = customer_report_response.json()
+            assert customer_report["total_customers"] >= 1
+            assert customer_report["vip_customers"] >= 1
+
+            logistics_report_response = client.get("/api/v1/reports/logistics", headers=headers)
+            assert logistics_report_response.status_code == 200, logistics_report_response.text
+            logistics_report = logistics_report_response.json()
+            assert logistics_report["total_shipments"] >= 1
+            assert float(logistics_report["total_cod_amount"]) >= 540
+
+            top_products_response = client.get("/api/v1/reports/top-products?limit=10", headers=headers)
+            assert top_products_response.status_code == 200, top_products_response.text
+            assert any(item["product_name"] == product["name"] for item in top_products_response.json())
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "printed_count", "order_events"]):
             pytest.skip("Apply the latest migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")

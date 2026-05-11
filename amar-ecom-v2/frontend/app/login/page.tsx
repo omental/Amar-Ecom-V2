@@ -16,9 +16,11 @@ type LoginResponse = {
     email: string;
     role: string;
     is_active: boolean;
+    permissions?: string[];
     created_at?: string;
     updated_at?: string;
   };
+  permissions: string[];
 };
 
 export default function LoginPage() {
@@ -40,7 +42,10 @@ export default function LoginPage() {
       });
 
       saveToken(response.access_token);
-      saveUser(response.user);
+      saveUser({
+        ...response.user,
+        permissions: response.permissions,
+      });
       router.replace("/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {

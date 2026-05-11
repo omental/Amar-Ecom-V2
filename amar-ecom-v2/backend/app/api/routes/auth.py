@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
 from app.schemas.user import LoginRequest, TokenResponse, UserCreate, UserRead
+from app.services.permission_service import get_default_permission_keys, get_user_permissions
 
 
 router = APIRouter()
@@ -43,4 +44,8 @@ async def login(login_in: LoginRequest, db: DBSession) -> TokenResponse:
         subject=str(user.id),
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
-    return TokenResponse(access_token=access_token, user=user)
+    if user.role in {"admin", "super_admin"}:
+        permissions = get_default_permission_keys()
+    else:
+        permissions = await get_user_permissions(db, user.id)
+    return TokenResponse(access_token=access_token, user=user, permissions=permissions)

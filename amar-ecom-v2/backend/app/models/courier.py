@@ -45,10 +45,23 @@ class Shipment(Base):
         ForeignKey("couriers.id", ondelete="SET NULL"),
         nullable=True,
     )
+    recipient_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_phone: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    delivery_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     tracking_number: Mapped[str | None] = mapped_column(String(150), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", server_default="pending")
     delivery_charge: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    courier_charge: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     cod_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    collected_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    reconciliation_status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+        index=True,
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -62,3 +75,33 @@ class Shipment(Base):
 
     order = relationship("Order", back_populates="shipments")
     courier = relationship("Courier", back_populates="shipments")
+    events = relationship(
+        "ShipmentEvent",
+        back_populates="shipment",
+        cascade="all, delete-orphan",
+        order_by="ShipmentEvent.created_at.desc()",
+    )
+
+
+class ShipmentEvent(Base):
+    __tablename__ = "shipment_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    shipment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shipments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    shipment = relationship("Shipment", back_populates="events")
+    created_by = relationship("User", back_populates="shipment_events_created")

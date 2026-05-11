@@ -19,6 +19,12 @@ class InventoryItemUpdate(BaseModel):
     low_stock_threshold: int | None = Field(default=None, ge=0)
 
 
+class InventoryAdjustmentCreate(BaseModel):
+    new_quantity: int | None = Field(default=None, ge=0)
+    quantity_delta: int | None = None
+    note: str | None = None
+
+
 class InventoryItemRead(ORMBaseSchema):
     id: UUID
     product_id: UUID | None

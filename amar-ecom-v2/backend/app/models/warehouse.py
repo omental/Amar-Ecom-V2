@@ -29,3 +29,14 @@ class Warehouse(Base):
     purchase_orders = relationship("PurchaseOrder", back_populates="warehouse")
     return_requests = relationship("ReturnRequest", back_populates="warehouse")
     stock_movements = relationship("StockMovement", back_populates="warehouse")
+    stock_transfers_out = relationship(
+        "StockTransfer",
+        foreign_keys="StockTransfer.from_warehouse_id",
+        back_populates="from_warehouse",
+    )
+    stock_transfers_in = relationship(
+        "StockTransfer",
+        foreign_keys="StockTransfer.to_warehouse_id",
+        back_populates="to_warehouse",
+    )
+    wastage_logs = relationship("WastageLog", back_populates="warehouse")

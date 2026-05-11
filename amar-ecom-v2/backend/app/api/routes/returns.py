@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
-from app.models.order import Order
+from app.models.order import Order, OrderEvent
 from app.models.return_request import ReturnItem, ReturnRequest
 from app.models.warehouse import Warehouse
 from app.schemas.return_request import ReturnRequestCreate, ReturnRequestRead, ReturnRequestUpdate
@@ -22,6 +22,7 @@ def _return_query():
         selectinload(ReturnRequest.order).selectinload(Order.customer),
         selectinload(ReturnRequest.order).selectinload(Order.warehouse),
         selectinload(ReturnRequest.order).selectinload(Order.items),
+        selectinload(ReturnRequest.order).selectinload(Order.events).selectinload(OrderEvent.created_by),
         selectinload(ReturnRequest.customer),
         selectinload(ReturnRequest.warehouse),
         selectinload(ReturnRequest.items),

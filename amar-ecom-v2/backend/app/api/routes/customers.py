@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +20,7 @@ from app.schemas.customer import (
     CustomerRead,
     CustomerUpdate,
 )
+from app.services.activity_log_service import log_activity
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -158,6 +159,7 @@ async def create_customer_activity(
     customer_id: UUID,
     activity_in: CustomerActivityCreate,
     db: DBSession,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> CustomerActivity:
     customer = await fetch_one_or_404(db, select(Customer).where(Customer.id == customer_id), "Customer not found")
@@ -168,6 +170,17 @@ async def create_customer_activity(
     )
     _touch_customer_from_activity(customer, activity)
     db.add(activity)
+    await db.flush()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="customer_activity_created",
+        module="customers",
+        entity_type="customer_activity",
+        entity_id=activity.id,
+        message=f"Added {activity.activity_type} activity for customer {customer.name}.",
+        request=request,
+    )
     await commit_or_409(db, "Could not create customer activity")
     activity = await fetch_one_or_404(
         db,
