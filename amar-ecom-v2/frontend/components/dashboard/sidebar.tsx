@@ -19,6 +19,7 @@ import {
   Tags,
   Truck,
   Users,
+  Wallet,
   Warehouse,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ const links = [
   { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
   { href: "/dashboard/products", label: "Products", icon: Package },
   { href: "/dashboard/customers", label: "Customers", icon: Users },
+  { href: "/dashboard/finance", label: "Finance", icon: Wallet },
   { href: "/dashboard/reports", label: "Reports", icon: PieChart },
   { href: "/dashboard/inventory", label: "Inventory", icon: Boxes },
   { href: "/dashboard/stock-movements", label: "Stock Movements", icon: ArrowRightLeft },

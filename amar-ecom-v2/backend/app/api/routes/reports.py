@@ -7,6 +7,7 @@ from sqlalchemy import case, func, select
 from app.api.deps import DBSession, get_current_user
 from app.models.courier import Shipment
 from app.models.customer import Customer
+from app.models.finance import Account, SupplierPayment, Transaction
 from app.models.inventory import InventoryItem
 from app.models.order import Order, OrderItem
 from app.models.product import Product
@@ -14,6 +15,7 @@ from app.models.stock_movement import StockMovement
 from app.models.warehouse import Warehouse
 from app.schemas.reports import (
     CustomerReportRead,
+    FinanceReportSummaryRead,
     InventoryReportRead,
     LowStockProductReportItemRead,
     LogisticsReportRead,
@@ -273,6 +275,44 @@ async def get_logistics_report(db: DBSession) -> LogisticsReportRead:
         total_cod_amount=row[6] or Decimal("0"),
         total_collected_amount=row[7] or Decimal("0"),
         total_courier_charge=row[8] or Decimal("0"),
+    )
+
+
+@router.get("/finance-summary", response_model=FinanceReportSummaryRead)
+async def get_finance_report_summary(db: DBSession) -> FinanceReportSummaryRead:
+    cash_balance_result = await db.execute(
+        select(func.coalesce(func.sum(Account.current_balance), 0)).where(
+            Account.account_type.in_(["cash", "bank", "mobile_banking"]),
+            Account.is_active.is_(True),
+        )
+    )
+    income_result = await db.execute(
+        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.direction == "in",
+            Transaction.transaction_type != "transfer",
+        )
+    )
+    expense_result = await db.execute(
+        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.direction == "out",
+            Transaction.transaction_type != "transfer",
+        )
+    )
+    supplier_payments_result = await db.execute(
+        select(func.coalesce(func.sum(SupplierPayment.amount), 0))
+    )
+
+    total_cash_bank_balance = cash_balance_result.scalar_one() or Decimal("0")
+    total_income = income_result.scalar_one() or Decimal("0")
+    total_expense = expense_result.scalar_one() or Decimal("0")
+    supplier_payments_total = supplier_payments_result.scalar_one() or Decimal("0")
+
+    return FinanceReportSummaryRead(
+        total_cash_bank_balance=total_cash_bank_balance,
+        total_income=total_income,
+        total_expense=total_expense,
+        net_cash_flow=total_income - total_expense,
+        supplier_payments_total=supplier_payments_total,
     )
 
 

@@ -4,6 +4,7 @@ from app.models.brand import Brand
 from app.models.category import Category
 from app.models.courier import Courier, Shipment, ShipmentEvent
 from app.models.customer import Customer, CustomerActivity
+from app.models.finance import Account, PettyCashEntry, SupplierPayment, Transaction
 from app.models.invoice_template import InvoiceTemplate
 from app.models.inventory import InventoryItem
 from app.models.inventory_ops import StockTransfer, StockTransferItem, WastageLog
@@ -23,6 +24,10 @@ __all__ = [
     "Courier",
     "Customer",
     "CustomerActivity",
+    "Account",
+    "PettyCashEntry",
+    "SupplierPayment",
+    "Transaction",
     "InvoiceTemplate",
     "InventoryItem",
     "Order",

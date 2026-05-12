@@ -28,5 +28,7 @@ class User(Base):
     order_events_created = relationship("OrderEvent", back_populates="created_by")
     shipment_events_created = relationship("ShipmentEvent", back_populates="created_by")
     customer_activities_created = relationship("CustomerActivity", back_populates="created_by")
+    transactions_created = relationship("Transaction", back_populates="created_by")
+    petty_cash_entries_approved = relationship("PettyCashEntry", back_populates="approved_by")
     permission_assignments = relationship("UserPermission", back_populates="user", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="user")

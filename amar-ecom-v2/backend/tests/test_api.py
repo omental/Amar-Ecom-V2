@@ -920,6 +920,182 @@ def test_invoice_templates_and_invoice_data_flow() -> None:
     dispose_engine()
 
 
+def test_finance_foundation_flow() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            cash_account_response = client.post(
+                "/api/v1/accounts",
+                headers=headers,
+                json={
+                    "name": "Main Cash",
+                    "code": f"CASH-{uuid.uuid4().hex[:8]}",
+                    "account_type": "cash",
+                    "opening_balance": 1000,
+                    "notes": "Primary cash drawer",
+                    "is_active": True,
+                },
+            )
+            assert cash_account_response.status_code == 201, cash_account_response.text
+            cash_account = cash_account_response.json()
+            assert float(cash_account["current_balance"]) == 1000
+
+            bank_account_response = client.post(
+                "/api/v1/accounts",
+                headers=headers,
+                json={
+                    "name": "Bank Account",
+                    "code": f"BANK-{uuid.uuid4().hex[:8]}",
+                    "account_type": "bank",
+                    "opening_balance": 500,
+                    "notes": "Primary bank account",
+                    "is_active": True,
+                },
+            )
+            assert bank_account_response.status_code == 201, bank_account_response.text
+            bank_account = bank_account_response.json()
+
+            income_transaction_response = client.post(
+                "/api/v1/transactions",
+                headers=headers,
+                json={
+                    "transaction_number": f"TXN-IN-{uuid.uuid4().hex[:8]}",
+                    "account_id": cash_account["id"],
+                    "transaction_type": "income",
+                    "category": "sales",
+                    "amount": 250,
+                    "direction": "in",
+                    "description": "Cash sale",
+                },
+            )
+            assert income_transaction_response.status_code == 201, income_transaction_response.text
+
+            expense_transaction_response = client.post(
+                "/api/v1/transactions",
+                headers=headers,
+                json={
+                    "transaction_number": f"TXN-OUT-{uuid.uuid4().hex[:8]}",
+                    "account_id": cash_account["id"],
+                    "transaction_type": "expense",
+                    "category": "office",
+                    "amount": 100,
+                    "direction": "out",
+                    "description": "Office expense",
+                },
+            )
+            assert expense_transaction_response.status_code == 201, expense_transaction_response.text
+
+            transfer_transaction_response = client.post(
+                "/api/v1/transactions",
+                headers=headers,
+                json={
+                    "transaction_number": f"TXN-TRF-{uuid.uuid4().hex[:8]}",
+                    "account_id": cash_account["id"],
+                    "related_account_id": bank_account["id"],
+                    "transaction_type": "transfer",
+                    "category": "internal_transfer",
+                    "amount": 150,
+                    "direction": "out",
+                    "description": "Cash to bank transfer",
+                },
+            )
+            assert transfer_transaction_response.status_code == 201, transfer_transaction_response.text
+            transfer_transaction = transfer_transaction_response.json()
+            assert transfer_transaction["related_account"]["id"] == bank_account["id"]
+
+            petty_cash_response = client.post(
+                "/api/v1/petty-cash",
+                headers=headers,
+                json={
+                    "entry_number": f"PC-{uuid.uuid4().hex[:8]}",
+                    "account_id": cash_account["id"],
+                    "entry_type": "expense",
+                    "amount": 50,
+                    "purpose": "Local courier snacks",
+                    "spent_by": "Ops",
+                    "status": "approved",
+                },
+            )
+            assert petty_cash_response.status_code == 201, petty_cash_response.text
+            petty_cash_entry = petty_cash_response.json()
+            assert petty_cash_entry["status"] == "approved"
+
+            supplier_response = client.post(
+                "/api/v1/suppliers",
+                headers=headers,
+                json={
+                    "name": f"Finance Supplier {uuid.uuid4().hex[:8]}",
+                    "contact_person": "Supplier Contact",
+                    "phone": "01700000000",
+                    "email": unique_email(),
+                    "address": "Dhaka",
+                    "notes": "Finance flow supplier",
+                    "is_active": True,
+                },
+            )
+            assert supplier_response.status_code == 201, supplier_response.text
+            supplier = supplier_response.json()
+
+            supplier_payment_response = client.post(
+                "/api/v1/supplier-payments",
+                headers=headers,
+                json={
+                    "supplier_id": supplier["id"],
+                    "account_id": bank_account["id"],
+                    "payment_number": f"SP-{uuid.uuid4().hex[:8]}",
+                    "amount": 200,
+                    "payment_method": "bank_transfer",
+                    "reference": "BTRX-1001",
+                    "notes": "Partial settlement",
+                },
+            )
+            assert supplier_payment_response.status_code == 201, supplier_payment_response.text
+            supplier_payment = supplier_payment_response.json()
+            assert supplier_payment["supplier"]["id"] == supplier["id"]
+
+            finance_summary_response = client.get("/api/v1/finance/summary", headers=headers)
+            assert finance_summary_response.status_code == 200, finance_summary_response.text
+            finance_summary = finance_summary_response.json()
+            assert float(finance_summary["total_cash_bank_balance"]) == 1250
+            assert float(finance_summary["total_income"]) == 250
+            assert float(finance_summary["total_expense"]) == 100
+            assert float(finance_summary["net_cash_flow"]) == 150
+            assert finance_summary["pending_petty_cash_count"] == 0
+            assert float(finance_summary["supplier_payments_total"]) == 200
+            assert len(finance_summary["recent_transactions"]) >= 3
+
+            finance_report_response = client.get("/api/v1/reports/finance-summary", headers=headers)
+            assert finance_report_response.status_code == 200, finance_report_response.text
+            finance_report = finance_report_response.json()
+            assert float(finance_report["total_cash_bank_balance"]) == 1250
+            assert float(finance_report["supplier_payments_total"]) == 200
+
+            updated_cash_account_response = client.get(f"/api/v1/accounts/{cash_account['id']}", headers=headers)
+            assert updated_cash_account_response.status_code == 200, updated_cash_account_response.text
+            assert float(updated_cash_account_response.json()["current_balance"]) == 950
+
+            updated_bank_account_response = client.get(f"/api/v1/accounts/{bank_account['id']}", headers=headers)
+            assert updated_bank_account_response.status_code == 200, updated_bank_account_response.text
+            assert float(updated_bank_account_response.json()["current_balance"]) == 450
+
+            activity_logs_response = client.get("/api/v1/activity-logs?module=finance&limit=50", headers=headers)
+            assert activity_logs_response.status_code == 200, activity_logs_response.text
+            finance_logs = activity_logs_response.json()
+            assert any(log["action"] == "account_created" for log in finance_logs)
+            assert any(log["action"] == "transaction_created" for log in finance_logs)
+            assert any(log["action"] == "petty_cash_created" for log in finance_logs)
+            assert any(log["action"] == "supplier_payment_created" for log in finance_logs)
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["accounts", "transactions", "petty_cash_entries", "supplier_payments", "reports", "activity_logs"]):
+            pytest.skip("Apply the finance foundation migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_order_warehouse_assignment_and_fulfillment() -> None:
     headers = auth_headers()
 

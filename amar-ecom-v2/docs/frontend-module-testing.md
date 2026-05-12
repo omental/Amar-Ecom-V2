@@ -811,6 +811,43 @@ npm run dev
    - `Team Permissions`
    - `Preview Invoice` when at least one order exists
 
+## Test Finance Workspace
+
+1. Apply the latest backend migration:
+   - `venv\Scripts\alembic.exe upgrade head`
+2. Open `http://localhost:3000/dashboard/finance`
+3. Confirm the page loads tabs for:
+   - `Overview`
+   - `Accounts`
+   - `Transactions`
+   - `Petty Cash`
+   - `Supplier Payments`
+4. In `Accounts`, create:
+   - one `cash` account
+   - one `bank` account
+5. Confirm both accounts appear with opening and current balances
+6. In `Transactions`, create:
+   - one `income` transaction with direction `in`
+   - one `expense` transaction with direction `out`
+   - one `transfer` with a destination account
+7. Confirm insufficient-balance validation appears if a cash/bank/mobile-banking account would go negative
+8. In `Petty Cash`, create an entry and save it as `pending` or `approved`
+9. Update at least one petty cash row to `approved`, `rejected`, or `settled`
+10. In `Supplier Payments`, create a payment using an existing supplier and finance account
+11. Return to `Overview`
+12. Confirm the cards show:
+   - `Cash / Bank Balance`
+   - `Total Income`
+   - `Total Expense`
+   - `Net Cash Flow`
+   - `Pending Petty Cash`
+   - `Supplier Payments`
+13. Confirm the recent transactions list updates after transaction creation
+14. Open `http://localhost:3000/dashboard`
+15. Confirm the dashboard includes:
+   - a `Finance Cash` summary card
+   - an `Open Finance` link
+
 ## Notes
 
 - The frontend reads the API base URL from `NEXT_PUBLIC_API_BASE_URL`
@@ -829,6 +866,7 @@ npm run dev
 - Activity logs currently cover selected high-value actions rather than every route in the system
 - Pending dispatch excludes orders that already have an active shipment unless that shipment was cancelled or returned
 - Reports in this phase are operational summaries and enhancements, not full finance reports or accounting statements
+- Finance in this phase is a practical operational foundation only: accounts, transactions, petty cash, supplier payments, and summary visibility
 - CSV export is browser-generated from the currently loaded report data
 - Charts are implemented with lightweight CSS-based bars rather than a new chart dependency
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled

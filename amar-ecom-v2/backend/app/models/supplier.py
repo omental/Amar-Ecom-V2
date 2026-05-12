@@ -29,6 +29,7 @@ class Supplier(Base):
     )
 
     purchase_orders = relationship("PurchaseOrder", back_populates="supplier")
+    supplier_payments = relationship("SupplierPayment", back_populates="supplier")
 
 
 class PurchaseOrder(Base):

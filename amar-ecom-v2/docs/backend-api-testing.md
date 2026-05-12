@@ -67,6 +67,10 @@ This phase adds the advanced invoice settings and invoice templates migration:
 
 - `e6f7a8b9c0d1_add_advanced_invoice_settings_and_templates`
 
+This phase adds the finance foundation migration:
+
+- `f7a8b9c0d1e2_add_finance_foundation`
+
 Reports foundation adds endpoints only and does not require a new migration.
 
 ## Start API
@@ -188,6 +192,157 @@ Expected result:
 - response contains `default_invoice_template`
 - response contains `computed_invoice_metadata`
 - selected or default template values override invoice title/footer/terms/payment instructions when applicable
+
+## Create Finance Account
+
+```powershell
+$accountBody = @{
+  name = "Main Cash"
+  code = "CASH-001"
+  account_type = "cash"
+  opening_balance = 1000
+  notes = "Primary operations cash"
+  is_active = $true
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/accounts `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $accountBody
+```
+
+## Create Income Transaction
+
+```powershell
+$incomeBody = @{
+  transaction_number = "TXN-IN-001"
+  account_id = "{accountId}"
+  transaction_type = "income"
+  category = "sales"
+  amount = 250
+  direction = "in"
+  description = "Cash sale"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/transactions `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $incomeBody
+```
+
+## Create Expense Transaction
+
+```powershell
+$expenseBody = @{
+  transaction_number = "TXN-OUT-001"
+  account_id = "{accountId}"
+  transaction_type = "expense"
+  category = "office"
+  amount = 100
+  direction = "out"
+  description = "Office supplies"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/transactions `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $expenseBody
+```
+
+## Create Transfer
+
+```powershell
+$transferBody = @{
+  transaction_number = "TXN-TRF-001"
+  account_id = "{sourceAccountId}"
+  related_account_id = "{destinationAccountId}"
+  transaction_type = "transfer"
+  category = "internal_transfer"
+  amount = 150
+  direction = "out"
+  description = "Cash to bank transfer"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/transactions `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $transferBody
+```
+
+Expected result:
+
+- source account balance decreases
+- destination account balance increases
+- transfer does not inflate income or expense totals
+
+## Create Petty Cash Entry
+
+```powershell
+$pettyCashBody = @{
+  entry_number = "PC-001"
+  account_id = "{accountId}"
+  entry_type = "expense"
+  amount = 50
+  purpose = "Courier expenses"
+  spent_by = "Ops"
+  status = "approved"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/petty-cash `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $pettyCashBody
+```
+
+## Create Supplier Payment
+
+```powershell
+$supplierPaymentBody = @{
+  supplier_id = "{supplierId}"
+  account_id = "{accountId}"
+  payment_number = "SP-001"
+  amount = 200
+  payment_method = "bank_transfer"
+  reference = "BTRX-1001"
+  notes = "Partial supplier settlement"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/supplier-payments `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $supplierPaymentBody
+```
+
+## View Finance Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/finance/summary `
+  -Headers $headers
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/reports/finance-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- total cash/bank balance reflects live account balances
+- total income and expense come from non-transfer transactions
+- net cash flow equals income minus expense
+- supplier payment total is returned separately
 
 ## Health Check
 

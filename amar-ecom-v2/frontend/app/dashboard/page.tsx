@@ -11,6 +11,7 @@ import {
   RotateCcw,
   ShoppingCart,
   Users,
+  Wallet,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -46,6 +47,13 @@ type StatsState = {
   lowStockInventory: number;
   outOfStockInventory: number;
   recentStockMovements: number;
+  financeCashBalance: number;
+  financeNetCashFlow: number;
+};
+
+type FinanceSummaryResponse = {
+  total_cash_bank_balance: number | string;
+  net_cash_flow: number | string;
 };
 
 function getCollectionCount(payload: unknown) {
@@ -98,6 +106,8 @@ export default function DashboardPage() {
     lowStockInventory: 0,
     outOfStockInventory: 0,
     recentStockMovements: 0,
+    financeCashBalance: 0,
+    financeNetCashFlow: 0,
   });
   const [statsError, setStatsError] = useState("");
   const [backendStatus, setBackendStatus] = useState<{
@@ -113,7 +123,7 @@ export default function DashboardPage() {
 
     async function checkBackend() {
       try {
-        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings] = await Promise.all([
+        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary] = await Promise.all([
           api.get<HealthResponse>("/health"),
           api.get<unknown>("/products?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100"),
@@ -127,6 +137,7 @@ export default function DashboardPage() {
           api.get<unknown>("/suppliers?skip=0&limit=100"),
           api.get<unknown>("/purchase-orders?skip=0&limit=100"),
           api.get<BusinessSettingsResponse>("/settings/business"),
+          api.get<FinanceSummaryResponse>("/finance/summary").catch(() => null),
         ]);
         if (!isMounted) return;
 
@@ -196,6 +207,8 @@ export default function DashboardPage() {
               item.quantity <= 0,
           ).length,
           recentStockMovements: movementRows.length,
+          financeCashBalance: Number(financeSummary?.total_cash_bank_balance || 0),
+          financeNetCashFlow: Number(financeSummary?.net_cash_flow || 0),
         });
         setCompanyName(businessSettings.company_name || "Amar eCom");
         setStatsError("");
@@ -264,6 +277,7 @@ export default function DashboardPage() {
           { label: "Products", value: stats.products, icon: Package },
           { label: "Customers", value: stats.customers, icon: Users },
           { label: "Inventory", value: stats.inventory, icon: Boxes },
+          { label: "Finance Cash", value: stats.financeCashBalance, icon: Wallet, isCurrency: true },
         ].map(({ label, value, icon: Icon }) => (
           <article
             key={label}
@@ -273,7 +287,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm text-slate-500">{label}</p>
                 <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-                  {backendStatus.ok ? value : "--"}
+                  {backendStatus.ok ? (typeof value === "number" && label === "Finance Cash" ? `৳${value.toLocaleString()}` : value) : "--"}
                 </p>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
@@ -468,6 +482,12 @@ export default function DashboardPage() {
             className="mt-5 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
           >
             Open Reports
+          </Link>
+          <Link
+            href="/dashboard/finance"
+            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            Open Finance
           </Link>
         </article>
       </section>

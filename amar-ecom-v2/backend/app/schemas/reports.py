@@ -99,3 +99,11 @@ class RecentOrderActivityItemRead(BaseModel):
     total: Decimal
     customer_name: str | None
     created_at: datetime
+
+
+class FinanceReportSummaryRead(BaseModel):
+    total_cash_bank_balance: Decimal
+    total_income: Decimal
+    total_expense: Decimal
+    net_cash_flow: Decimal
+    supplier_payments_total: Decimal
