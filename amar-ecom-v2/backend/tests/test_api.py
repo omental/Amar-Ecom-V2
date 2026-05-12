@@ -1629,16 +1629,29 @@ def test_reports_foundation_endpoints() -> None:
             assert sales_summary_response.status_code == 200, sales_summary_response.text
             sales_summary = sales_summary_response.json()
             assert sales_summary["total_orders"] >= 1
+            filtered_sales_summary_response = client.get(
+                "/api/v1/reports/sales-summary?start_date=2026-05-01&end_date=2026-05-31",
+                headers=headers,
+            )
+            assert filtered_sales_summary_response.status_code == 200, filtered_sales_summary_response.text
 
             order_status_response = client.get("/api/v1/reports/order-status", headers=headers)
             assert order_status_response.status_code == 200, order_status_response.text
             assert any(item["status"] == "shipped" for item in order_status_response.json())
+            payment_status_response = client.get("/api/v1/reports/payment-status", headers=headers)
+            assert payment_status_response.status_code == 200, payment_status_response.text
+            assert any(item["payment_status"] == "paid" for item in payment_status_response.json())
 
             inventory_report_response = client.get("/api/v1/reports/inventory", headers=headers)
             assert inventory_report_response.status_code == 200, inventory_report_response.text
             inventory_report = inventory_report_response.json()
             assert inventory_report["total_products"] >= 1
             assert inventory_report["total_inventory_items"] >= 1
+            low_stock_products_response = client.get(
+                "/api/v1/reports/low-stock-products?limit=10",
+                headers=headers,
+            )
+            assert low_stock_products_response.status_code == 200, low_stock_products_response.text
 
             stock_movement_summary_response = client.get(
                 "/api/v1/reports/stock-movements-summary",
@@ -1646,6 +1659,12 @@ def test_reports_foundation_endpoints() -> None:
             )
             assert stock_movement_summary_response.status_code == 200, stock_movement_summary_response.text
             assert len(stock_movement_summary_response.json()) >= 1
+            revenue_by_date_response = client.get(
+                "/api/v1/reports/revenue-by-date?start_date=2026-05-01&end_date=2026-05-31&limit=14",
+                headers=headers,
+            )
+            assert revenue_by_date_response.status_code == 200, revenue_by_date_response.text
+            assert len(revenue_by_date_response.json()) >= 1
 
             customer_report_response = client.get("/api/v1/reports/customers", headers=headers)
             assert customer_report_response.status_code == 200, customer_report_response.text
@@ -1662,6 +1681,12 @@ def test_reports_foundation_endpoints() -> None:
             top_products_response = client.get("/api/v1/reports/top-products?limit=10", headers=headers)
             assert top_products_response.status_code == 200, top_products_response.text
             assert any(item["product_name"] == product["name"] for item in top_products_response.json())
+            recent_order_activity_response = client.get(
+                "/api/v1/reports/recent-order-activity?limit=10",
+                headers=headers,
+            )
+            assert recent_order_activity_response.status_code == 200, recent_order_activity_response.text
+            assert any(item["order_number"] == order["order_number"] for item in recent_order_activity_response.json())
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "printed_count", "order_events"]):
             pytest.skip("Apply the latest migrations before running this test.")

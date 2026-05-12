@@ -992,7 +992,7 @@ Expected result:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/api/v1/reports/sales-summary?date_from=2026-05-01&date_to=2026-05-31" `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/sales-summary?start_date=2026-05-01&end_date=2026-05-31" `
   -Headers $headers
 ```
 
@@ -1007,13 +1007,26 @@ Expected result:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/api/v1/reports/order-status" `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/order-status?start_date=2026-05-01&end_date=2026-05-31" `
   -Headers $headers
 ```
 
 Expected result:
 
 - grouped rows by order `status`
+- each row includes `count` and `total_amount`
+
+## Reports: Payment Status
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/payment-status?start_date=2026-05-01&end_date=2026-05-31" `
+  -Headers $headers
+```
+
+Expected result:
+
+- grouped rows by `payment_status`
 - each row includes `count` and `total_amount`
 
 ## Reports: Inventory
@@ -1035,7 +1048,7 @@ Expected result:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/api/v1/reports/stock-movements-summary?date_from=2026-05-01&date_to=2026-05-31" `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/stock-movements-summary?start_date=2026-05-01&end_date=2026-05-31" `
   -Headers $headers
 ```
 
@@ -1076,7 +1089,7 @@ Expected result:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://127.0.0.1:8000/api/v1/reports/top-products?limit=10" `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/top-products?start_date=2026-05-01&end_date=2026-05-31&limit=10" `
   -Headers $headers
 ```
 
@@ -1084,6 +1097,46 @@ Expected result:
 
 - returns top products by ordered quantity and revenue
 - each row includes `product_name`, `sku`, `total_quantity`, and `total_revenue`
+- supports optional `start_date`, `end_date`, and `limit`
+
+## Reports: Low Stock Products
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/low-stock-products?limit=10" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns inventory rows at or below threshold
+- each row includes `product_name`, `warehouse_name`, `quantity`, `low_stock_threshold`, and `stock_status`
+
+## Reports: Revenue By Date
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/revenue-by-date?start_date=2026-05-01&end_date=2026-05-31&limit=14" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns grouped rows by report date
+- each row includes `order_count` and `total_sales`
+
+## Reports: Recent Order Activity
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/recent-order-activity?limit=10" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns most recent order rows
+- each row includes `order_number`, `status`, `payment_status`, `total`, `customer_name`, and `created_at`
 
 ## Create Supplier
 

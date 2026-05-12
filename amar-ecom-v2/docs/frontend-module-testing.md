@@ -506,14 +506,18 @@ npm run dev
 2. Confirm the page loads sections for:
    - `Sales Summary`
    - `Order Status`
-   - `Inventory Health`
+   - `Payment Status`
+   - `Inventory Value`
    - `Customer CRM`
    - `Logistics`
    - `Top Products`
+   - `Low Stock Products`
+   - `Revenue Overview`
+   - `Recent Order Activity`
    - `Stock Movement Summary`
 3. Confirm the top date filters appear with:
-   - `date from`
-   - `date to`
+   - `start date`
+   - `end date`
    - `refresh`
 
 ## Refresh Reports By Date
@@ -523,6 +527,7 @@ npm run dev
 3. Click `Refresh`
 4. Confirm the reports reload without leaving the page
 5. Confirm at least `Sales Summary` and `Stock Movement Summary` respond to the selected date range
+6. Confirm `Revenue Overview`, `Order Status`, `Payment Status`, `Top Products`, and `Recent Order Activity` also respond to the selected date range
 
 ## Export Reports CSV
 
@@ -534,6 +539,26 @@ npm run dev
 6. In `Stock Movement Summary`, click `Export CSV`
 7. Confirm a CSV file downloads
 8. Open any exported file and confirm the column headers match the visible report table
+
+## Review Enhanced Report Sections
+
+1. Open `/dashboard/reports`
+2. Confirm `Revenue Overview` shows date-grouped rows with visual bars
+3. Confirm `Order Status` shows visual count bars plus amount totals
+4. Confirm `Payment Status` shows visual count bars plus amount totals
+5. Confirm `Low Stock Products` shows:
+   - product
+   - warehouse
+   - quantity
+   - threshold
+   - status
+6. Confirm `Recent Order Activity` shows:
+   - order number
+   - customer
+   - status
+   - payment
+   - total
+   - created date
 
 ## Create Shipment
 
@@ -770,8 +795,9 @@ npm run dev
 - Team permissions are assignment-based and do not yet hide every page or button in the UI
 - Activity logs currently cover selected high-value actions rather than every route in the system
 - Pending dispatch excludes orders that already have an active shipment unless that shipment was cancelled or returned
-- Reports in this phase are operational summaries, not full finance reports or accounting statements
+- Reports in this phase are operational summaries and enhancements, not full finance reports or accounting statements
 - CSV export is browser-generated from the currently loaded report data
+- Charts are implemented with lightweight CSS-based bars rather than a new chart dependency
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled
 - Logistics in this phase is internal-only tracking; no external courier API integration is performed
 - Purchase receiving can create a missing inventory row safely for the selected warehouse when stock is first received from a purchase order
