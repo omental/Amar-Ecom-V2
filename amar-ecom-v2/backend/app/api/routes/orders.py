@@ -132,11 +132,12 @@ def _build_invoice_metadata(
 ) -> InvoiceMetadataRead:
     return InvoiceMetadataRead(
         invoice_number=order.order_number,
-        invoice_title=template.header_text or settings.invoice_title,
-        accent_color=template.accent_color or settings.invoice_accent_color,
-        footer_note=template.footer_text or settings.invoice_footer_note,
-        terms=template.terms_text or settings.invoice_terms,
-        payment_instructions=template.payment_instructions or settings.payment_instructions,
+        invoice_title=(template.header_text if template else None) or settings.invoice_title,
+        accent_color=(template.accent_color if template else None) or settings.invoice_accent_color,
+        footer_note=(template.footer_text if template else None) or settings.invoice_footer_note,
+        terms=(template.terms_text if template else None) or settings.invoice_terms,
+        payment_instructions=(template.payment_instructions if template else None)
+        or settings.payment_instructions,
         signature_label=settings.invoice_signature_label,
         show_logo=settings.show_logo_on_invoice,
         show_business_address=settings.show_business_address_on_invoice,

@@ -81,6 +81,13 @@ type Order = {
   items: OrderItem[];
 };
 
+type ShipmentSummary = {
+  id: string;
+  order_id: string;
+  shipment_number: string;
+  status: string;
+};
+
 type OrderDuplicate = {
   id: string;
   order_number: string;
@@ -187,6 +194,7 @@ function parseTags(tags: string | null | undefined) {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [shipments, setShipments] = useState<ShipmentSummary[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
@@ -213,6 +221,15 @@ export default function OrdersPage() {
     () => new Map(warehouses.map((warehouse) => [warehouse.id, warehouse])),
     [warehouses],
   );
+  const shipmentOrderMap = useMemo(() => {
+    const map = new Map<string, ShipmentSummary[]>();
+    shipments.forEach((shipment) => {
+      const current = map.get(shipment.order_id) || [];
+      current.push(shipment);
+      map.set(shipment.order_id, current);
+    });
+    return map;
+  }, [shipments]);
 
   const subtotal = useMemo(
     () =>
@@ -261,11 +278,12 @@ export default function OrdersPage() {
 
     async function loadInitialData() {
       try {
-        const [ordersData, customersData, productsData, warehousesData] = await Promise.all([
+        const [ordersData, customersData, productsData, warehousesData, shipmentsData] = await Promise.all([
           api.get<Order[]>("/orders?skip=0&limit=50"),
           api.get<CustomerOption[]>("/customers?skip=0&limit=100"),
           api.get<ProductOption[]>("/products?skip=0&limit=100"),
           api.get<WarehouseOption[]>("/warehouses?skip=0&limit=100"),
+          api.get<ShipmentSummary[]>("/shipments?skip=0&limit=100"),
         ]);
 
         if (!isMounted) return;
@@ -273,6 +291,7 @@ export default function OrdersPage() {
         setCustomers(customersData);
         setProducts(productsData);
         setWarehouses(warehousesData);
+        setShipments(shipmentsData);
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof ApiError ? err.message : "Failed to load order data");
@@ -293,8 +312,12 @@ export default function OrdersPage() {
     setError("");
 
     try {
-      const data = await api.get<Order[]>("/orders?skip=0&limit=50");
-      setOrders(data);
+      const [ordersData, shipmentsData] = await Promise.all([
+        api.get<Order[]>("/orders?skip=0&limit=50"),
+        api.get<ShipmentSummary[]>("/shipments?skip=0&limit=100"),
+      ]);
+      setOrders(ordersData);
+      setShipments(shipmentsData);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load orders");
     }
@@ -1022,6 +1045,11 @@ export default function OrdersPage() {
                 {filteredOrders.map((order) => {
                   const hasNotes = Boolean(order.notes?.trim());
                   const tagList = parseTags(order.tags);
+                  const linkedShipments = shipmentOrderMap.get(order.id) || [];
+                  const hasShipment = linkedShipments.length > 0;
+                  const canCreateShipment =
+                    ["confirmed", "processing", "ready_to_ship"].includes(order.status) &&
+                    !hasShipment;
                   return (
                     <div
                       key={order.id}
@@ -1057,6 +1085,16 @@ export default function OrdersPage() {
                       </span>
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {order.stock_deducted ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                              Stock deducted
+                            </span>
+                          ) : null}
+                          {hasShipment ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700">
+                              Shipment linked
+                            </span>
+                          ) : null}
                           {hasNotes ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
                               <StickyNote className="h-3.5 w-3.5" />
@@ -1103,17 +1141,37 @@ export default function OrdersPage() {
                         <Link
                           href={`/dashboard/orders/${order.id}/invoice`}
                           className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                          title={
+                            order.printed_count > 0
+                              ? `Printed ${order.printed_count} times`
+                              : "Open invoice print view"
+                          }
                         >
                           <Printer className="h-3.5 w-3.5" />
                           Print
                         </Link>
-                        <Link
-                          href={`/dashboard/shipments?order_id=${order.id}`}
-                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                        >
-                          <PackagePlus className="h-3.5 w-3.5" />
-                          Create Shipment
-                        </Link>
+                        {hasShipment ? (
+                          <Link
+                            href={`/dashboard/shipments?order_id=${order.id}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <PackagePlus className="h-3.5 w-3.5" />
+                            View Shipment
+                          </Link>
+                        ) : canCreateShipment ? (
+                          <Link
+                            href={`/dashboard/logistics?order_id=${order.id}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <PackagePlus className="h-3.5 w-3.5" />
+                            Create Shipment
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-400">
+                            <PackagePlus className="h-3.5 w-3.5" />
+                            Dispatch later
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

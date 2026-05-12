@@ -1889,6 +1889,25 @@ Invoke-RestMethod `
 venv\Scripts\pytest.exe -q
 ```
 
+## Fresh Migration Validation On A Temporary Database
+
+Do not drop the main development database automatically.
+
+Recommended flow:
+
+1. Create a temporary PostgreSQL database.
+2. Point `DATABASE_URL` at the temporary database.
+3. Run:
+
+```powershell
+venv\Scripts\alembic.exe upgrade head
+```
+
+4. Smoke check:
+   - import `app.main`
+   - call `GET /api/v1/health`
+5. Drop the temporary database after validation.
+
 ## Seed Default Permissions
 
 ```powershell

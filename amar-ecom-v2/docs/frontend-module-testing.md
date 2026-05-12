@@ -1058,3 +1058,45 @@ npm run dev
 - Logistics in this phase is internal-only tracking; no external courier API integration is performed
 - Purchase receiving can create a missing inventory row safely for the selected warehouse when stock is first received from a purchase order
 - POS in this phase is a practical internal counter-sale foundation only: warehouse-first product search, walk-in customer capture, immediate stock deduction, optional finance transaction capture, and invoice/receipt handoff without barcode hardware or offline mode
+
+## Stabilization Checks
+
+1. Run `npm run lint`
+2. Run `npm run build`
+3. If build fails with a Windows `.next` `EPERM` lock:
+   - run `taskkill /F /IM node.exe`
+   - run `Remove-Item -Recurse -Force .next`
+   - run `npm run build` again
+
+Expected result:
+
+- lint should pass cleanly
+- build should pass once locked `.next` artifacts are released
+
+## Workflow Hardening Checks
+
+1. Sign in as an admin user and confirm the full sidebar is still visible
+2. If you have a non-admin user with explicit limited permissions, sign in and confirm the sidebar hides unrelated modules lightly without blocking admins
+3. Open `http://localhost:3000/dashboard/orders`
+4. Confirm recent orders now show clearer indicators for:
+   - stock deducted
+   - shipment linked
+   - notes/tags
+   - printed count
+5. Confirm dispatch-ready orders show a clearer `Create Shipment` path and shipped-linked rows show `View Shipment`
+6. Open `http://localhost:3000/dashboard/logistics`
+7. In `Pending Dispatch`, test:
+   - search by order/customer/phone
+   - status filter
+   - warehouse filter
+   - order-detail quick link
+8. In `Reconciliation`, test:
+   - reconciliation status filter
+   - courier filter
+9. Open `http://localhost:3000/dashboard/settings`
+10. Confirm:
+   - invoice preview tips are visible
+   - default template state is clearer
+   - preview fails gracefully when no orders exist
+11. Open `http://localhost:3000/dashboard/reports`
+12. Confirm `Low Stock Products` and `Recent order activity` now export CSV in the browser

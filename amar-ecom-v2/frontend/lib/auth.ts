@@ -62,3 +62,55 @@ export function logout() {
 export function isAuthenticated() {
   return Boolean(getToken());
 }
+
+export function isAdminUser(user?: AuthUser | null) {
+  const role = user?.role?.toLowerCase();
+  return role === "admin" || role === "super_admin";
+}
+
+export function hasPermission(permissionKey: string, user?: AuthUser | null) {
+  if (!user || isAdminUser(user)) {
+    return true;
+  }
+
+  const permissions = user.permissions;
+  if (!permissions || permissions.length === 0) {
+    return true;
+  }
+
+  return permissions.includes(permissionKey);
+}
+
+const modulePermissionMap: Record<string, string> = {
+  dashboard: "dashboard.view",
+  orders: "orders.view",
+  pos: "pos.view",
+  logistics: "logistics.view",
+  shipments: "shipments.view",
+  returns: "returns.view",
+  couriers: "couriers.view",
+  suppliers: "suppliers.view",
+  purchase_orders: "purchase_orders.view",
+  products: "products.view",
+  customers: "customers.view",
+  finance: "finance.view",
+  hr: "hr.view",
+  tasks: "tasks.view",
+  reports: "reports.view",
+  inventory: "inventory.view",
+  stock_movements: "stock_movements.view",
+  warehouses: "warehouses.view",
+  categories: "categories.view",
+  brands: "brands.view",
+  users: "users.view",
+  activity_logs: "activity_logs.view",
+  settings: "settings.view",
+};
+
+export function canAccessModule(moduleKey: string, user?: AuthUser | null) {
+  const permissionKey = modulePermissionMap[moduleKey];
+  if (!permissionKey) {
+    return true;
+  }
+  return hasPermission(permissionKey, user);
+}

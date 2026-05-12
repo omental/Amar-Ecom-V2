@@ -576,12 +576,35 @@ export default function ReportsPage() {
             </article>
 
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <PageHeader eyebrow="Low Stock Products" title="Reorder risk" description="Products at or below threshold with warehouse context." />
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <PackageSearch className="h-5 w-5" />
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <PageHeader eyebrow="Low Stock Products" title="Reorder risk" description="Products at or below threshold with warehouse context." />
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadCsv(
+                          "low-stock-products.csv",
+                          ["product_name", "sku", "warehouse_name", "quantity", "low_stock_threshold", "stock_status"],
+                          reports.lowStockProducts.map((item) => [
+                            item.product_name,
+                            item.sku,
+                            item.warehouse_name,
+                            item.quantity,
+                            item.low_stock_threshold,
+                            item.stock_status,
+                          ]),
+                        )
+                      }
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export CSV
+                    </button>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+                      <PackageSearch className="h-5 w-5" />
+                    </div>
+                  </div>
                 </div>
-              </div>
 
               <div className="mt-6">
                 {reports.lowStockProducts.length === 0 ? (
@@ -609,9 +632,32 @@ export default function ReportsPage() {
           </section>
 
           <section className="grid gap-4 xl:grid-cols-[0.98fr_1.02fr]">
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <PageHeader eyebrow="Recent Orders" title="Recent order activity" description="Latest order creation activity for admin monitoring." />
-              <div className="mt-6">
+              <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <PageHeader eyebrow="Recent Orders" title="Recent order activity" description="Latest order creation activity for admin monitoring." />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadCsv(
+                        "recent-order-activity.csv",
+                        ["order_number", "customer_name", "status", "payment_status", "total", "created_at"],
+                        reports.recentOrderActivity.map((item) => [
+                          item.order_number,
+                          item.customer_name,
+                          item.status,
+                          item.payment_status,
+                          item.total,
+                          item.created_at,
+                        ]),
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export CSV
+                  </button>
+                </div>
+                <div className="mt-6">
                 {reports.recentOrderActivity.length === 0 ? (
                   <EmptyState title="No recent order activity" description="Recent orders will appear here once the system is active." />
                 ) : (

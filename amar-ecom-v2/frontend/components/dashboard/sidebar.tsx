@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMemo } from "react";
 import {
   ArrowRightLeft,
   Boxes,
@@ -26,38 +27,45 @@ import {
   Warehouse,
 } from "lucide-react";
 
+import { canAccessModule, getUser } from "@/lib/auth";
+
 type SidebarProps = {
   onLogout: () => void;
 };
 
 const links = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/orders", label: "Orders", icon: ShoppingCart },
-  { href: "/dashboard/pos", label: "POS", icon: Store },
-  { href: "/dashboard/logistics", label: "Logistics", icon: Truck },
-  { href: "/dashboard/shipments", label: "Shipments", icon: PackageCheck },
-  { href: "/dashboard/returns", label: "Returns", icon: RotateCcw },
-  { href: "/dashboard/couriers", label: "Couriers", icon: Truck },
-  { href: "/dashboard/suppliers", label: "Suppliers", icon: Building2 },
-  { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
-  { href: "/dashboard/products", label: "Products", icon: Package },
-  { href: "/dashboard/customers", label: "Customers", icon: Users },
-  { href: "/dashboard/finance", label: "Finance", icon: Wallet },
-  { href: "/dashboard/hr", label: "HR", icon: IdCard },
-  { href: "/dashboard/tasks", label: "Tasks", icon: TicketCheck },
-  { href: "/dashboard/reports", label: "Reports", icon: PieChart },
-  { href: "/dashboard/inventory", label: "Inventory", icon: Boxes },
-  { href: "/dashboard/stock-movements", label: "Stock Movements", icon: ArrowRightLeft },
-  { href: "/dashboard/warehouses", label: "Warehouses", icon: Warehouse },
-  { href: "/dashboard/categories", label: "Categories", icon: ClipboardList },
-  { href: "/dashboard/brands", label: "Brands", icon: Tags },
-  { href: "/dashboard/users", label: "Team", icon: Building2 },
-  { href: "/dashboard/activity-logs", label: "Activity Logs", icon: History },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, moduleKey: "dashboard" },
+  { href: "/dashboard/orders", label: "Orders", icon: ShoppingCart, moduleKey: "orders" },
+  { href: "/dashboard/pos", label: "POS", icon: Store, moduleKey: "pos" },
+  { href: "/dashboard/logistics", label: "Logistics", icon: Truck, moduleKey: "logistics" },
+  { href: "/dashboard/shipments", label: "Shipments", icon: PackageCheck, moduleKey: "shipments" },
+  { href: "/dashboard/returns", label: "Returns", icon: RotateCcw, moduleKey: "returns" },
+  { href: "/dashboard/couriers", label: "Couriers", icon: Truck, moduleKey: "couriers" },
+  { href: "/dashboard/suppliers", label: "Suppliers", icon: Building2, moduleKey: "suppliers" },
+  { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ClipboardList, moduleKey: "purchase_orders" },
+  { href: "/dashboard/products", label: "Products", icon: Package, moduleKey: "products" },
+  { href: "/dashboard/customers", label: "Customers", icon: Users, moduleKey: "customers" },
+  { href: "/dashboard/finance", label: "Finance", icon: Wallet, moduleKey: "finance" },
+  { href: "/dashboard/hr", label: "HR", icon: IdCard, moduleKey: "hr" },
+  { href: "/dashboard/tasks", label: "Tasks", icon: TicketCheck, moduleKey: "tasks" },
+  { href: "/dashboard/reports", label: "Reports", icon: PieChart, moduleKey: "reports" },
+  { href: "/dashboard/inventory", label: "Inventory", icon: Boxes, moduleKey: "inventory" },
+  { href: "/dashboard/stock-movements", label: "Stock Movements", icon: ArrowRightLeft, moduleKey: "stock_movements" },
+  { href: "/dashboard/warehouses", label: "Warehouses", icon: Warehouse, moduleKey: "warehouses" },
+  { href: "/dashboard/categories", label: "Categories", icon: ClipboardList, moduleKey: "categories" },
+  { href: "/dashboard/brands", label: "Brands", icon: Tags, moduleKey: "brands" },
+  { href: "/dashboard/users", label: "Team", icon: Building2, moduleKey: "users" },
+  { href: "/dashboard/activity-logs", label: "Activity Logs", icon: History, moduleKey: "activity_logs" },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, moduleKey: "settings" },
 ];
 
 export function DashboardSidebar({ onLogout }: SidebarProps) {
   const pathname = usePathname();
+  const user = getUser();
+  const visibleLinks = useMemo(
+    () => links.filter((link) => canAccessModule(link.moduleKey, user)),
+    [user],
+  );
 
   return (
     <aside className="flex w-full flex-col justify-between rounded-[28px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-soft)] lg:w-[272px]">
@@ -75,7 +83,7 @@ export function DashboardSidebar({ onLogout }: SidebarProps) {
         </div>
 
         <nav className="space-y-1.5">
-          {links.map(({ href, label, icon: Icon }) => {
+          {visibleLinks.map(({ href, label, icon: Icon }) => {
             const isActive = pathname === href;
 
             return (

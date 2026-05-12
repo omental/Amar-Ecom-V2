@@ -463,7 +463,14 @@ export default function SettingsPage() {
                   Open the latest order invoice preview using current settings.
                 </p>
               </Link>
-            ) : null}
+            ) : (
+              <div className="rounded-[28px] border border-dashed border-slate-200 bg-slate-50 px-5 py-5 text-sm font-semibold text-slate-700 shadow-[var(--shadow-soft)]">
+                Preview Invoice
+                <p className="mt-2 text-sm font-normal leading-6 text-slate-500">
+                  No order exists yet, so invoice preview is unavailable. Create an order first to preview the current invoice setup.
+                </p>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -685,6 +692,13 @@ export default function SettingsPage() {
                 }
               >
                 <div className="space-y-4">
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-800">
+                    <p className="font-semibold text-sky-900">Invoice Preview Tips</p>
+                    <p className="mt-2 leading-6">
+                      Save settings first, then preview the latest order invoice. Template text can override the title, footer, terms, and payment instructions, while visibility toggles still come from business settings.
+                    </p>
+                  </div>
+
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="block">
                       <span className="mb-2 block text-sm font-medium text-slate-700">Invoice title</span>
@@ -715,6 +729,13 @@ export default function SettingsPage() {
                           </option>
                         ))}
                       </select>
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        {templates.find((template) => template.slug === form.invoice_template)?.is_default
+                          ? "This selection matches the current default invoice template."
+                          : form.invoice_template === "standard"
+                            ? "Using standard business settings instead of a saved invoice template."
+                            : "This selection overrides the current default template for invoice text and styling."}
+                      </p>
                     </label>
 
                     <label className="block">
@@ -1022,7 +1043,7 @@ export default function SettingsPage() {
 
               <FormCard
                 title="Active invoice templates"
-                description="Set the default template, edit reusable display text, or deactivate templates you no longer need."
+                description="Set the default template clearly, edit reusable display text, or deactivate templates you no longer need."
               >
                 <div className="space-y-3">
                   {templates.length === 0 ? (
@@ -1043,7 +1064,11 @@ export default function SettingsPage() {
                                 <span className="rounded-full bg-slate-950 px-2.5 py-1 text-xs font-semibold text-white">
                                   Default
                                 </span>
-                              ) : null}
+                              ) : (
+                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+                                  Current default
+                                </span>
+                              )}
                             </div>
                             <p className="text-sm text-slate-500">{template.slug}</p>
                             {template.description ? (

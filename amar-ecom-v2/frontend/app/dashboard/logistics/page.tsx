@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Loader2,
   PackageCheck,
   Rows3,
   Scale,
+  Search,
   Truck,
   Wallet,
 } from "lucide-react";
@@ -141,11 +143,17 @@ function toNumber(value: string | number | null | undefined) {
 }
 
 export default function LogisticsPage() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("pending-dispatch");
   const [pendingDispatchOrders, setPendingDispatchOrders] = useState<PendingDispatchOrder[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<PendingDispatchOrder | null>(null);
+  const [pendingSearch, setPendingSearch] = useState("");
+  const [pendingStatusFilter, setPendingStatusFilter] = useState("all");
+  const [pendingWarehouseFilter, setPendingWarehouseFilter] = useState("all");
+  const [reconciliationStatusFilter, setReconciliationStatusFilter] = useState("all");
+  const [reconciliationCourierFilter, setReconciliationCourierFilter] = useState("all");
   const [createShipmentForm, setCreateShipmentForm] = useState<CreateShipmentForm>(initialCreateShipmentForm);
   const [reconciliationForm, setReconciliationForm] = useState<ReconciliationForm>(initialReconciliationForm);
   const [isLoading, setIsLoading] = useState(true);
@@ -158,6 +166,63 @@ export default function LogisticsPage() {
     () => shipments.filter((shipment) => !["settled", "cancelled"].includes(shipment.reconciliation_status)).length,
     [shipments],
   );
+  const pendingWarehouseOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          pendingDispatchOrders
+            .filter((order) => order.warehouse)
+            .map((order) => [order.warehouse!.id, order.warehouse!]),
+        ).values(),
+      ),
+    [pendingDispatchOrders],
+  );
+  const filteredPendingDispatchOrders = useMemo(() => {
+    const search = pendingSearch.trim().toLowerCase();
+    return pendingDispatchOrders.filter((order) => {
+      if (pendingStatusFilter !== "all" && order.status !== pendingStatusFilter) {
+        return false;
+      }
+      if (pendingWarehouseFilter !== "all" && (order.warehouse?.id || "") !== pendingWarehouseFilter) {
+        return false;
+      }
+      if (!search) {
+        return true;
+      }
+      const haystack = [
+        order.order_number,
+        order.customer?.name,
+        order.customer_phone,
+        order.customer?.phone,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search);
+    });
+  }, [pendingDispatchOrders, pendingSearch, pendingStatusFilter, pendingWarehouseFilter]);
+  const filteredReconciliationShipments = useMemo(() => {
+    return shipments.filter((shipment) => {
+      if (
+        reconciliationStatusFilter !== "all" &&
+        shipment.reconciliation_status !== reconciliationStatusFilter
+      ) {
+        return false;
+      }
+      if (
+        reconciliationCourierFilter !== "all" &&
+        (shipment.courier?.id || "") !== reconciliationCourierFilter
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [shipments, reconciliationStatusFilter, reconciliationCourierFilter]);
+  const selectedOrderIdFromQuery = searchParams.get("order_id");
+  const selectedOrderForForm =
+    selectedOrder ||
+    pendingDispatchOrders.find((item) => item.id === selectedOrderIdFromQuery) ||
+    null;
 
   useEffect(() => {
     let isMounted = true;
@@ -208,7 +273,7 @@ export default function LogisticsPage() {
 
   async function handleCreateShipment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedOrder) {
+    if (!selectedOrderForForm) {
       return;
     }
 
@@ -217,7 +282,7 @@ export default function LogisticsPage() {
     setIsCreatingShipment(true);
 
     try {
-      await api.post<Shipment>(`/orders/${selectedOrder.id}/create-shipment`, {
+      await api.post<Shipment>(`/orders/${selectedOrderForForm.id}/create-shipment`, {
         courier_id: createShipmentForm.courier_id || null,
         tracking_number: createShipmentForm.tracking_number || null,
         shipment_number: createShipmentForm.shipment_number || null,
@@ -351,14 +416,48 @@ export default function LogisticsPage() {
             />
 
             <div className="mt-6">
-              {pendingDispatchOrders.length === 0 ? (
+              <div className="mb-4 grid gap-3 xl:grid-cols-[1.2fr_0.8fr_0.8fr]">
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={pendingSearch}
+                    onChange={(event) => setPendingSearch(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                    placeholder="Search order, customer, or phone"
+                  />
+                </label>
+                <select
+                  value={pendingStatusFilter}
+                  onChange={(event) => setPendingStatusFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="processing">Processing</option>
+                  <option value="ready_to_ship">Ready to ship</option>
+                </select>
+                <select
+                  value={pendingWarehouseFilter}
+                  onChange={(event) => setPendingWarehouseFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="all">All warehouses</option>
+                  {pendingWarehouseOptions.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {filteredPendingDispatchOrders.length === 0 ? (
                 <EmptyState
                   title="No pending dispatch orders"
                   description="Orders with confirmed, processing, or ready-to-ship status and no active shipment will appear here."
                 />
               ) : (
                 <DataTable columns={["Order", "Customer", "Address", "Status", "Total", "Warehouse", "Actions"]}>
-                  {pendingDispatchOrders.map((order) => (
+                  {filteredPendingDispatchOrders.map((order) => (
                     <div
                       key={order.id}
                       className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-7 2xl:gap-4"
@@ -398,6 +497,13 @@ export default function LogisticsPage() {
                         <Truck className="h-3.5 w-3.5" />
                         Create Shipment
                       </button>
+                      <Link
+                        href={`/dashboard/orders/${order.id}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                      >
+                        <Rows3 className="h-3.5 w-3.5" />
+                        Order Detail
+                      </Link>
                     </div>
                   ))}
                 </DataTable>
@@ -406,9 +512,9 @@ export default function LogisticsPage() {
           </section>
 
           <FormCard
-            title={selectedOrder ? `Create shipment for ${selectedOrder.order_number}` : "Create shipment from dispatch queue"}
+            title={selectedOrderForForm ? `Create shipment for ${selectedOrderForForm.order_number}` : "Create shipment from dispatch queue"}
             description={
-              selectedOrder
+              selectedOrderForForm
                 ? "Prefill shipment details from the order and move it into active logistics tracking."
                 : "Select a pending-dispatch order from the table to open the shipment creation form."
             }
@@ -418,16 +524,16 @@ export default function LogisticsPage() {
               </div>
             }
           >
-            {!selectedOrder ? (
+            {!selectedOrderForForm ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-sm text-slate-500">
                 No order selected yet.
               </div>
             ) : (
               <form onSubmit={handleCreateShipment} className="space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                  <p className="font-semibold text-slate-950">{selectedOrder.order_number}</p>
-                  <p className="mt-1">{selectedOrder.customer?.name || "Guest customer"}</p>
-                  <p className="mt-1">{selectedOrder.shipping_address || "No delivery address"}</p>
+                  <p className="font-semibold text-slate-950">{selectedOrderForForm.order_number}</p>
+                  <p className="mt-1">{selectedOrderForForm.customer?.name || "Guest customer"}</p>
+                  <p className="mt-1">{selectedOrderForForm.shipping_address || "No delivery address"}</p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -676,18 +782,45 @@ export default function LogisticsPage() {
             <PageHeader
               eyebrow="Money Reconciliation"
               title="Shipment reconciliation"
-              description="Compare COD, courier charges, collections, and settlement state for internal tracking."
+              description="Compare COD, courier charges, collections, and settlement state for internal reconciliation tracking."
             />
 
             <div className="mt-6">
-              {shipments.length === 0 ? (
+              <div className="mb-4 grid gap-3 xl:grid-cols-2">
+                <select
+                  value={reconciliationStatusFilter}
+                  onChange={(event) => setReconciliationStatusFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="all">All reconciliation statuses</option>
+                  {reconciliationStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {formatLabel(status)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={reconciliationCourierFilter}
+                  onChange={(event) => setReconciliationCourierFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="all">All couriers</option>
+                  {couriers.map((courier) => (
+                    <option key={courier.id} value={courier.id}>
+                      {courier.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {filteredReconciliationShipments.length === 0 ? (
                 <EmptyState
                   title="No shipments available for reconciliation"
                   description="Create shipments first to begin reconciliation work."
                 />
               ) : (
                 <DataTable columns={["Shipment", "Courier", "COD", "Courier Charge", "Collected", "Status", "Reconciled", "Actions"]}>
-                  {shipments.map((shipment) => (
+                  {filteredReconciliationShipments.map((shipment) => (
                     <div
                       key={shipment.id}
                       className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-8 2xl:gap-4"
