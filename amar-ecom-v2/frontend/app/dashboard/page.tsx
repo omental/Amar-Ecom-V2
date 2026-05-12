@@ -662,6 +662,12 @@ export default function DashboardPage() {
           >
             Open HR
           </Link>
+          <Link
+            href="/dashboard/admin-tools"
+            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            Open Admin Tools
+          </Link>
         </article>
       </section>
     </div>

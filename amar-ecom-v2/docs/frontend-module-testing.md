@@ -1100,3 +1100,23 @@ Expected result:
    - preview fails gracefully when no orders exist
 11. Open `http://localhost:3000/dashboard/reports`
 12. Confirm `Low Stock Products` and `Recent order activity` now export CSV in the browser
+
+## Admin Tools Checks
+
+1. Open `http://localhost:3000/dashboard/admin-tools`
+2. Confirm the page loads sections for:
+   - `System Health`
+   - `Data Export`
+   - `Backup Guidance`
+   - `Maintenance Checklist`
+3. In `System Health`, click `Refresh`
+4. Confirm API status, database status, environment, migration state, and record counts render without runtime errors
+5. In `Data Export`, download at least one CSV and confirm the browser starts the file download
+6. In `Backup Guidance`, confirm the page shows:
+   - `pg_dump` command template
+   - folders to back up
+   - restore checklist
+   - `.env` warning
+7. In `Maintenance Checklist`, confirm pass/warning/fail badges, recommended action text, and module links render correctly
+8. Open `http://localhost:3000/dashboard/settings`
+9. Confirm there is now an `Admin Tools` link for backup/export operations

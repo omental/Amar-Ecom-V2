@@ -208,3 +208,17 @@ Expected:
 - report cards/tables load without runtime errors
 - date-filtered finance summary responds correctly
 - browser CSV exports succeed without adding chart dependencies
+
+### Admin Tools Check
+
+1. Open `/dashboard/admin-tools`.
+2. Refresh system health.
+3. Download at least one CSV export.
+4. Review backup guidance.
+5. Review the maintenance checklist and follow one module link if a warning item is present.
+
+Expected:
+- system health returns API, database, environment, migration, and record-count data
+- CSV downloads succeed with the active authenticated session
+- backup guidance shows a safe `pg_dump` template without exposing secrets
+- maintenance checklist shows pass/warning/fail states with useful next actions

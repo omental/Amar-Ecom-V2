@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Settings,
   ShoppingCart,
+  ShieldCheck,
   Store,
   Tags,
   TicketCheck,
@@ -56,6 +57,7 @@ const links = [
   { href: "/dashboard/brands", label: "Brands", icon: Tags, moduleKey: "brands" },
   { href: "/dashboard/users", label: "Team", icon: Building2, moduleKey: "users" },
   { href: "/dashboard/activity-logs", label: "Activity Logs", icon: History, moduleKey: "activity_logs" },
+  { href: "/dashboard/admin-tools", label: "Admin Tools", icon: ShieldCheck, moduleKey: "admin_tools", requiresAdmin: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, moduleKey: "settings" },
 ];
 
@@ -63,7 +65,13 @@ export function DashboardSidebar({ onLogout }: SidebarProps) {
   const pathname = usePathname();
   const user = getUser();
   const visibleLinks = useMemo(
-    () => links.filter((link) => canAccessModule(link.moduleKey, user)),
+    () =>
+      links.filter((link) => {
+        if (link.requiresAdmin) {
+          return user?.role === "admin" || user?.role === "super_admin";
+        }
+        return canAccessModule(link.moduleKey, user);
+      }),
     [user],
   );
 

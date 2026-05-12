@@ -89,6 +89,8 @@ This phase adds the POS order-fields migration:
 
 Reports foundation adds endpoints only and does not require a new migration.
 
+Phase 11C adds admin tooling endpoints only and does not require a new migration.
+
 ## Start API
 
 ```powershell
@@ -750,6 +752,74 @@ Expected result:
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
 ```
+
+## Admin System Health
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/admin/system-health `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns API and database service status
+- returns environment
+- returns migration head/current information when available
+- returns record counts for users, products, orders, inventory, customers, finance accounts, tasks, and employees
+
+## Admin Backup Guidance
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/admin/backup-guidance `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns a safe `pg_dump` command template without a password
+- returns folders to back up
+- returns a restore checklist
+- reminds operators not to commit `.env` files
+
+## Admin Maintenance Checklist
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/admin/maintenance-checklist `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns pass/warning/fail checklist items
+- includes readiness checks for migrations, admin access, warehouses, finance account setup, invoice templates, permissions, low-stock workload, shipments, reconciliation, and pending tasks
+
+## Admin CSV Export: Products
+
+```powershell
+Invoke-WebRequest `
+  -Uri http://127.0.0.1:8000/api/v1/admin/exports/products `
+  -Headers $headers `
+  -OutFile .\products-export.csv
+```
+
+Expected result:
+
+- response content type is `text/csv`
+- filename header is set
+- downloaded CSV contains compact operational columns
+
+Repeat the same pattern for:
+
+- `/api/v1/admin/exports/customers`
+- `/api/v1/admin/exports/orders`
+- `/api/v1/admin/exports/inventory`
+- `/api/v1/admin/exports/stock-movements`
+- `/api/v1/admin/exports/transactions`
+- `/api/v1/admin/exports/suppliers`
+- `/api/v1/admin/exports/purchase-orders`
 
 ## Register
 

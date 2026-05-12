@@ -57,3 +57,4 @@ Phase 11B follow-up:
 If the warning still appears in a local environment:
 - verify the app is started from `D:\Amar-eCom\amar-ecom-v2\frontend`
 - check whether another parent workspace tool is overriding the root at runtime
+- confirm the build command is being run from the frontend workspace before changing config again

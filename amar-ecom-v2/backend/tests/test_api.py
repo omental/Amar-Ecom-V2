@@ -106,6 +106,62 @@ def test_protected_route_accepts_with_token() -> None:
     assert isinstance(response.json(), list)
 
 
+def test_admin_tools_endpoints() -> None:
+    headers = auth_headers()
+    staff_email = unique_email()
+
+    try:
+        with TestClient(app) as client:
+            staff_register_response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "full_name": "Staff User",
+                    "email": staff_email,
+                    "password": "StrongPass123",
+                    "role": "staff",
+                    "is_active": True,
+                },
+            )
+            assert staff_register_response.status_code == 201, staff_register_response.text
+
+            staff_login_response = client.post(
+                "/api/v1/auth/login",
+                json={"email": staff_email, "password": "StrongPass123"},
+            )
+            assert staff_login_response.status_code == 200, staff_login_response.text
+            staff_headers = {"Authorization": f"Bearer {staff_login_response.json()['access_token']}"}
+
+            health_response = client.get("/api/v1/admin/system-health", headers=headers)
+            assert health_response.status_code == 200, health_response.text
+            health_body = health_response.json()
+            assert health_body["service_status"]["api"] == "ok"
+            assert "counts" in health_body
+
+            backup_response = client.get("/api/v1/admin/backup-guidance", headers=headers)
+            assert backup_response.status_code == 200, backup_response.text
+            backup_body = backup_response.json()
+            assert "pg_dump" in backup_body["pg_dump_command_template"]
+
+            checklist_response = client.get("/api/v1/admin/maintenance-checklist", headers=headers)
+            assert checklist_response.status_code == 200, checklist_response.text
+            checklist_body = checklist_response.json()
+            assert any(item["key"] == "migrations_applied" for item in checklist_body["items"])
+
+            export_response = client.get("/api/v1/admin/exports/products", headers=headers)
+            assert export_response.status_code == 200, export_response.text
+            assert export_response.headers["content-type"].startswith("text/csv")
+            assert "attachment; filename=\"products.csv\"" == export_response.headers["content-disposition"]
+
+            forbidden_response = client.get("/api/v1/admin/system-health", headers=staff_headers)
+            assert forbidden_response.status_code == 403, forbidden_response.text
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_team_permissions_and_activity_logs_flow() -> None:
     try:
         headers = auth_headers()

@@ -453,6 +453,15 @@ export default function SettingsPage() {
                 Open the team workspace to assign module permissions.
               </p>
             </Link>
+            <Link
+              href="/dashboard/admin-tools"
+              className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm font-semibold text-slate-700 shadow-[var(--shadow-soft)] transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Admin Tools
+              <p className="mt-2 text-sm font-normal leading-6 text-slate-500">
+                Review system health, CSV exports, backup guidance, and maintenance readiness.
+              </p>
+            </Link>
             {latestOrder ? (
               <Link
                 href={`/dashboard/orders/${latestOrder.id}/invoice`}

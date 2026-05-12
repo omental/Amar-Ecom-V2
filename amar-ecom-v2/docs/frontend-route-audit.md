@@ -35,6 +35,7 @@ Status labels:
 | `/dashboard/reports` | Working | `/api/v1/reports/*` | Stronger reporting base exists, but advanced charts/saved views remain limited. |
 | `/dashboard/users` | Partial | `/api/v1/users`, `/api/v1/permissions`, `/api/v1/users/{id}/permissions`, `/api/v1/activity-logs` | Permission assignment exists, but full UI enforcement is still incomplete. |
 | `/dashboard/activity-logs` | Working | `/api/v1/activity-logs` | Good audit visibility; filtering depth can still expand later. |
+| `/dashboard/admin-tools` | Working | `/api/v1/admin/system-health`, `/api/v1/admin/backup-guidance`, `/api/v1/admin/maintenance-checklist`, `/api/v1/admin/exports/*` | Admin-only release-readiness workspace; no actual backup execution and no deep permission engine yet. |
 | `/dashboard/settings` | Working | `/api/v1/settings/business`, `/api/v1/invoice-templates`, `/api/v1/orders/{id}/invoice-data` for preview paths | Business/invoice coverage improved, but broader admin/settings parity is still missing. |
 
 ## Present But Outside Requested List

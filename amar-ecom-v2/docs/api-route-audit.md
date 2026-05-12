@@ -21,6 +21,7 @@ Scope:
 | Users | `/api/v1/users` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Team/user CRUD; permission assignment endpoints live separately. |
 | Permissions | `/api/v1` | `GET /permissions`, `POST /permissions/seed-defaults`, `GET/PATCH /users/{id}/permissions` | Protected | Permission matrix exists, but frontend enforcement is still partial. |
 | Activity Logs | `/api/v1/activity-logs` | `GET /` | Protected | Filtered audit feed across implemented modules. |
+| Admin Tools | `/api/v1/admin` | `GET /system-health`, `GET /backup-guidance`, `GET /maintenance-checklist`, `GET /exports/*` | Protected | Admin and super-admin focused release-readiness surface for health checks, exports, and backup guidance. |
 | Settings | `/api/v1/settings` | `GET /business`, `PATCH /business` | Protected | Business and invoice display settings live here. |
 | Invoice Templates | `/api/v1/invoice-templates` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, `POST /{id}/set-default` | Protected | Deactivate uses soft behavior. |
 | Categories | `/api/v1/categories` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Standard master-data CRUD. |
