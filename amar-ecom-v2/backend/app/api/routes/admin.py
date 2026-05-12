@@ -9,6 +9,7 @@ from alembic.script import ScriptDirectory
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +33,7 @@ from app.models import (
     Transaction,
     User,
     Warehouse,
+    WooCommerceSyncLog,
 )
 from app.schemas.admin import (
     BackupGuidanceRead,
@@ -254,6 +256,10 @@ async def get_maintenance_checklist(
         )
         or 0
     )
+    try:
+        woo_sync_log_count = await _count_rows(db, WooCommerceSyncLog)
+    except ProgrammingError:
+        woo_sync_log_count = 0
 
     items = [
         MaintenanceChecklistItemRead(
@@ -343,6 +349,14 @@ async def get_maintenance_checklist(
             value=str(pending_task_count),
             recommended_action="Review open operational tasks and resolve blockers before release.",
             route="/dashboard/tasks",
+        ),
+        MaintenanceChecklistItemRead(
+            key="woo_sync_logs",
+            label="WooCommerce sync log entries",
+            status="pass" if woo_sync_log_count > 0 else "warning",
+            value=str(woo_sync_log_count),
+            recommended_action="Run a connection test and a preview/import dry pass before relying on manual WooCommerce imports.",
+            route="/dashboard/woocommerce",
         ),
     ]
 

@@ -26,6 +26,8 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("customers", "create"),
     ("customers", "update"),
     ("customers", "delete"),
+    ("woocommerce", "view"),
+    ("woocommerce", "import"),
     ("pos", "view"),
     ("pos", "checkout"),
     ("pos", "refund"),

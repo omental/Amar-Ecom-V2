@@ -139,6 +139,19 @@ from app.schemas.supplier import (
 from app.schemas.task import TaskCreate, TaskRead, TaskSummaryRead, TaskUpdate
 from app.schemas.user import LoginRequest, TokenResponse, UserCreate, UserRead, UserUpdate
 from app.schemas.warehouse import WarehouseCreate, WarehouseRead, WarehouseUpdate
+from app.schemas.woocommerce import (
+    WooCommerceConnectionTestRead,
+    WooCommerceImportRequest,
+    WooCommerceImportResult,
+    WooCommerceOrderPreviewListRead,
+    WooCommerceOrderPreviewRead,
+    WooCommerceProductPreviewListRead,
+    WooCommerceProductPreviewRead,
+    WooCommerceSettingCreate,
+    WooCommerceSettingRead,
+    WooCommerceSettingUpdate,
+    WooCommerceSyncLogRead,
+)
 
 __all__ = [
     "AccountCreate",
@@ -275,6 +288,17 @@ __all__ = [
     "WarehouseCreate",
     "WarehouseRead",
     "WarehouseUpdate",
+    "WooCommerceConnectionTestRead",
+    "WooCommerceImportRequest",
+    "WooCommerceImportResult",
+    "WooCommerceOrderPreviewListRead",
+    "WooCommerceOrderPreviewRead",
+    "WooCommerceProductPreviewListRead",
+    "WooCommerceProductPreviewRead",
+    "WooCommerceSettingCreate",
+    "WooCommerceSettingRead",
+    "WooCommerceSettingUpdate",
+    "WooCommerceSyncLogRead",
     "WastageLogCreate",
     "WastageLogRead",
 ]

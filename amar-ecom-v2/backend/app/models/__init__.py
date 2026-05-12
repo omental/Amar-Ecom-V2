@@ -17,6 +17,7 @@ from app.models.supplier import PurchaseOrder, PurchaseOrderItem, Supplier
 from app.models.task import Task
 from app.models.user import User
 from app.models.warehouse import Warehouse
+from app.models.woocommerce import WooCommerceSetting, WooCommerceSyncLog
 
 __all__ = [
     "ActivityLog",
@@ -58,4 +59,6 @@ __all__ = [
     "User",
     "UserPermission",
     "Warehouse",
+    "WooCommerceSetting",
+    "WooCommerceSyncLog",
 ]

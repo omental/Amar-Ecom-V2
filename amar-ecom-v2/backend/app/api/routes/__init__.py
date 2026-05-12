@@ -38,6 +38,7 @@ from app.api.routes import (
     users,
     warehouses,
     wastage_logs,
+    woocommerce,
 )
 
 
@@ -79,5 +80,6 @@ api_router.include_router(supplier_payments.router, prefix="/supplier-payments",
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(transactions.router, prefix="/transactions", tags=["transactions"])
 api_router.include_router(warehouses.router, prefix="/warehouses", tags=["warehouses"])
+api_router.include_router(woocommerce.router, prefix="/woocommerce", tags=["woocommerce"])
 
 __all__ = ["api_router"]
