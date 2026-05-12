@@ -1135,6 +1135,101 @@ def test_finance_foundation_flow() -> None:
     dispose_engine()
 
 
+def test_tasks_foundation_flow() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            assignee_response = client.post(
+                "/api/v1/users",
+                headers=headers,
+                json={
+                    "full_name": "Task Assignee",
+                    "email": unique_email(),
+                    "password": "StrongPass123",
+                    "role": "staff",
+                    "is_active": True,
+                },
+            )
+            assert assignee_response.status_code == 201, assignee_response.text
+            assignee = assignee_response.json()
+
+            create_task_response = client.post(
+                "/api/v1/tasks",
+                headers=headers,
+                json={
+                    "title": "Review overdue orders",
+                    "description": "Check pending orders and move blockers forward.",
+                    "status": "todo",
+                    "priority": "urgent",
+                    "assigned_to_id": assignee["id"],
+                    "related_module": "orders",
+                    "related_entity_type": "order_batch",
+                    "related_entity_id": "BATCH-1",
+                    "due_date": "2026-05-20T09:00:00Z",
+                },
+            )
+            assert create_task_response.status_code == 201, create_task_response.text
+            created_task = create_task_response.json()
+            assert created_task["assigned_to"]["id"] == assignee["id"]
+            assert created_task["created_by"] is not None
+
+            filtered_tasks_response = client.get(
+                f"/api/v1/tasks?status=todo&priority=urgent&assigned_to_id={assignee['id']}&search=overdue",
+                headers=headers,
+            )
+            assert filtered_tasks_response.status_code == 200, filtered_tasks_response.text
+            filtered_tasks = filtered_tasks_response.json()
+            assert len(filtered_tasks) == 1
+            assert filtered_tasks[0]["id"] == created_task["id"]
+
+            complete_task_response = client.patch(
+                f"/api/v1/tasks/{created_task['id']}",
+                headers=headers,
+                json={
+                    "status": "completed",
+                    "priority": "high",
+                },
+            )
+            assert complete_task_response.status_code == 200, complete_task_response.text
+            completed_task = complete_task_response.json()
+            assert completed_task["status"] == "completed"
+            assert completed_task["completed_at"] is not None
+
+            summary_response = client.get("/api/v1/tasks/summary", headers=headers)
+            assert summary_response.status_code == 200, summary_response.text
+            summary = summary_response.json()
+            assert summary["total_tasks"] >= 1
+            assert summary["completed_tasks"] >= 1
+            assert summary["urgent_tasks"] == 0
+
+            cancel_task_response = client.delete(
+                f"/api/v1/tasks/{created_task['id']}",
+                headers=headers,
+            )
+            assert cancel_task_response.status_code == 200, cancel_task_response.text
+            cancelled_task = cancel_task_response.json()
+            assert cancelled_task["status"] == "cancelled"
+            assert cancelled_task["completed_at"] is None
+
+            activity_logs_response = client.get("/api/v1/activity-logs?module=tasks&limit=50", headers=headers)
+            assert activity_logs_response.status_code == 200, activity_logs_response.text
+            task_logs = activity_logs_response.json()
+            assert any(log["action"] == "task_created" for log in task_logs)
+            assert any(log["action"] == "task_assigned" for log in task_logs)
+            assert any(log["action"] == "task_updated" for log in task_logs)
+            assert any(log["action"] == "task_status_changed" for log in task_logs)
+            assert any(log["action"] == "task_cancelled" for log in task_logs)
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["tasks", "activity_logs"]):
+            pytest.skip("Apply the tasks foundation migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_order_warehouse_assignment_and_fulfillment() -> None:
     headers = auth_headers()
 

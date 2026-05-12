@@ -13,6 +13,7 @@ from app.models.product import Product, ProductVariant
 from app.models.return_request import ReturnItem, ReturnRequest
 from app.models.stock_movement import StockMovement
 from app.models.supplier import PurchaseOrder, PurchaseOrderItem, Supplier
+from app.models.task import Task
 from app.models.user import User
 from app.models.warehouse import Warehouse
 
@@ -47,6 +48,7 @@ __all__ = [
     "ShipmentEvent",
     "Supplier",
     "StockMovement",
+    "Task",
     "User",
     "UserPermission",
     "Warehouse",

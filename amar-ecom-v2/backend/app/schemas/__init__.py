@@ -108,6 +108,7 @@ from app.schemas.supplier import (
     SupplierRead,
     SupplierUpdate,
 )
+from app.schemas.task import TaskCreate, TaskRead, TaskSummaryRead, TaskUpdate
 from app.schemas.user import LoginRequest, TokenResponse, UserCreate, UserRead, UserUpdate
 from app.schemas.warehouse import WarehouseCreate, WarehouseRead, WarehouseUpdate
 
@@ -200,6 +201,10 @@ __all__ = [
     "SupplierPaymentRead",
     "SupplierRead",
     "SupplierUpdate",
+    "TaskCreate",
+    "TaskRead",
+    "TaskSummaryRead",
+    "TaskUpdate",
     "TokenResponse",
     "TopProductReportItemRead",
     "TransactionCreate",

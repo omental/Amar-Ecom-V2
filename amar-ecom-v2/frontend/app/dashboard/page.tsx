@@ -10,6 +10,7 @@ import {
   PackageCheck,
   RotateCcw,
   ShoppingCart,
+  TicketCheck,
   Users,
   Wallet,
   Wifi,
@@ -49,11 +50,20 @@ type StatsState = {
   recentStockMovements: number;
   financeCashBalance: number;
   financeNetCashFlow: number;
+  totalTasks: number;
+  overdueTasks: number;
+  myOpenTasks: number;
 };
 
 type FinanceSummaryResponse = {
   total_cash_bank_balance: number | string;
   net_cash_flow: number | string;
+};
+
+type TaskSummaryResponse = {
+  total_tasks: number;
+  overdue_tasks: number;
+  my_open_tasks: number;
 };
 
 function getCollectionCount(payload: unknown) {
@@ -108,6 +118,9 @@ export default function DashboardPage() {
     recentStockMovements: 0,
     financeCashBalance: 0,
     financeNetCashFlow: 0,
+    totalTasks: 0,
+    overdueTasks: 0,
+    myOpenTasks: 0,
   });
   const [statsError, setStatsError] = useState("");
   const [backendStatus, setBackendStatus] = useState<{
@@ -123,7 +136,7 @@ export default function DashboardPage() {
 
     async function checkBackend() {
       try {
-        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary] = await Promise.all([
+        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary, taskSummary] = await Promise.all([
           api.get<HealthResponse>("/health"),
           api.get<unknown>("/products?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100"),
@@ -138,6 +151,7 @@ export default function DashboardPage() {
           api.get<unknown>("/purchase-orders?skip=0&limit=100"),
           api.get<BusinessSettingsResponse>("/settings/business"),
           api.get<FinanceSummaryResponse>("/finance/summary").catch(() => null),
+          api.get<TaskSummaryResponse>("/tasks/summary").catch(() => null),
         ]);
         if (!isMounted) return;
 
@@ -209,6 +223,9 @@ export default function DashboardPage() {
           recentStockMovements: movementRows.length,
           financeCashBalance: Number(financeSummary?.total_cash_bank_balance || 0),
           financeNetCashFlow: Number(financeSummary?.net_cash_flow || 0),
+          totalTasks: Number(taskSummary?.total_tasks || 0),
+          overdueTasks: Number(taskSummary?.overdue_tasks || 0),
+          myOpenTasks: Number(taskSummary?.my_open_tasks || 0),
         });
         setCompanyName(businessSettings.company_name || "Amar eCom");
         setStatsError("");
@@ -278,6 +295,7 @@ export default function DashboardPage() {
           { label: "Customers", value: stats.customers, icon: Users },
           { label: "Inventory", value: stats.inventory, icon: Boxes },
           { label: "Finance Cash", value: stats.financeCashBalance, icon: Wallet, isCurrency: true },
+          { label: "Tasks", value: stats.totalTasks, icon: TicketCheck },
         ].map(({ label, value, icon: Icon }) => (
           <article
             key={label}
@@ -367,6 +385,43 @@ export default function DashboardPage() {
           <p className="mt-4 text-sm leading-7 text-slate-500">
             This gives the team a lightweight CRM pulse while customer activities and order history grow into a fuller workspace.
           </p>
+        </article>
+
+        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Tasks Snapshot
+              </p>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                Team task workload
+              </h2>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+              <TicketCheck className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm text-slate-600">Total tasks</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">
+                {backendStatus.ok ? stats.totalTasks : "--"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
+              <p className="text-sm text-rose-700">Overdue tasks</p>
+              <p className="mt-2 text-2xl font-semibold text-rose-900">
+                {backendStatus.ok ? stats.overdueTasks : "--"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 sm:col-span-2">
+              <p className="text-sm text-sky-700">My open tasks</p>
+              <p className="mt-2 text-2xl font-semibold text-sky-900">
+                {backendStatus.ok ? stats.myOpenTasks : "--"}
+              </p>
+            </div>
+          </div>
         </article>
       </section>
 
@@ -488,6 +543,12 @@ export default function DashboardPage() {
             className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
           >
             Open Finance
+          </Link>
+          <Link
+            href="/dashboard/tasks"
+            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            Open Tasks
           </Link>
         </article>
       </section>

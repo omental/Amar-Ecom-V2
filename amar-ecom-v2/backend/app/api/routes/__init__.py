@@ -25,6 +25,7 @@ from app.api.routes import (
     stock_movements,
     suppliers,
     supplier_payments,
+    tasks,
     transactions,
     users,
     warehouses,
@@ -59,6 +60,7 @@ api_router.include_router(wastage_logs.router, prefix="/wastage-logs", tags=["wa
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(stock_movements.router, prefix="/stock-movements", tags=["stock-movements"])
 api_router.include_router(supplier_payments.router, prefix="/supplier-payments", tags=["supplier-payments"])
+api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(transactions.router, prefix="/transactions", tags=["transactions"])
 api_router.include_router(warehouses.router, prefix="/warehouses", tags=["warehouses"])
 

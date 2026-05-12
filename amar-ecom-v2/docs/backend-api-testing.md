@@ -75,6 +75,10 @@ This phase adds the finance transaction-link polish migration:
 
 - `0f1e2d3c4b5a_add_finance_transaction_links`
 
+This phase adds the tasks foundation migration:
+
+- `1a2b3c4d5e6f_add_tasks_foundation`
+
 Reports foundation adds endpoints only and does not require a new migration.
 
 ## Start API
@@ -403,6 +407,81 @@ Expected result:
 - net cash flow equals income minus expense
 - supplier payment total is returned separately
 - date filters change income, expense, net cash flow, and supplier payment totals without changing live account balances
+
+## Create Task
+
+```powershell
+$taskBody = @{
+  title = "Review blocked orders"
+  description = "Check pending order blockers and update the ops team"
+  status = "todo"
+  priority = "high"
+  assigned_to_id = "{userId}"
+  related_module = "orders"
+  related_entity_type = "order"
+  related_entity_id = "{orderId}"
+  due_date = "2026-05-20T09:00:00Z"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/tasks `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $taskBody
+```
+
+## Filter Tasks
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/tasks?status=todo&priority=high&assigned_to_id={userId}&search=blocked" `
+  -Headers $headers
+```
+
+## Change Task Status
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/tasks/{taskId}" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{ status = "completed" } | ConvertTo-Json)
+```
+
+Expected result:
+
+- `completed_at` is set when status becomes `completed`
+- changing away from `completed` clears `completed_at`
+
+## View Tasks Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/tasks/summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns total, todo, in-progress, review, completed, overdue, urgent, and my-open counts
+
+## Verify Task Activity Logs
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/activity-logs?module=tasks&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- includes `task_created`
+- includes `task_updated`
+- includes `task_status_changed`
+- includes `task_assigned`
+- includes `task_cancelled` when cancelled through delete
 
 ## Health Check
 

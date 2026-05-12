@@ -891,6 +891,57 @@ npm run dev
 - Reports in this phase are operational summaries and enhancements, not full finance reports or accounting statements
 - Finance in this phase is a practical operational foundation only: accounts, transactions, petty cash, supplier payments, and summary visibility
 - Finance polish in this phase adds linked supplier-payment and petty-cash transactions, browser CSV export, transaction filtering, and date-filtered summary totals
+
+## Test Tasks Workspace
+
+1. Apply the latest backend migration:
+   - `venv\Scripts\alembic.exe upgrade head`
+2. Open `http://localhost:3000/dashboard/tasks`
+3. Confirm the top cards show:
+   - `Total`
+   - `Todo`
+   - `In Progress`
+   - `Review`
+   - `Completed`
+   - `Overdue`
+   - `Urgent`
+   - `My Open`
+4. In the task form, create a task with:
+   - `title`
+   - optional `description`
+   - `status`
+   - `priority`
+   - optional `assigned user`
+   - optional related module/entity values
+   - optional `due date`
+5. Confirm the task appears in the list view
+6. Use filters for:
+   - status
+   - priority
+   - assigned user
+   - search
+7. Click `Apply filters`
+8. Confirm the task list narrows correctly
+9. Click `Clear filters`
+10. Click `Edit` on a task and change:
+   - status
+   - priority
+   - assignee
+11. Save the task
+12. Confirm the list refreshes
+13. Switch to `Kanban View`
+14. Confirm columns exist for:
+   - `Todo`
+   - `In Progress`
+   - `Review`
+   - `Completed`
+15. Use the quick status dropdown on a kanban card
+16. Confirm the card moves to the matching column after refresh
+17. Open `http://localhost:3000/dashboard`
+18. Confirm the dashboard includes:
+   - a `Tasks` count card
+   - a task workload snapshot
+   - an `Open Tasks` link
 - CSV export is browser-generated from the currently loaded report data
 - Charts are implemented with lightweight CSS-based bars rather than a new chart dependency
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled
