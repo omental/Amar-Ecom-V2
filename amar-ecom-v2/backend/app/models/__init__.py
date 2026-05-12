@@ -5,6 +5,7 @@ from app.models.category import Category
 from app.models.courier import Courier, Shipment, ShipmentEvent
 from app.models.customer import Customer, CustomerActivity
 from app.models.finance import Account, PettyCashEntry, SupplierPayment, Transaction
+from app.models.hr import AttendanceRecord, Designation, Employee, SalaryAdvance, SalaryRecord
 from app.models.invoice_template import InvoiceTemplate
 from app.models.inventory import InventoryItem
 from app.models.inventory_ops import StockTransfer, StockTransferItem, WastageLog
@@ -19,12 +20,15 @@ from app.models.warehouse import Warehouse
 
 __all__ = [
     "ActivityLog",
+    "AttendanceRecord",
     "BusinessSettings",
     "Brand",
     "Category",
     "Courier",
     "Customer",
     "CustomerActivity",
+    "Designation",
+    "Employee",
     "Account",
     "PettyCashEntry",
     "SupplierPayment",
@@ -44,6 +48,8 @@ __all__ = [
     "PurchaseOrderItem",
     "ReturnItem",
     "ReturnRequest",
+    "SalaryAdvance",
+    "SalaryRecord",
     "Shipment",
     "ShipmentEvent",
     "Supplier",

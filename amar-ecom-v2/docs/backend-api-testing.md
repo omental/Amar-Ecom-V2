@@ -79,6 +79,10 @@ This phase adds the tasks foundation migration:
 
 - `1a2b3c4d5e6f_add_tasks_foundation`
 
+This phase adds the HR foundation migration:
+
+- `2b3c4d5e6f7a_add_hr_foundation`
+
 Reports foundation adds endpoints only and does not require a new migration.
 
 ## Start API
@@ -482,6 +486,148 @@ Expected result:
 - includes `task_status_changed`
 - includes `task_assigned`
 - includes `task_cancelled` when cancelled through delete
+
+## Create Designation
+
+```powershell
+$designationBody = @{
+  title = "Operations Executive"
+  description = "Handles order and warehouse operations"
+  is_active = $true
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/designations `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $designationBody
+```
+
+## Create Employee
+
+```powershell
+$employeeBody = @{
+  employee_code = "EMP-1001"
+  full_name = "Rahim Ops"
+  email = "rahim.ops@example.com"
+  phone = "01711111111"
+  address = "Dhaka"
+  designation_id = "{designationId}"
+  user_id = "{userId}"
+  joining_date = "2026-05-01"
+  salary = 25000
+  employment_status = "active"
+  notes = "Core operations team"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/employees `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $employeeBody
+```
+
+## Create Attendance
+
+```powershell
+$attendanceBody = @{
+  employee_id = "{employeeId}"
+  attendance_date = "2026-05-12"
+  status = "present"
+  notes = "On time"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/attendance `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $attendanceBody
+```
+
+Expected result:
+
+- duplicate attendance for the same employee and date returns a clean `409`
+
+## Create Salary Advance And Approve
+
+```powershell
+$advanceBody = @{
+  employee_id = "{employeeId}"
+  amount = 5000
+  reason = "Emergency expense"
+  status = "pending"
+} | ConvertTo-Json
+
+$advance = Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/salary-advances `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $advanceBody
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/salary-advances/$($advance.id)" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{ status = "approved" } | ConvertTo-Json)
+```
+
+Expected result:
+
+- `approved_at` is set
+- `approved_by_id` is set to the current user when available
+
+## Create Salary Record And Mark Paid
+
+```powershell
+$salaryRecordBody = @{
+  employee_id = "{employeeId}"
+  salary_month = "2026-05"
+  basic_salary = 25000
+  advance_deduction = 3000
+  bonus = 2000
+  other_deductions = 500
+  status = "generated"
+} | ConvertTo-Json
+
+$salaryRecord = Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/salary-records `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $salaryRecordBody
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/salary-records/$($salaryRecord.id)" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{ status = "paid" } | ConvertTo-Json)
+```
+
+Expected result:
+
+- `net_salary` is calculated as `basic_salary + bonus - advance_deduction - other_deductions`
+- `paid_at` is set when status becomes `paid`
+
+## Verify HR Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/hr/summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns total and active employee counts
+- returns today attendance counts
+- returns pending advance count
+- returns salary-record totals for the current month and unpaid records
 
 ## Health Check
 

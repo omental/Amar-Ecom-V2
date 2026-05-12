@@ -11,6 +11,7 @@ import {
   RotateCcw,
   ShoppingCart,
   TicketCheck,
+  UserCheck,
   Users,
   Wallet,
   Wifi,
@@ -53,6 +54,9 @@ type StatsState = {
   totalTasks: number;
   overdueTasks: number;
   myOpenTasks: number;
+  totalEmployees: number;
+  presentToday: number;
+  pendingAdvances: number;
 };
 
 type FinanceSummaryResponse = {
@@ -64,6 +68,12 @@ type TaskSummaryResponse = {
   total_tasks: number;
   overdue_tasks: number;
   my_open_tasks: number;
+};
+
+type HrSummaryResponse = {
+  total_employees: number;
+  present_today: number;
+  pending_advances: number;
 };
 
 function getCollectionCount(payload: unknown) {
@@ -121,6 +131,9 @@ export default function DashboardPage() {
     totalTasks: 0,
     overdueTasks: 0,
     myOpenTasks: 0,
+    totalEmployees: 0,
+    presentToday: 0,
+    pendingAdvances: 0,
   });
   const [statsError, setStatsError] = useState("");
   const [backendStatus, setBackendStatus] = useState<{
@@ -136,7 +149,7 @@ export default function DashboardPage() {
 
     async function checkBackend() {
       try {
-        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary, taskSummary] = await Promise.all([
+        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary, taskSummary, hrSummary] = await Promise.all([
           api.get<HealthResponse>("/health"),
           api.get<unknown>("/products?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100"),
@@ -152,6 +165,7 @@ export default function DashboardPage() {
           api.get<BusinessSettingsResponse>("/settings/business"),
           api.get<FinanceSummaryResponse>("/finance/summary").catch(() => null),
           api.get<TaskSummaryResponse>("/tasks/summary").catch(() => null),
+          api.get<HrSummaryResponse>("/hr/summary").catch(() => null),
         ]);
         if (!isMounted) return;
 
@@ -226,6 +240,9 @@ export default function DashboardPage() {
           totalTasks: Number(taskSummary?.total_tasks || 0),
           overdueTasks: Number(taskSummary?.overdue_tasks || 0),
           myOpenTasks: Number(taskSummary?.my_open_tasks || 0),
+          totalEmployees: Number(hrSummary?.total_employees || 0),
+          presentToday: Number(hrSummary?.present_today || 0),
+          pendingAdvances: Number(hrSummary?.pending_advances || 0),
         });
         setCompanyName(businessSettings.company_name || "Amar eCom");
         setStatsError("");
@@ -296,6 +313,7 @@ export default function DashboardPage() {
           { label: "Inventory", value: stats.inventory, icon: Boxes },
           { label: "Finance Cash", value: stats.financeCashBalance, icon: Wallet, isCurrency: true },
           { label: "Tasks", value: stats.totalTasks, icon: TicketCheck },
+          { label: "Employees", value: stats.totalEmployees, icon: UserCheck },
         ].map(({ label, value, icon: Icon }) => (
           <article
             key={label}
@@ -419,6 +437,43 @@ export default function DashboardPage() {
               <p className="text-sm text-sky-700">My open tasks</p>
               <p className="mt-2 text-2xl font-semibold text-sky-900">
                 {backendStatus.ok ? stats.myOpenTasks : "--"}
+              </p>
+            </div>
+          </div>
+        </article>
+
+        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                HR Snapshot
+              </p>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                People operations
+              </h2>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+              <UserCheck className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm text-slate-600">Total employees</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">
+                {backendStatus.ok ? stats.totalEmployees : "--"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+              <p className="text-sm text-emerald-700">Present today</p>
+              <p className="mt-2 text-2xl font-semibold text-emerald-900">
+                {backendStatus.ok ? stats.presentToday : "--"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 sm:col-span-2">
+              <p className="text-sm text-amber-700">Pending salary advances</p>
+              <p className="mt-2 text-2xl font-semibold text-amber-900">
+                {backendStatus.ok ? stats.pendingAdvances : "--"}
               </p>
             </div>
           </div>
@@ -549,6 +604,12 @@ export default function DashboardPage() {
             className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
           >
             Open Tasks
+          </Link>
+          <Link
+            href="/dashboard/hr"
+            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            Open HR
           </Link>
         </article>
       </section>

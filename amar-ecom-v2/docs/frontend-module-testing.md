@@ -891,6 +891,7 @@ npm run dev
 - Reports in this phase are operational summaries and enhancements, not full finance reports or accounting statements
 - Finance in this phase is a practical operational foundation only: accounts, transactions, petty cash, supplier payments, and summary visibility
 - Finance polish in this phase adds linked supplier-payment and petty-cash transactions, browser CSV export, transaction filtering, and date-filtered summary totals
+- HR in this phase is a practical foundation only: designations, employees, attendance, salary advances, salary records, and summary visibility without payroll posting
 
 ## Test Tasks Workspace
 
@@ -942,6 +943,51 @@ npm run dev
    - a `Tasks` count card
    - a task workload snapshot
    - an `Open Tasks` link
+
+## Test HR Workspace
+
+1. Apply the latest backend migration:
+   - `venv\Scripts\alembic.exe upgrade head`
+2. Open `http://localhost:3000/dashboard/hr`
+3. Confirm the page loads tabs for:
+   - `Overview`
+   - `Designations`
+   - `Employees`
+   - `Attendance`
+   - `Salary Advances`
+   - `Salary Records`
+4. In `Designations`, create a designation and confirm it appears in the list
+5. In `Employees`, create an employee with:
+   - employee code
+   - full name
+   - optional email/phone/address
+   - designation
+   - optional linked user
+   - joining date
+   - salary
+   - employment status
+6. Confirm the employee appears in the list
+7. In `Attendance`, create an attendance record
+8. Confirm duplicate attendance for the same employee and date shows a clean error
+9. Use attendance filters for:
+   - employee
+   - status
+   - date range
+10. Confirm the list refreshes correctly
+11. In `Salary Advances`, create an advance
+12. Confirm the warning explains approval does not post a finance transaction yet
+13. Change the advance status to `Approved`
+14. Confirm the row shows approved timing and approver information when available
+15. In `Salary Records`, create a salary record
+16. Confirm the net salary preview updates before save
+17. Save the salary record and confirm the backend-calculated `net salary` appears in the list
+18. Mark the salary record `Paid`
+19. Confirm the row shows `paid at`
+20. Open `http://localhost:3000/dashboard`
+21. Confirm the dashboard includes:
+   - an `Employees` card
+   - an HR snapshot
+   - an `Open HR` link
 - CSV export is browser-generated from the currently loaded report data
 - Charts are implemented with lightweight CSS-based bars rather than a new chart dependency
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled
