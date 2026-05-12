@@ -83,6 +83,10 @@ This phase adds the HR foundation migration:
 
 - `2b3c4d5e6f7a_add_hr_foundation`
 
+This phase adds the POS order-fields migration:
+
+- `3c4d5e6f7a8b_add_pos_order_fields`
+
 Reports foundation adds endpoints only and does not require a new migration.
 
 ## Start API
@@ -628,6 +632,118 @@ Expected result:
 - returns today attendance counts
 - returns pending advance count
 - returns salary-record totals for the current month and unpaid records
+
+## Search POS Products
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/pos/products?warehouse_id={warehouseId}&search=SKU-1001&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- warehouse-filtered product rows are returned
+- each row includes `product_id`, `variant_id`, `name`, `sku`, `price`, `stock_quantity`, and `image_url`
+
+## Create POS Checkout
+
+```powershell
+$posCheckoutBody = @{
+  customer_id = $null
+  customer_name = "Walk-in Buyer"
+  customer_phone = "01777777777"
+  warehouse_id = "{warehouseId}"
+  payment_method = "cash"
+  account_id = "{accountId}"
+  discount = 50
+  paid_amount = 500
+  notes = "Counter sale"
+  items = @(
+    @{
+      product_id = "{productId}"
+      variant_id = $null
+      product_name = "POS Counter Product"
+      sku = "POS-1001"
+      quantity = 2
+      unit_price = 300
+      total_price = 600
+    }
+  )
+} | ConvertTo-Json -Depth 5
+
+$posCheckout = Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/pos/checkout `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $posCheckoutBody
+```
+
+Expected result:
+
+- response returns `order`, `payment_status`, `change_amount`, `due_amount`, and `order_id`
+- order source is `pos`
+- order status is `delivered`
+- order `customer_name`, `payment_method`, and `paid_amount` are stored
+- stock is deducted immediately from the selected warehouse
+- `stock_deducted` becomes `true`
+- an order event exists with `event_type = pos_checkout_created`
+- if `account_id` is provided and `paid_amount > 0`, a linked `customer_payment` transaction is created
+
+## Verify POS Stock Deduction
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/inventory/{inventoryItemId}" `
+  -Headers $headers
+```
+
+Expected result:
+
+- inventory quantity is reduced by the sold quantity for the selected warehouse
+
+## Verify POS Stock Movement
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/stock-movements?order_id={orderId}&movement_type=pos_sale" `
+  -Headers $headers
+```
+
+Expected result:
+
+- movement history includes `pos_sale`
+- movement `order_id` matches the POS order
+
+## Verify POS Finance Transaction
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/transactions?transaction_type=customer_payment&search={orderNumber}" `
+  -Headers $headers
+```
+
+Expected result:
+
+- a `customer_payment` transaction exists
+- `reference_type = order`
+- `reference_id` matches the POS order id
+
+## View POS Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/pos/summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- response includes `today_pos_orders`
+- response includes `today_pos_sales`
+- response includes `today_paid_amount`
+- response includes `today_due_amount`
 
 ## Health Check
 

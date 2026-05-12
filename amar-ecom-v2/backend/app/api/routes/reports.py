@@ -477,7 +477,7 @@ async def get_recent_order_activity_report(
             Order.status,
             Order.payment_status,
             Order.total,
-            Customer.name.label("customer_name"),
+            func.coalesce(Order.customer_name, Customer.name).label("customer_name"),
             Order.created_at,
         )
         .select_from(Order)

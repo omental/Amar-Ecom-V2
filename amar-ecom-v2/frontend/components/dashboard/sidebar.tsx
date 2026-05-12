@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Settings,
   ShoppingCart,
+  Store,
   Tags,
   TicketCheck,
   Truck,
@@ -32,6 +33,7 @@ type SidebarProps = {
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/orders", label: "Orders", icon: ShoppingCart },
+  { href: "/dashboard/pos", label: "POS", icon: Store },
   { href: "/dashboard/logistics", label: "Logistics", icon: Truck },
   { href: "/dashboard/shipments", label: "Shipments", icon: PackageCheck },
   { href: "/dashboard/returns", label: "Returns", icon: RotateCcw },

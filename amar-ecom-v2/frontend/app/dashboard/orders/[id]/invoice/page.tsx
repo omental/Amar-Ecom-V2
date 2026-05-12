@@ -38,14 +38,17 @@ type OrderItem = {
 type OrderDetail = {
   id: string;
   order_number: string;
+  customer_name: string | null;
   customer_phone: string | null;
   shipping_address: string | null;
   notes: string | null;
   subtotal: number | string;
   discount: number | string;
   delivery_charge: number | string;
+  paid_amount: number | string;
   total: number | string;
   payment_status: string;
+  payment_method: string | null;
   printed_count: number;
   last_printed_at: string | null;
   created_at: string;
@@ -254,6 +257,12 @@ export default function OrderInvoicePage() {
                 <span className="font-semibold text-slate-950">{formatLabel(order.payment_status)}</span>
               </div>
             ) : null}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              Payment method:{" "}
+              <span className="font-semibold text-slate-950">
+                {order.payment_method ? formatLabel(order.payment_method) : "Not recorded"}
+              </span>
+            </div>
             {metadata.selected_template_name ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Template:{" "}
@@ -264,13 +273,13 @@ export default function OrderInvoicePage() {
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2">
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Customer</p>
-            <div className="mt-3 space-y-2 text-sm text-slate-700">
-              <p className="font-semibold text-slate-950">{order.customer?.name || "Guest customer"}</p>
-              {metadata.show_customer_phone ? <p>{customerPhone || "No phone"}</p> : null}
-              <p>{order.customer?.email || "No email"}</p>
-            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Customer</p>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <p className="font-semibold text-slate-950">{order.customer_name || order.customer?.name || "Guest customer"}</p>
+                {metadata.show_customer_phone ? <p>{customerPhone || "No phone"}</p> : null}
+                <p>{order.customer?.email || "No email"}</p>
+              </div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
@@ -338,6 +347,14 @@ export default function OrderInvoicePage() {
             >
               <span className="font-semibold">Total</span>
               <span className="text-lg font-semibold">{formatCurrency(order.total)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span>Paid</span>
+              <span className="font-semibold text-slate-950">{formatCurrency(order.paid_amount)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span>Due</span>
+              <span className="font-semibold text-slate-950">{formatCurrency(Math.max(Number(order.total) - Number(order.paid_amount), 0))}</span>
             </div>
           </div>
         </div>

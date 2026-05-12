@@ -60,6 +60,7 @@ type Order = {
   order_number: string;
   customer_id: string | null;
   warehouse_id: string | null;
+  customer_name: string | null;
   customer_phone: string | null;
   shipping_address: string | null;
   notes: string | null;
@@ -239,6 +240,7 @@ export default function OrdersPage() {
 
       const haystack = [
         order.order_number,
+        order.customer_name,
         order.customer?.name,
         order.customer_phone,
         order.customer?.phone,
@@ -1038,7 +1040,8 @@ export default function OrdersPage() {
                       </div>
                       <div>
                         <p className="font-medium text-slate-950">
-                          {order.customer?.name ||
+                          {order.customer_name ||
+                            order.customer?.name ||
                             (order.customer_id
                               ? customerMap.get(order.customer_id)?.name || "Unknown customer"
                               : "Guest")}

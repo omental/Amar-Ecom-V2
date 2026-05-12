@@ -86,6 +86,7 @@ from app.schemas.permission import (
     UserPermissionRead,
     UserPermissionUpdate,
 )
+from app.schemas.pos import PosCartItem, PosCheckoutCreate, PosCheckoutRead, PosProductRead, PosSummaryRead
 from app.schemas.product import (
     ProductCreate,
     ProductRead,
@@ -188,6 +189,11 @@ __all__ = [
     "PaymentStatusReportItemRead",
     "PendingDispatchOrderRead",
     "PermissionRead",
+    "PosCartItem",
+    "PosCheckoutCreate",
+    "PosCheckoutRead",
+    "PosProductRead",
+    "PosSummaryRead",
     "PettyCashEntryCreate",
     "PettyCashEntryRead",
     "PettyCashEntryUpdate",

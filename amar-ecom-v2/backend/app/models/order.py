@@ -25,6 +25,7 @@ class Order(Base):
         nullable=True,
         index=True,
     )
+    customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     customer_phone: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     shipping_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -36,10 +37,12 @@ class Order(Base):
         default="unpaid",
         server_default="unpaid",
     )
+    payment_method: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="manual", server_default="manual")
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     delivery_charge: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     stock_deducted: Mapped[bool] = mapped_column(
         Boolean,

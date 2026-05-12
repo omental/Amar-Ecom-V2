@@ -60,30 +60,36 @@ class OrderCreate(BaseModel):
     order_number: str | None = None
     customer_id: UUID | None = None
     warehouse_id: UUID | None = None
+    customer_name: str | None = None
     customer_phone: str | None = None
     shipping_address: str | None = None
     notes: str | None = None
     tags: str | None = None
     status: str = "pending"
     payment_status: str = "unpaid"
+    payment_method: str | None = None
     source: str = "manual"
     subtotal: Decimal = Decimal("0.00")
     discount: Decimal = Decimal("0.00")
     delivery_charge: Decimal = Decimal("0.00")
+    paid_amount: Decimal = Decimal("0.00")
     total: Decimal = Decimal("0.00")
     items: list[OrderItemCreate] = []
 
 
 class OrderUpdate(BaseModel):
     warehouse_id: UUID | None = None
+    customer_name: str | None = None
     customer_phone: str | None = None
     shipping_address: str | None = None
     notes: str | None = None
     tags: str | None = None
     status: str | None = None
     payment_status: str | None = None
+    payment_method: str | None = None
     discount: Decimal | None = None
     delivery_charge: Decimal | None = None
+    paid_amount: Decimal | None = None
 
 
 class OrderListRead(ORMBaseSchema):
@@ -91,16 +97,19 @@ class OrderListRead(ORMBaseSchema):
     order_number: str
     customer_id: UUID | None
     warehouse_id: UUID | None
+    customer_name: str | None
     customer_phone: str | None
     shipping_address: str | None
     notes: str | None
     tags: str | None
     status: str
     payment_status: str
+    payment_method: str | None
     source: str
     subtotal: Decimal
     discount: Decimal
     delivery_charge: Decimal
+    paid_amount: Decimal
     total: Decimal
     stock_deducted: bool
     printed_count: int

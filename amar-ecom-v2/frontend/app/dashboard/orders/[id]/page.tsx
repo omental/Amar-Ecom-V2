@@ -75,16 +75,19 @@ type OrderDetail = {
   order_number: string;
   customer_id: string | null;
   warehouse_id: string | null;
+  customer_name: string | null;
   customer_phone: string | null;
   shipping_address: string | null;
   notes: string | null;
   tags: string | null;
   status: string;
   payment_status: string;
+  payment_method: string | null;
   source: string;
   subtotal: number | string;
   discount: number | string;
   delivery_charge: number | string;
+  paid_amount: number | string;
   total: number | string;
   stock_deducted: boolean;
   printed_count: number;
@@ -385,13 +388,16 @@ export default function OrderDetailPage() {
             <h2 className="text-lg font-semibold text-slate-950">Shipping and contact</h2>
             <div className="mt-5 space-y-3 text-sm text-slate-600">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                Customer: <span className="font-semibold text-slate-950">{order.customer?.name || "Guest customer"}</span>
+                Customer: <span className="font-semibold text-slate-950">{order.customer_name || order.customer?.name || "Guest customer"}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Phone: <span className="font-semibold text-slate-950">{order.customer_phone || order.customer?.phone || "No phone"}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Email: <span className="font-semibold text-slate-950">{order.customer?.email || "No email"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                Payment method: <span className="font-semibold text-slate-950">{order.payment_method ? formatLabel(order.payment_method) : "Not recorded"}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Shipping address: <span className="font-semibold text-slate-950">{order.shipping_address || order.customer?.address || "No shipping address"}</span>
@@ -557,6 +563,12 @@ export default function OrderDetailPage() {
               </div>
               <div className="rounded-2xl border border-slate-950 bg-slate-950 px-4 py-3 text-white">
                 Total: <span className="font-semibold">{formatCurrency(order.total)}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                Paid: <span className="font-semibold text-slate-950">{formatCurrency(order.paid_amount)}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                Due: <span className="font-semibold text-slate-950">{formatCurrency(Math.max(Number(order.total) - Number(order.paid_amount), 0))}</span>
               </div>
             </div>
           </article>

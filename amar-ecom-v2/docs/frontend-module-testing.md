@@ -988,8 +988,73 @@ npm run dev
    - an `Employees` card
    - an HR snapshot
    - an `Open HR` link
+
+## Test POS Workspace
+
+1. Apply the latest backend migration:
+   - `venv\Scripts\alembic.exe upgrade head`
+2. Open `http://localhost:3000/dashboard/pos`
+3. Confirm the top cards show:
+   - `Today POS Orders`
+   - `Today POS Sales`
+   - `Today Paid`
+   - `Today Due`
+4. Select a warehouse in `Product search`
+5. Search by product name or SKU
+6. Confirm each result shows:
+   - product name
+   - SKU
+   - price
+   - available stock
+   - `Add` button
+7. Add one or more in-stock items to the cart
+8. Confirm the cart supports:
+   - quantity increase/decrease
+   - direct quantity entry
+   - item removal
+9. Confirm the cart totals update for:
+   - `Subtotal`
+   - `Discount`
+   - `Total`
+   - `Paid amount`
+   - `Due amount`
+   - `Change amount`
+10. In `Checkout`, optionally select an existing customer or leave it as walk-in
+11. Enter:
+   - optional walk-in customer name
+   - optional phone
+   - payment method
+   - optional finance account
+   - discount
+   - paid amount
+   - optional notes
+12. Submit the checkout
+13. Confirm a success message appears with the created order number
+14. Confirm the success area shows:
+   - `View Order`
+   - `Print Receipt/Invoice`
+15. Click `View Order`
+16. Confirm the order detail shows:
+   - source `POS`
+   - walk-in customer name when used
+   - payment method
+   - paid and due totals
+17. Click `Print Receipt/Invoice`
+18. Confirm the invoice page opens and uses the stored walk-in customer name
+19. Open `http://localhost:3000/dashboard/inventory`
+20. Confirm the selected warehouse stock decreased immediately
+21. Open `http://localhost:3000/dashboard/stock-movements`
+22. Confirm a `pos_sale` movement exists
+23. If a finance account was selected, open `http://localhost:3000/dashboard/finance`
+24. Confirm a `customer_payment` transaction exists for the POS order
+25. Open `http://localhost:3000/dashboard`
+26. Confirm the dashboard includes:
+   - a `POS Sales` summary card
+   - a POS snapshot
+   - an `Open POS` link
 - CSV export is browser-generated from the currently loaded report data
 - Charts are implemented with lightweight CSS-based bars rather than a new chart dependency
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled
 - Logistics in this phase is internal-only tracking; no external courier API integration is performed
 - Purchase receiving can create a missing inventory row safely for the selected warehouse when stock is first received from a purchase order
+- POS in this phase is a practical internal counter-sale foundation only: warehouse-first product search, walk-in customer capture, immediate stock deduction, optional finance transaction capture, and invoice/receipt handoff without barcode hardware or offline mode

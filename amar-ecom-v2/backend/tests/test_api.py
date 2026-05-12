@@ -609,7 +609,16 @@ def test_customer_crm_activity_flow() -> None:
     except ProgrammingError as exc:
         if any(
             token in str(exc)
-            for token in ["customer_type", "follow_up_date", "last_contacted_at", "customer_activities", "activity_logs"]
+            for token in [
+                "customer_type",
+                "follow_up_date",
+                "last_contacted_at",
+                "customer_activities",
+                "activity_logs",
+                "customer_name",
+                "payment_method",
+                "paid_amount",
+            ]
         ):
             pytest.skip("Apply the latest customer CRM migration before running this test.")
         raise
@@ -1386,6 +1395,208 @@ def test_hr_foundation_flow() -> None:
     dispose_engine()
 
 
+def test_pos_foundation_flow() -> None:
+    try:
+        headers = auth_headers()
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"POS Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"pos-category-{uuid.uuid4().hex[:8]}",
+                    "description": "POS flow category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"POS Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"pos-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "POS flow brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "POS Counter Product",
+                    "slug": f"pos-counter-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"POS-{uuid.uuid4().hex[:8]}",
+                    "description": "POS flow product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 300.00,
+                    "cost_price": 180.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"POS Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"POS-WH-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 10,
+                    "low_stock_threshold": 2,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+            inventory_item = inventory_response.json()
+
+            account_response = client.post(
+                "/api/v1/accounts",
+                headers=headers,
+                json={
+                    "name": f"POS Cash {uuid.uuid4().hex[:8]}",
+                    "code": f"POS-CASH-{uuid.uuid4().hex[:8]}",
+                    "account_type": "cash",
+                    "opening_balance": 100,
+                    "notes": "POS drawer",
+                    "is_active": True,
+                },
+            )
+            assert account_response.status_code == 201, account_response.text
+            account = account_response.json()
+
+            product_search_response = client.get(
+                f"/api/v1/pos/products?warehouse_id={warehouse['id']}&search={product['sku']}&limit=20",
+                headers=headers,
+            )
+            assert product_search_response.status_code == 200, product_search_response.text
+            product_results = product_search_response.json()
+            assert any(item["product_id"] == product["id"] and item["stock_quantity"] == 10 for item in product_results)
+
+            checkout_response = client.post(
+                "/api/v1/pos/checkout",
+                headers=headers,
+                json={
+                    "customer_id": None,
+                    "customer_name": "Walk-in Buyer",
+                    "customer_phone": "01777777777",
+                    "warehouse_id": warehouse["id"],
+                    "payment_method": "cash",
+                    "account_id": account["id"],
+                    "discount": 50,
+                    "paid_amount": 500,
+                    "notes": "Counter sale",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 2,
+                            "unit_price": 300,
+                            "total_price": 600,
+                        }
+                    ],
+                },
+            )
+            assert checkout_response.status_code == 201, checkout_response.text
+            checkout = checkout_response.json()
+            assert checkout["payment_status"] == "partial"
+            assert float(checkout["due_amount"]) == 50
+            assert float(checkout["change_amount"]) == 0
+
+            order_id = checkout["order_id"]
+            order_detail_response = client.get(f"/api/v1/orders/{order_id}", headers=headers)
+            assert order_detail_response.status_code == 200, order_detail_response.text
+            order = order_detail_response.json()
+            assert order["source"] == "pos"
+            assert order["status"] == "delivered"
+            assert order["payment_status"] == "partial"
+            assert order["customer_name"] == "Walk-in Buyer"
+            assert order["payment_method"] == "cash"
+            assert float(order["paid_amount"]) == 500
+            assert order["stock_deducted"] is True
+            assert any(event["event_type"] == "pos_checkout_created" for event in order["events"])
+
+            inventory_detail_response = client.get(
+                f"/api/v1/inventory/{inventory_item['id']}",
+                headers=headers,
+            )
+            assert inventory_detail_response.status_code == 200, inventory_detail_response.text
+            assert inventory_detail_response.json()["quantity"] == 8
+
+            movement_response = client.get(
+                f"/api/v1/stock-movements?order_id={order_id}&movement_type=pos_sale",
+                headers=headers,
+            )
+            assert movement_response.status_code == 200, movement_response.text
+            assert any(movement["movement_type"] == "pos_sale" for movement in movement_response.json())
+
+            transaction_response = client.get(
+                f"/api/v1/transactions?transaction_type=customer_payment&search={order['order_number']}",
+                headers=headers,
+            )
+            assert transaction_response.status_code == 200, transaction_response.text
+            transactions = transaction_response.json()
+            assert any(item["reference_type"] == "order" and item["reference_id"] == order_id for item in transactions)
+
+            account_detail_response = client.get(f"/api/v1/accounts/{account['id']}", headers=headers)
+            assert account_detail_response.status_code == 200, account_detail_response.text
+            assert float(account_detail_response.json()["current_balance"]) == 600
+
+            invoice_data_response = client.get(f"/api/v1/orders/{order_id}/invoice-data", headers=headers)
+            assert invoice_data_response.status_code == 200, invoice_data_response.text
+            assert invoice_data_response.json()["order"]["customer_name"] == "Walk-in Buyer"
+
+            summary_response = client.get("/api/v1/pos/summary", headers=headers)
+            assert summary_response.status_code == 200, summary_response.text
+            summary = summary_response.json()
+            assert summary["today_pos_orders"] >= 1
+            assert float(summary["today_pos_sales"]) >= 550
+            assert float(summary["today_paid_amount"]) >= 500
+
+            activity_logs_response = client.get("/api/v1/activity-logs?module=pos&limit=20", headers=headers)
+            assert activity_logs_response.status_code == 200, activity_logs_response.text
+            assert any(log["action"] == "pos_checkout_created" for log in activity_logs_response.json())
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(
+            token in str(exc)
+            for token in [
+                "pos",
+                "customer_name",
+                "payment_method",
+                "paid_amount",
+                "activity_logs",
+            ]
+        ):
+            pytest.skip("Apply the POS order-fields migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_order_warehouse_assignment_and_fulfillment() -> None:
     headers = auth_headers()
 
@@ -1563,7 +1774,7 @@ def test_order_warehouse_assignment_and_fulfillment() -> None:
                 for movement in movements
             )
     except ProgrammingError as exc:
-        if any(token in str(exc) for token in ["warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events", "activity_logs"]):
+        if any(token in str(exc) for token in ["warehouse_id", "business_settings", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events", "activity_logs"]):
             pytest.skip("Apply the latest migrations before running this test.")
         raise
 
@@ -1742,7 +1953,7 @@ def test_return_request_restock_flow() -> None:
             movements = stock_movement_response.json()
             assert any(movement["warehouse_id"] == warehouse["id"] for movement in movements)
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
-        if any(token in str(exc) for token in ["return_requests", "warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events"]):
+        if any(token in str(exc) for token in ["return_requests", "warehouse_id", "business_settings", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events"]):
             pytest.skip("Apply the latest migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
@@ -1926,7 +2137,7 @@ def test_courier_and_shipment_flow() -> None:
             assert courier_detail_response.status_code == 200, courier_detail_response.text
             assert courier_detail_response.json()["is_active"] is False
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
-        if any(token in str(exc) for token in ["couriers", "shipments", "shipment_events", "return_requests", "warehouse_id", "business_settings", "customer_phone", "printed_count", "order_events", "activity_logs"]):
+        if any(token in str(exc) for token in ["couriers", "shipments", "shipment_events", "return_requests", "warehouse_id", "business_settings", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events", "activity_logs"]):
             pytest.skip("Apply the latest migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
@@ -2087,6 +2298,9 @@ def test_supplier_and_purchase_order_receiving_flow() -> None:
                 "warehouse_id",
                 "business_settings",
                 "customer_phone",
+                "customer_name",
+                "payment_method",
+                "paid_amount",
                 "printed_count",
                 "order_events",
                 "activity_logs",
@@ -2318,7 +2532,7 @@ def test_reports_foundation_endpoints() -> None:
             assert recent_order_activity_response.status_code == 200, recent_order_activity_response.text
             assert any(item["order_number"] == order["order_number"] for item in recent_order_activity_response.json())
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
-        if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "printed_count", "order_events"]):
+        if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events"]):
             pytest.skip("Apply the latest migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
