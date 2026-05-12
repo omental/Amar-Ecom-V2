@@ -1,7 +1,8 @@
+from datetime import datetime, time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
@@ -24,15 +25,48 @@ def _transaction_query():
     )
 
 
+def _date_range_bounds(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime | None, datetime | None]:
+    if date_to is not None and date_to.time() == time.min:
+        return date_from, date_to.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return date_from, date_to
+
+
 @router.get("", response_model=list[TransactionRead])
 async def list_transactions(
     db: DBSession,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    account_id: UUID | None = None,
+    transaction_type: str | None = None,
+    direction: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    search: str | None = Query(default=None, min_length=1),
 ) -> list[Transaction]:
     skip, limit = normalize_pagination(skip, limit)
+    stmt = _transaction_query()
+    if account_id is not None:
+        stmt = stmt.where(Transaction.account_id == account_id)
+    if transaction_type:
+        stmt = stmt.where(Transaction.transaction_type == transaction_type)
+    if direction:
+        stmt = stmt.where(Transaction.direction == direction)
+    start, end = _date_range_bounds(date_from, date_to)
+    if start is not None:
+        stmt = stmt.where(Transaction.transaction_date >= start)
+    if end is not None:
+        stmt = stmt.where(Transaction.transaction_date <= end)
+    if search:
+        token = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Transaction.transaction_number.ilike(token),
+                Transaction.description.ilike(token),
+                Transaction.category.ilike(token),
+            )
+        )
     result = await db.execute(
-        _transaction_query().order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc()).offset(skip).limit(limit)
+        stmt.order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 

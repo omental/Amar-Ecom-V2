@@ -71,6 +71,10 @@ This phase adds the finance foundation migration:
 
 - `f7a8b9c0d1e2_add_finance_foundation`
 
+This phase adds the finance transaction-link polish migration:
+
+- `0f1e2d3c4b5a_add_finance_transaction_links`
+
 Reports foundation adds endpoints only and does not require a new migration.
 
 ## Start API
@@ -304,6 +308,31 @@ Invoke-RestMethod `
   -Body $pettyCashBody
 ```
 
+Expected result:
+
+- if `status` is `approved` or `settled` and `account_id` is present, `transaction_created` becomes `true`
+- the response includes `transaction_id`
+- the selected account balance is reduced once only
+
+## Approve Petty Cash And Verify Transaction
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/petty-cash/{entryId}" `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{ status = "approved" } | ConvertTo-Json)
+```
+
+Then verify:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/transactions?transaction_type=petty_cash&search=PC-001" `
+  -Headers $headers
+```
+
 ## Create Supplier Payment
 
 ```powershell
@@ -325,6 +354,28 @@ Invoke-RestMethod `
   -Body $supplierPaymentBody
 ```
 
+Expected result:
+
+- supplier payment reduces the selected account balance
+- response includes `transaction_id`
+- a linked `supplier_payment` transaction is created automatically
+
+## Verify Supplier Payment Transaction
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/transactions?transaction_type=supplier_payment&direction=out&search=SP-001" `
+  -Headers $headers
+```
+
+## Filter Transactions
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/transactions?account_id={accountId}&transaction_type=expense&direction=out&date_from=2026-01-01T00:00:00Z&date_to=2026-12-31T23:59:59Z&search=office" `
+  -Headers $headers
+```
+
 ## View Finance Summary
 
 ```powershell
@@ -335,14 +386,23 @@ Invoke-RestMethod `
 Invoke-RestMethod `
   -Uri http://127.0.0.1:8000/api/v1/reports/finance-summary `
   -Headers $headers
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/finance/summary?date_from=2026-01-01T00:00:00Z&date_to=2026-12-31T23:59:59Z" `
+  -Headers $headers
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/reports/finance-summary?start_date=2026-01-01T00:00:00Z&end_date=2026-12-31T23:59:59Z" `
+  -Headers $headers
 ```
 
 Expected result:
 
 - total cash/bank balance reflects live account balances
-- total income and expense come from non-transfer transactions
+- total income and expense come from non-transfer transactions, including linked supplier-payment and petty-cash transactions
 - net cash flow equals income minus expense
 - supplier payment total is returned separately
+- date filters change income, expense, net cash flow, and supplier payment totals without changing live account balances
 
 ## Health Check
 

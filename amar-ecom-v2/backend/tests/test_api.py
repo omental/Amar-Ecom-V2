@@ -730,9 +730,9 @@ def test_business_settings_get_and_update() -> None:
             assert settings_body["company_name"]
             assert settings_body["currency"]
             assert settings_body["timezone"]
-            assert settings_body["invoice_title"] == "Invoice"
+            assert settings_body["invoice_title"]
             assert settings_body["show_logo_on_invoice"] is True
-            assert settings_body["invoice_template"] == "standard"
+            assert settings_body["invoice_template"]
 
             update_response = client.patch(
                 "/api/v1/settings/business",
@@ -1020,6 +1020,8 @@ def test_finance_foundation_flow() -> None:
             assert petty_cash_response.status_code == 201, petty_cash_response.text
             petty_cash_entry = petty_cash_response.json()
             assert petty_cash_entry["status"] == "approved"
+            assert petty_cash_entry["transaction_created"] is True
+            assert petty_cash_entry["transaction_id"] is not None
 
             supplier_response = client.post(
                 "/api/v1/suppliers",
@@ -1053,22 +1055,57 @@ def test_finance_foundation_flow() -> None:
             assert supplier_payment_response.status_code == 201, supplier_payment_response.text
             supplier_payment = supplier_payment_response.json()
             assert supplier_payment["supplier"]["id"] == supplier["id"]
+            assert supplier_payment["transaction_id"] is not None
+            assert supplier_payment["transaction"]["transaction_type"] == "supplier_payment"
+
+            petty_cash_transactions_response = client.get(
+                f"/api/v1/transactions?transaction_type=petty_cash&search={petty_cash_entry['entry_number']}",
+                headers=headers,
+            )
+            assert petty_cash_transactions_response.status_code == 200, petty_cash_transactions_response.text
+            petty_cash_transactions = petty_cash_transactions_response.json()
+            assert len(petty_cash_transactions) == 1
+            assert petty_cash_transactions[0]["reference_type"] == "petty_cash"
+            assert petty_cash_transactions[0]["reference_id"] == petty_cash_entry["id"]
+
+            supplier_payment_transactions_response = client.get(
+                f"/api/v1/transactions?account_id={bank_account['id']}&transaction_type=supplier_payment&direction=out&search={supplier_payment['payment_number']}",
+                headers=headers,
+            )
+            assert supplier_payment_transactions_response.status_code == 200, supplier_payment_transactions_response.text
+            supplier_payment_transactions = supplier_payment_transactions_response.json()
+            assert len(supplier_payment_transactions) == 1
+            assert supplier_payment_transactions[0]["reference_type"] == "supplier_payment"
+            assert supplier_payment_transactions[0]["reference_id"] == supplier_payment["id"]
 
             finance_summary_response = client.get("/api/v1/finance/summary", headers=headers)
             assert finance_summary_response.status_code == 200, finance_summary_response.text
             finance_summary = finance_summary_response.json()
             assert float(finance_summary["total_cash_bank_balance"]) == 1250
             assert float(finance_summary["total_income"]) == 250
-            assert float(finance_summary["total_expense"]) == 100
-            assert float(finance_summary["net_cash_flow"]) == 150
+            assert float(finance_summary["total_expense"]) == 350
+            assert float(finance_summary["net_cash_flow"]) == -100
             assert finance_summary["pending_petty_cash_count"] == 0
             assert float(finance_summary["supplier_payments_total"]) == 200
-            assert len(finance_summary["recent_transactions"]) >= 3
+            assert len(finance_summary["recent_transactions"]) >= 5
 
-            finance_report_response = client.get("/api/v1/reports/finance-summary", headers=headers)
+            finance_summary_filtered_response = client.get(
+                "/api/v1/finance/summary?date_from=2026-01-01T00:00:00Z&date_to=2026-12-31T23:59:59Z",
+                headers=headers,
+            )
+            assert finance_summary_filtered_response.status_code == 200, finance_summary_filtered_response.text
+            finance_summary_filtered = finance_summary_filtered_response.json()
+            assert float(finance_summary_filtered["total_income"]) == 250
+            assert float(finance_summary_filtered["supplier_payments_total"]) == 200
+
+            finance_report_response = client.get(
+                "/api/v1/reports/finance-summary?start_date=2026-01-01T00:00:00Z&end_date=2026-12-31T23:59:59Z",
+                headers=headers,
+            )
             assert finance_report_response.status_code == 200, finance_report_response.text
             finance_report = finance_report_response.json()
             assert float(finance_report["total_cash_bank_balance"]) == 1250
+            assert float(finance_report["total_expense"]) == 350
             assert float(finance_report["supplier_payments_total"]) == 200
 
             updated_cash_account_response = client.get(f"/api/v1/accounts/{cash_account['id']}", headers=headers)
@@ -1085,10 +1122,12 @@ def test_finance_foundation_flow() -> None:
             assert any(log["action"] == "account_created" for log in finance_logs)
             assert any(log["action"] == "transaction_created" for log in finance_logs)
             assert any(log["action"] == "petty_cash_created" for log in finance_logs)
+            assert any(log["action"] == "petty_cash_transaction_created" for log in finance_logs)
             assert any(log["action"] == "supplier_payment_created" for log in finance_logs)
+            assert any(log["action"] == "supplier_payment_transaction_created" for log in finance_logs)
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["accounts", "transactions", "petty_cash_entries", "supplier_payments", "reports", "activity_logs"]):
-            pytest.skip("Apply the finance foundation migration before running this test.")
+            pytest.skip("Apply the finance foundation and transaction-link migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
         raise

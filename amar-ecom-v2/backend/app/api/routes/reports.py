@@ -58,6 +58,24 @@ def _apply_created_at_filters(stmt, model, date_from: datetime | None, date_to: 
     return stmt
 
 
+def _apply_transaction_date_filters(stmt, date_from: datetime | None, date_to: datetime | None):
+    start, end = _date_range_bounds(date_from, date_to)
+    if start is not None:
+        stmt = stmt.where(Transaction.transaction_date >= start)
+    if end is not None:
+        stmt = stmt.where(Transaction.transaction_date <= end)
+    return stmt
+
+
+def _apply_supplier_payment_date_filters(stmt, date_from: datetime | None, date_to: datetime | None):
+    start, end = _date_range_bounds(date_from, date_to)
+    if start is not None:
+        stmt = stmt.where(SupplierPayment.payment_date >= start)
+    if end is not None:
+        stmt = stmt.where(SupplierPayment.payment_date <= end)
+    return stmt
+
+
 @router.get("/sales-summary", response_model=SalesSummaryRead)
 async def get_sales_summary(
     db: DBSession,
@@ -279,7 +297,14 @@ async def get_logistics_report(db: DBSession) -> LogisticsReportRead:
 
 
 @router.get("/finance-summary", response_model=FinanceReportSummaryRead)
-async def get_finance_report_summary(db: DBSession) -> FinanceReportSummaryRead:
+async def get_finance_report_summary(
+    db: DBSession,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
+) -> FinanceReportSummaryRead:
+    effective_date_from, effective_date_to = _coalesce_date_filters(date_from, date_to, start_date, end_date)
     cash_balance_result = await db.execute(
         select(func.coalesce(func.sum(Account.current_balance), 0)).where(
             Account.account_type.in_(["cash", "bank", "mobile_banking"]),
@@ -287,19 +312,31 @@ async def get_finance_report_summary(db: DBSession) -> FinanceReportSummaryRead:
         )
     )
     income_result = await db.execute(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-            Transaction.direction == "in",
-            Transaction.transaction_type != "transfer",
+        _apply_transaction_date_filters(
+            select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+                Transaction.direction == "in",
+                Transaction.transaction_type != "transfer",
+            ),
+            effective_date_from,
+            effective_date_to,
         )
     )
     expense_result = await db.execute(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-            Transaction.direction == "out",
-            Transaction.transaction_type != "transfer",
+        _apply_transaction_date_filters(
+            select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+                Transaction.direction == "out",
+                Transaction.transaction_type != "transfer",
+            ),
+            effective_date_from,
+            effective_date_to,
         )
     )
     supplier_payments_result = await db.execute(
-        select(func.coalesce(func.sum(SupplierPayment.amount), 0))
+        _apply_supplier_payment_date_filters(
+            select(func.coalesce(func.sum(SupplierPayment.amount), 0)),
+            effective_date_from,
+            effective_date_to,
+        )
     )
 
     total_cash_bank_balance = cash_balance_result.scalar_one() or Decimal("0")

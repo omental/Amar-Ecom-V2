@@ -834,17 +834,40 @@ npm run dev
 8. In `Petty Cash`, create an entry and save it as `pending` or `approved`
 9. Update at least one petty cash row to `approved`, `rejected`, or `settled`
 10. In `Supplier Payments`, create a payment using an existing supplier and finance account
-11. Return to `Overview`
-12. Confirm the cards show:
+11. Confirm the success message notes that a linked transaction was recorded automatically
+12. In `Transactions`, filter by:
+   - account
+   - transaction type
+   - direction
+   - date from
+   - date to
+   - search
+13. Click `Refresh`
+14. Confirm the list narrows correctly and includes linked `supplier_payment` or `petty_cash` transactions when relevant
+15. Click `Clear filters`
+16. Confirm the full list returns
+17. In `Petty Cash`, approve or settle a pending entry with a linked account
+18. Confirm the warning explains that approving/settling will create a petty cash transaction and reduce the selected account balance
+19. Confirm the petty cash row shows that a transaction was created
+20. Use the export buttons for:
+   - `Accounts CSV`
+   - `Transactions CSV`
+   - `Petty Cash CSV`
+   - `Supplier Payments CSV`
+21. Confirm each CSV downloads and includes visible row data
+22. Return to `Overview`
+23. Set `date from` and `date to`
+24. Click `Refresh`
+25. Confirm the cards show:
    - `Cash / Bank Balance`
    - `Total Income`
    - `Total Expense`
    - `Net Cash Flow`
    - `Pending Petty Cash`
    - `Supplier Payments`
-13. Confirm the recent transactions list updates after transaction creation
-14. Open `http://localhost:3000/dashboard`
-15. Confirm the dashboard includes:
+26. Confirm the recent transactions list updates after transaction creation
+27. Open `http://localhost:3000/dashboard`
+28. Confirm the dashboard includes:
    - a `Finance Cash` summary card
    - an `Open Finance` link
 
@@ -867,6 +890,7 @@ npm run dev
 - Pending dispatch excludes orders that already have an active shipment unless that shipment was cancelled or returned
 - Reports in this phase are operational summaries and enhancements, not full finance reports or accounting statements
 - Finance in this phase is a practical operational foundation only: accounts, transactions, petty cash, supplier payments, and summary visibility
+- Finance polish in this phase adds linked supplier-payment and petty-cash transactions, browser CSV export, transaction filtering, and date-filtered summary totals
 - CSV export is browser-generated from the currently loaded report data
 - Charts are implemented with lightweight CSS-based bars rather than a new chart dependency
 - Return restocking increases inventory only when status moves to `restocked` and `restock_items` is enabled

@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409, fetch_one_or_404, normalize_pagination
-from app.models.finance import SupplierPayment
+from app.models.finance import SupplierPayment, Transaction
 from app.models.user import User
 from app.schemas.finance import SupplierPaymentCreate, SupplierPaymentRead
 from app.services.activity_log_service import log_activity
@@ -20,6 +20,9 @@ def _supplier_payment_query():
     return select(SupplierPayment).options(
         selectinload(SupplierPayment.supplier),
         selectinload(SupplierPayment.account),
+        selectinload(SupplierPayment.transaction).selectinload(Transaction.account),
+        selectinload(SupplierPayment.transaction).selectinload(Transaction.related_account),
+        selectinload(SupplierPayment.transaction).selectinload(Transaction.created_by),
     )
 
 
@@ -48,7 +51,7 @@ async def create_supplier_payment_entry(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> SupplierPayment:
-    payment = await record_supplier_payment(db, payment_in)
+    payment = await record_supplier_payment(db, payment_in, created_by=current_user)
     await log_activity(
         db,
         user_id=current_user.id,
@@ -59,5 +62,16 @@ async def create_supplier_payment_entry(
         message=f"Created supplier payment {payment.payment_number}.",
         request=request,
     )
+    if payment.transaction_id is not None and payment.transaction is not None:
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="supplier_payment_transaction_created",
+            module="finance",
+            entity_type="transaction",
+            entity_id=payment.transaction_id,
+            message=f"Recorded supplier payment transaction {payment.transaction.transaction_number} for {payment.payment_number}.",
+            request=request,
+        )
     await commit_or_409(db, "Could not create supplier payment")
     return await fetch_one_or_404(db, _supplier_payment_query().where(SupplierPayment.id == payment.id), "Supplier payment not found")

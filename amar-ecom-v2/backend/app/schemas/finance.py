@@ -104,6 +104,8 @@ class PettyCashEntryRead(ORMBaseSchema):
     id: UUID
     entry_number: str
     account_id: UUID | None
+    transaction_id: UUID | None
+    transaction_created: bool
     entry_type: str
     amount: Decimal
     purpose: str
@@ -132,6 +134,7 @@ class SupplierPaymentRead(ORMBaseSchema):
     id: UUID
     supplier_id: UUID | None
     account_id: UUID
+    transaction_id: UUID | None
     payment_number: str
     amount: Decimal
     payment_method: str | None
@@ -142,6 +145,7 @@ class SupplierPaymentRead(ORMBaseSchema):
     updated_at: datetime
     supplier: SupplierRead | None = None
     account: AccountRead
+    transaction: TransactionRead | None = None
 
 
 class FinanceSummaryRead(BaseModel):

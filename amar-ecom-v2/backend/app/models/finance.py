@@ -103,6 +103,18 @@ class PettyCashEntry(Base):
         nullable=True,
         index=True,
     )
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    transaction_created: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", server_default="pending")
     entry_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -115,6 +127,7 @@ class PettyCashEntry(Base):
 
     account = relationship("Account", back_populates="petty_cash_entries")
     approved_by = relationship("User", back_populates="petty_cash_entries_approved")
+    transaction = relationship("Transaction", foreign_keys=[transaction_id])
 
 
 class SupplierPayment(Base):
@@ -133,6 +146,12 @@ class SupplierPayment(Base):
         nullable=False,
         index=True,
     )
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     payment_number: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     payment_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -149,3 +168,4 @@ class SupplierPayment(Base):
 
     supplier = relationship("Supplier", back_populates="supplier_payments")
     account = relationship("Account", back_populates="supplier_payments")
+    transaction = relationship("Transaction", foreign_keys=[transaction_id])

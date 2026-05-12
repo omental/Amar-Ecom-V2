@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +20,35 @@ PETTY_CASH_DEDUCT_STATUSES = {"approved", "settled"}
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _transaction_query() -> Select[tuple[Transaction]]:
+    return select(Transaction).options(
+        selectinload(Transaction.account),
+        selectinload(Transaction.related_account),
+        selectinload(Transaction.created_by),
+    )
+
+
+def _petty_cash_query() -> Select[tuple[PettyCashEntry]]:
+    return select(PettyCashEntry).options(
+        selectinload(PettyCashEntry.account),
+        selectinload(PettyCashEntry.approved_by),
+    )
+
+
+def _supplier_payment_query() -> Select[tuple[SupplierPayment]]:
+    return select(SupplierPayment).options(
+        selectinload(SupplierPayment.supplier),
+        selectinload(SupplierPayment.account),
+        selectinload(SupplierPayment.transaction).selectinload(Transaction.account),
+        selectinload(SupplierPayment.transaction).selectinload(Transaction.related_account),
+        selectinload(SupplierPayment.transaction).selectinload(Transaction.created_by),
+    )
+
+
+def _generate_transaction_number(prefix: str) -> str:
+    return f"{prefix}-{_now().strftime('%Y%m%d%H%M%S%f')}"
 
 
 async def _get_account(db: AsyncSession, account_id: UUID) -> Account:
@@ -45,6 +74,7 @@ async def create_transaction(
     transaction_in: TransactionCreate,
     *,
     created_by: User | None = None,
+    apply_balance: bool = True,
 ) -> Transaction:
     await ensure_unique(
         db,
@@ -80,8 +110,9 @@ async def create_transaction(
             detail=f"{transaction_in.transaction_type} transactions must use direction 'out'.",
         )
 
-    apply_account_balance(account, amount=transaction_in.amount, direction=transaction_in.direction)
-    if transaction_in.transaction_type == "transfer" and related_account is not None:
+    if apply_balance:
+        apply_account_balance(account, amount=transaction_in.amount, direction=transaction_in.direction)
+    if apply_balance and transaction_in.transaction_type == "transfer" and related_account is not None:
         apply_account_balance(related_account, amount=transaction_in.amount, direction="in")
 
     transaction = Transaction(
@@ -92,15 +123,7 @@ async def create_transaction(
     db.add(transaction)
     await db.flush()
 
-    result = await db.execute(
-        select(Transaction)
-        .options(
-            selectinload(Transaction.account),
-            selectinload(Transaction.related_account),
-            selectinload(Transaction.created_by),
-        )
-        .where(Transaction.id == transaction.id)
-    )
+    result = await db.execute(_transaction_query().where(Transaction.id == transaction.id))
     return result.scalar_one()
 
 
@@ -114,11 +137,69 @@ async def create_transfer(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Transfers must use transaction_type 'transfer' and direction 'out'.",
-        )
+    )
     return await create_transaction(db, transaction_in, created_by=created_by)
 
 
-async def record_supplier_payment(db: AsyncSession, payment_in: SupplierPaymentCreate) -> SupplierPayment:
+async def _find_transaction_by_reference(
+    db: AsyncSession,
+    *,
+    reference_type: str,
+    reference_id: str,
+) -> Transaction | None:
+    result = await db.execute(
+        _transaction_query().where(
+            Transaction.reference_type == reference_type,
+            Transaction.reference_id == reference_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _create_reference_transaction(
+    db: AsyncSession,
+    *,
+    account_id: UUID,
+    amount: Decimal,
+    transaction_type: str,
+    reference_type: str,
+    reference_id: UUID,
+    description: str,
+    transaction_date: datetime,
+    category: str | None = None,
+    created_by: User | None = None,
+    prefix: str,
+) -> Transaction:
+    existing = await _find_transaction_by_reference(
+        db,
+        reference_type=reference_type,
+        reference_id=str(reference_id),
+    )
+    if existing is not None:
+        return existing
+
+    transaction_in = TransactionCreate(
+        transaction_number=_generate_transaction_number(prefix),
+        account_id=account_id,
+        related_account_id=None,
+        transaction_type=transaction_type,
+        category=category,
+        amount=amount,
+        direction="out",
+        reference_type=reference_type,
+        reference_id=str(reference_id),
+        description=description,
+        transaction_date=transaction_date,
+    )
+    return await create_transaction(db, transaction_in, created_by=created_by, apply_balance=False)
+
+
+async def record_supplier_payment(
+    db: AsyncSession,
+    payment_in: SupplierPaymentCreate,
+    *,
+    created_by: User | None = None,
+) -> SupplierPayment:
     await ensure_unique(
         db,
         SupplierPayment,
@@ -139,15 +220,65 @@ async def record_supplier_payment(db: AsyncSession, payment_in: SupplierPaymentC
     db.add(payment)
     await db.flush()
 
-    result = await db.execute(
-        select(SupplierPayment)
-        .options(selectinload(SupplierPayment.supplier), selectinload(SupplierPayment.account))
-        .where(SupplierPayment.id == payment.id)
+    transaction = await _create_reference_transaction(
+        db,
+        account_id=payment.account_id,
+        amount=payment.amount,
+        transaction_type="supplier_payment",
+        reference_type="supplier_payment",
+        reference_id=payment.id,
+        description=f"Supplier payment {payment.payment_number}"
+        + (f" for supplier {payment.supplier_id}" if payment.supplier_id else ""),
+        transaction_date=payment.payment_date,
+        category=payment.payment_method,
+        created_by=created_by,
+        prefix="TXN-SP",
     )
+    payment.transaction_id = transaction.id
+
+    result = await db.execute(_supplier_payment_query().where(SupplierPayment.id == payment.id))
     return result.scalar_one()
 
 
-async def record_petty_cash_entry(db: AsyncSession, entry_in: PettyCashEntryCreate) -> PettyCashEntry:
+async def _maybe_create_petty_cash_transaction(
+    db: AsyncSession,
+    *,
+    entry: PettyCashEntry,
+    created_by: User | None = None,
+) -> Transaction | None:
+    if entry.account_id is None or entry.status not in PETTY_CASH_DEDUCT_STATUSES:
+        return None
+    if entry.transaction_created and entry.transaction_id is not None:
+        return await _find_transaction_by_reference(
+            db,
+            reference_type="petty_cash",
+            reference_id=str(entry.id),
+        )
+
+    transaction = await _create_reference_transaction(
+        db,
+        account_id=entry.account_id,
+        amount=entry.amount,
+        transaction_type="petty_cash",
+        reference_type="petty_cash",
+        reference_id=entry.id,
+        description=f"Petty cash {entry.entry_number}: {entry.purpose}",
+        transaction_date=entry.entry_date,
+        category=entry.entry_type,
+        created_by=created_by,
+        prefix="TXN-PC",
+    )
+    entry.transaction_id = transaction.id
+    entry.transaction_created = True
+    return transaction
+
+
+async def record_petty_cash_entry(
+    db: AsyncSession,
+    entry_in: PettyCashEntryCreate,
+    *,
+    created_by: User | None = None,
+) -> PettyCashEntry:
     await ensure_unique(
         db,
         PettyCashEntry,
@@ -166,12 +297,9 @@ async def record_petty_cash_entry(db: AsyncSession, entry_in: PettyCashEntryCrea
     )
     db.add(entry)
     await db.flush()
+    await _maybe_create_petty_cash_transaction(db, entry=entry, created_by=created_by)
 
-    result = await db.execute(
-        select(PettyCashEntry)
-        .options(selectinload(PettyCashEntry.account), selectinload(PettyCashEntry.approved_by))
-        .where(PettyCashEntry.id == entry.id)
-    )
+    result = await db.execute(_petty_cash_query().where(PettyCashEntry.id == entry.id))
     return result.scalar_one()
 
 
@@ -179,6 +307,8 @@ async def update_petty_cash_entry(
     db: AsyncSession,
     entry: PettyCashEntry,
     entry_in: PettyCashEntryUpdate,
+    *,
+    created_by: User | None = None,
 ) -> PettyCashEntry:
     payload = entry_in.model_dump(exclude_unset=True)
     previous_status = entry.status
@@ -195,23 +325,15 @@ async def update_petty_cash_entry(
     for field, value in payload.items():
         setattr(entry, field, value)
 
-    result = await db.execute(
-        select(PettyCashEntry)
-        .options(selectinload(PettyCashEntry.account), selectinload(PettyCashEntry.approved_by))
-        .where(PettyCashEntry.id == entry.id)
-    )
+    if entry.status in PETTY_CASH_DEDUCT_STATUSES:
+        await _maybe_create_petty_cash_transaction(db, entry=entry, created_by=created_by)
+
+    result = await db.execute(_petty_cash_query().where(PettyCashEntry.id == entry.id))
     return result.scalar_one()
 
 
 async def get_recent_transactions(db: AsyncSession, limit: int = 10) -> list[Transaction]:
     result = await db.execute(
-        select(Transaction)
-        .options(
-            selectinload(Transaction.account),
-            selectinload(Transaction.related_account),
-            selectinload(Transaction.created_by),
-        )
-        .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
-        .limit(limit)
+        _transaction_query().order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc()).limit(limit)
     )
     return list(result.scalars().all())

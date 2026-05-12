@@ -48,7 +48,7 @@ async def create_petty_cash_entry(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> PettyCashEntry:
-    entry = await record_petty_cash_entry(db, entry_in)
+    entry = await record_petty_cash_entry(db, entry_in, created_by=current_user)
     await log_activity(
         db,
         user_id=current_user.id,
@@ -59,6 +59,17 @@ async def create_petty_cash_entry(
         message=f"Created petty cash entry {entry.entry_number}.",
         request=request,
     )
+    if entry.transaction_created and entry.transaction_id is not None:
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="petty_cash_transaction_created",
+            module="finance",
+            entity_type="transaction",
+            entity_id=entry.transaction_id,
+            message=f"Recorded petty cash transaction for {entry.entry_number}.",
+            request=request,
+        )
     await commit_or_409(db, "Could not create petty cash entry")
     return await fetch_one_or_404(db, _petty_cash_query().where(PettyCashEntry.id == entry.id), "Petty cash entry not found")
 
@@ -72,7 +83,8 @@ async def update_petty_cash(
     current_user: User = Depends(get_current_user),
 ) -> PettyCashEntry:
     entry = await fetch_one_or_404(db, select(PettyCashEntry).where(PettyCashEntry.id == entry_id), "Petty cash entry not found")
-    await update_petty_cash_entry(db, entry, entry_in)
+    had_transaction = entry.transaction_created
+    await update_petty_cash_entry(db, entry, entry_in, created_by=current_user)
     await log_activity(
         db,
         user_id=current_user.id,
@@ -83,5 +95,16 @@ async def update_petty_cash(
         message=f"Updated petty cash entry {entry.entry_number}.",
         request=request,
     )
+    if not had_transaction and entry.transaction_created and entry.transaction_id is not None:
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="petty_cash_transaction_created",
+            module="finance",
+            entity_type="transaction",
+            entity_id=entry.transaction_id,
+            message=f"Recorded petty cash transaction for {entry.entry_number}.",
+            request=request,
+        )
     await commit_or_409(db, "Could not update petty cash entry")
     return await fetch_one_or_404(db, _petty_cash_query().where(PettyCashEntry.id == entry.id), "Petty cash entry not found")
