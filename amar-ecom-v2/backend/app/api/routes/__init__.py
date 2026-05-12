@@ -7,6 +7,7 @@ from app.api.routes import (
     categories,
     couriers,
     customers,
+    invoice_templates,
     inventory,
     logistics,
     orders,
@@ -38,6 +39,7 @@ api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["suppliers"])
 api_router.include_router(purchase_orders.router, prefix="/purchase-orders", tags=["purchase-orders"])
 api_router.include_router(customers.router, prefix="/customers", tags=["customers"])
+api_router.include_router(invoice_templates.router, prefix="/invoice-templates", tags=["invoice-templates"])
 api_router.include_router(logistics.router, prefix="/logistics", tags=["logistics"])
 api_router.include_router(permissions.router, tags=["permissions"])
 api_router.include_router(orders.router, prefix="/orders", tags=["orders"])

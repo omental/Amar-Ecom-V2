@@ -9,11 +9,21 @@ from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.courier import Courier, Shipment, ShipmentEvent
 from app.models.customer import Customer
+from app.models.business_settings import BusinessSettings
+from app.models.invoice_template import InvoiceTemplate
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.user import User
 from app.models.warehouse import Warehouse
 from app.schemas.courier import ShipmentCreateFromOrder, ShipmentRead
-from app.schemas.order import OrderCreate, OrderDuplicateRead, OrderListRead, OrderRead, OrderUpdate
+from app.schemas.order import (
+    InvoiceDataRead,
+    InvoiceMetadataRead,
+    OrderCreate,
+    OrderDuplicateRead,
+    OrderListRead,
+    OrderRead,
+    OrderUpdate,
+)
 from app.services.activity_log_service import log_activity
 from app.services.inventory_service import (
     decrease_stock,
@@ -85,6 +95,60 @@ def _log_shipment_event(
     )
 
 
+async def _get_business_settings_for_invoice(db: DBSession) -> BusinessSettings:
+    result = await db.execute(select(BusinessSettings).limit(1))
+    settings = result.scalar_one_or_none()
+    if settings is None:
+        settings = BusinessSettings()
+        db.add(settings)
+        await db.flush()
+    return settings
+
+
+async def _get_default_invoice_template(db: DBSession) -> InvoiceTemplate | None:
+    result = await db.execute(
+        select(InvoiceTemplate)
+        .where(InvoiceTemplate.is_default.is_(True), InvoiceTemplate.is_active.is_(True))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _get_selected_invoice_template(db: DBSession, slug: str | None) -> InvoiceTemplate | None:
+    if not slug:
+        return None
+    result = await db.execute(
+        select(InvoiceTemplate)
+        .where(InvoiceTemplate.slug == slug, InvoiceTemplate.is_active.is_(True))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def _build_invoice_metadata(
+    order: Order,
+    settings: BusinessSettings,
+    template: InvoiceTemplate | None,
+) -> InvoiceMetadataRead:
+    return InvoiceMetadataRead(
+        invoice_number=order.order_number,
+        invoice_title=template.header_text or settings.invoice_title,
+        accent_color=template.accent_color or settings.invoice_accent_color,
+        footer_note=template.footer_text or settings.invoice_footer_note,
+        terms=template.terms_text or settings.invoice_terms,
+        payment_instructions=template.payment_instructions or settings.payment_instructions,
+        signature_label=settings.invoice_signature_label,
+        show_logo=settings.show_logo_on_invoice,
+        show_business_address=settings.show_business_address_on_invoice,
+        show_customer_phone=settings.show_customer_phone_on_invoice,
+        show_payment_status=settings.show_payment_status_on_invoice,
+        show_warehouse=settings.show_warehouse_on_invoice,
+        selected_template_slug=template.slug if template else None,
+        selected_template_name=template.name if template else None,
+        template_source="invoice_template" if template else "business_settings",
+    )
+
+
 @router.get("", response_model=list[OrderListRead])
 async def list_orders(
     db: DBSession,
@@ -119,6 +183,21 @@ async def duplicate_check_orders(
         .limit(limit)
     )
     return list(result.scalars().unique().all())
+
+
+@router.get("/{order_id}/invoice-data", response_model=InvoiceDataRead)
+async def get_order_invoice_data(order_id: UUID, db: DBSession) -> InvoiceDataRead:
+    order = await fetch_one_or_404(db, _order_query().where(Order.id == order_id), "Order not found")
+    settings = await _get_business_settings_for_invoice(db)
+    default_template = await _get_default_invoice_template(db)
+    selected_template = await _get_selected_invoice_template(db, settings.invoice_template)
+    effective_template = selected_template or default_template
+    return InvoiceDataRead(
+        order=order,
+        business_settings=settings,
+        default_invoice_template=default_template,
+        computed_invoice_metadata=_build_invoice_metadata(order, settings, effective_template),
+    )
 
 
 @router.post("/{order_id}/mark-printed", response_model=OrderRead)

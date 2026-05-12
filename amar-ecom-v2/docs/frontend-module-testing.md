@@ -637,11 +637,19 @@ npm run dev
 2. Click `Print` on any order row, or open the order detail page and click `Print Invoice`
 3. Confirm `/dashboard/orders/{id}/invoice` loads
 4. Confirm the page shows:
-   - company name, address, phone, and email when business settings exist
+   - invoice title from settings or template override
+   - company name plus logo when enabled
+   - business address only when enabled
+   - phone and email when business settings exist
    - order number and date
+   - customer phone only when enabled
+   - payment status only when enabled
+   - warehouse information only when enabled
    - customer and shipping address
    - line items
    - subtotal, discount, delivery charge, and total
+   - footer note, terms, payment instructions, and signature label when configured
+   - accent color on the print UI when configured
 5. Click `Print`
 6. Confirm the browser print dialog opens
 7. Return to the order detail page
@@ -768,16 +776,40 @@ npm run dev
    - `timezone`
    - `invoice prefix`
    - `order prefix`
+   - `invoice title`
+   - `footer note`
+   - `terms`
+   - `payment instructions`
+   - `selected template`
+   - `accent color`
+   - `signature label`
+   - invoice visibility toggles
    - `default low stock threshold`
    - `tax rate`
    - `logo URL`
 5. Save the form
 6. Confirm the success message appears
-7. Open `http://localhost:3000/dashboard`
-8. Confirm the dashboard intro text now reflects the updated `company name`
-9. Confirm the quick links area includes:
+7. Open the `Invoice Templates` tab
+8. Create a template with:
+   - `name`
+   - `slug`
+   - `description`
+   - `accent color`
+   - `header text`
+   - `footer text`
+   - `terms text`
+   - `payment instructions`
+9. Confirm the template appears in the active list
+10. Click `Set default`
+11. Confirm the template shows the `Default` badge
+12. Use the `Preview Invoice` link if available
+13. Confirm the latest order invoice reflects the saved settings and template values
+14. Open `http://localhost:3000/dashboard`
+15. Confirm the dashboard intro text now reflects the updated `company name`
+16. Confirm the quick links area includes:
    - `Activity Logs`
    - `Team Permissions`
+   - `Preview Invoice` when at least one order exists
 
 ## Notes
 
@@ -788,6 +820,7 @@ npm run dev
 - Older orders without a warehouse still use the fallback inventory selection behavior
 - Duplicate checking is warning-only and currently uses phone matching against `orders.customer_phone` and linked customer phone values
 - Print tracking uses a browser-print flow and increments `printed_count` through the backend when the print action is used from the invoice page or order detail
+- Invoice rendering now uses `/api/v1/orders/{id}/invoice-data` so business settings and the selected/default template shape the print payload together
 - Customer CRM detail includes recent order history and a manual activity timeline
 - Customer follow-up counts on the dashboard are currently based on customers with `follow_up_date` set
 - Inventory operations now run from the inventory hub, but transfers only move stock when a transfer is explicitly completed

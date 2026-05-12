@@ -730,6 +730,9 @@ def test_business_settings_get_and_update() -> None:
             assert settings_body["company_name"]
             assert settings_body["currency"]
             assert settings_body["timezone"]
+            assert settings_body["invoice_title"] == "Invoice"
+            assert settings_body["show_logo_on_invoice"] is True
+            assert settings_body["invoice_template"] == "standard"
 
             update_response = client.patch(
                 "/api/v1/settings/business",
@@ -738,6 +741,10 @@ def test_business_settings_get_and_update() -> None:
                     "company_name": "Amar eCom Test",
                     "currency": "USD",
                     "order_prefix": "AMR",
+                    "invoice_title": "Tax Invoice",
+                    "invoice_footer_note": "Thank you for your business.",
+                    "payment_instructions": "Send payment to bKash",
+                    "show_payment_status_on_invoice": False,
                     "low_stock_default_threshold": 9,
                     "tax_rate": 15,
                 },
@@ -747,10 +754,167 @@ def test_business_settings_get_and_update() -> None:
             assert updated_body["company_name"] == "Amar eCom Test"
             assert updated_body["currency"] == "USD"
             assert updated_body["order_prefix"] == "AMR"
+            assert updated_body["invoice_title"] == "Tax Invoice"
+            assert updated_body["invoice_footer_note"] == "Thank you for your business."
+            assert updated_body["payment_instructions"] == "Send payment to bKash"
+            assert updated_body["show_payment_status_on_invoice"] is False
             assert updated_body["low_stock_default_threshold"] == 9
+
+            settings_logs_response = client.get(
+                "/api/v1/activity-logs?module=settings&limit=20",
+                headers=headers,
+            )
+            assert settings_logs_response.status_code == 200, settings_logs_response.text
+            settings_logs = settings_logs_response.json()
+            assert any(log["action"] == "business_settings_updated" for log in settings_logs)
     except ProgrammingError as exc:
         if "business_settings" in str(exc):
             pytest.skip("Apply the business settings migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_invoice_templates_and_invoice_data_flow() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            create_template_response = client.post(
+                "/api/v1/invoice-templates",
+                headers=headers,
+                json={
+                    "name": "Bold Template",
+                    "slug": f"bold-template-{uuid.uuid4().hex[:8]}",
+                    "description": "Reusable invoice copy",
+                    "accent_color": "#123456",
+                    "header_text": "Commercial Invoice",
+                    "footer_text": "Template footer text",
+                    "terms_text": "Template terms",
+                    "payment_instructions": "Template payment instructions",
+                    "is_active": True,
+                },
+            )
+            assert create_template_response.status_code == 201, create_template_response.text
+            created_template = create_template_response.json()
+
+            set_default_response = client.post(
+                f"/api/v1/invoice-templates/{created_template['id']}/set-default",
+                headers=headers,
+            )
+            assert set_default_response.status_code == 200, set_default_response.text
+            default_template = set_default_response.json()
+            assert default_template["is_default"] is True
+
+            list_templates_response = client.get("/api/v1/invoice-templates", headers=headers)
+            assert list_templates_response.status_code == 200, list_templates_response.text
+            templates = list_templates_response.json()
+            assert any(template["id"] == created_template["id"] and template["is_default"] for template in templates)
+
+            update_template_response = client.patch(
+                f"/api/v1/invoice-templates/{created_template['id']}",
+                headers=headers,
+                json={
+                    "name": "Bold Template Updated",
+                    "footer_text": "Updated footer text",
+                },
+            )
+            assert update_template_response.status_code == 200, update_template_response.text
+            assert update_template_response.json()["name"] == "Bold Template Updated"
+
+            update_settings_response = client.patch(
+                "/api/v1/settings/business",
+                headers=headers,
+                json={
+                    "invoice_title": "Fallback Invoice Title",
+                    "invoice_footer_note": "Fallback footer",
+                    "invoice_terms": "Fallback terms",
+                    "payment_instructions": "Fallback payment instructions",
+                    "invoice_template": created_template["slug"],
+                    "invoice_accent_color": "#654321",
+                    "invoice_signature_label": "Authorized Signature",
+                    "show_warehouse_on_invoice": True,
+                },
+            )
+            assert update_settings_response.status_code == 200, update_settings_response.text
+            assert update_settings_response.json()["invoice_template"] == created_template["slug"]
+
+            order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-INV-{uuid.uuid4().hex[:8]}",
+                    "customer_id": None,
+                    "warehouse_id": None,
+                    "customer_phone": "01744444444",
+                    "shipping_address": "Dhaka, Bangladesh",
+                    "notes": "Invoice data test order",
+                    "status": "pending",
+                    "payment_status": "paid",
+                    "source": "manual",
+                    "subtotal": 200,
+                    "discount": 10,
+                    "delivery_charge": 20,
+                    "total": 210,
+                    "items": [
+                        {
+                            "product_id": None,
+                            "variant_id": None,
+                            "product_name": "Service Item",
+                            "sku": "SVC-INV",
+                            "quantity": 1,
+                            "unit_price": 200,
+                            "total_price": 200,
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+            order = order_response.json()
+
+            invoice_data_response = client.get(
+                f"/api/v1/orders/{order['id']}/invoice-data",
+                headers=headers,
+            )
+            assert invoice_data_response.status_code == 200, invoice_data_response.text
+            invoice_data = invoice_data_response.json()
+            assert invoice_data["order"]["id"] == order["id"]
+            assert invoice_data["business_settings"]["invoice_template"] == created_template["slug"]
+            assert invoice_data["default_invoice_template"]["id"] == created_template["id"]
+            assert invoice_data["computed_invoice_metadata"]["invoice_title"] == "Commercial Invoice"
+            assert invoice_data["computed_invoice_metadata"]["footer_note"] == "Updated footer text"
+            assert invoice_data["computed_invoice_metadata"]["terms"] == "Template terms"
+            assert invoice_data["computed_invoice_metadata"]["payment_instructions"] == "Template payment instructions"
+            assert invoice_data["computed_invoice_metadata"]["signature_label"] == "Authorized Signature"
+            assert invoice_data["computed_invoice_metadata"]["show_warehouse"] is True
+            assert invoice_data["computed_invoice_metadata"]["selected_template_slug"] == created_template["slug"]
+
+            settings_logs_response = client.get(
+                "/api/v1/activity-logs?module=settings&limit=50",
+                headers=headers,
+            )
+            assert settings_logs_response.status_code == 200, settings_logs_response.text
+            settings_logs = settings_logs_response.json()
+            assert any(log["action"] == "invoice_template_created" for log in settings_logs)
+            assert any(log["action"] == "invoice_template_updated" for log in settings_logs)
+            assert any(log["action"] == "invoice_template_default_changed" for log in settings_logs)
+
+            deactivate_response = client.delete(
+                f"/api/v1/invoice-templates/{created_template['id']}",
+                headers=headers,
+            )
+            assert deactivate_response.status_code == 204, deactivate_response.text
+
+            inactive_templates_response = client.get(
+                "/api/v1/invoice-templates?is_active=false",
+                headers=headers,
+            )
+            assert inactive_templates_response.status_code == 200, inactive_templates_response.text
+            inactive_templates = inactive_templates_response.json()
+            assert any(template["id"] == created_template["id"] and template["is_active"] is False for template in inactive_templates)
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["invoice_templates", "business_settings", "activity_logs"]):
+            pytest.skip("Apply the advanced invoice settings migration before running this test.")
         raise
 
     dispose_engine()

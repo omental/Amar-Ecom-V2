@@ -27,6 +27,44 @@ class BusinessSettings(Base):
     )
     invoice_prefix: Mapped[str] = mapped_column(String(20), nullable=False, default="INV", server_default="INV")
     order_prefix: Mapped[str] = mapped_column(String(20), nullable=False, default="ORD", server_default="ORD")
+    invoice_title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="Invoice",
+        server_default="Invoice",
+    )
+    invoice_footer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invoice_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    show_logo_on_invoice: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    show_business_address_on_invoice: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    show_customer_phone_on_invoice: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    show_payment_status_on_invoice: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    show_warehouse_on_invoice: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    invoice_template: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="standard",
+        server_default="standard",
+    )
+    invoice_accent_color: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    invoice_signature_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     low_stock_default_threshold: Mapped[int] = mapped_column(nullable=False, default=5, server_default="5")
     tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0, server_default="0")
     logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

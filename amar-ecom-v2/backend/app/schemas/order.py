@@ -5,7 +5,9 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.common import ORMBaseSchema
+from app.schemas.business_settings import BusinessSettingsRead
 from app.schemas.customer import CustomerListRead
+from app.schemas.invoice_template import InvoiceTemplateRead
 from app.schemas.user import UserRead
 from app.schemas.warehouse import WarehouseRead
 
@@ -112,3 +114,28 @@ class OrderListRead(ORMBaseSchema):
 
 class OrderRead(OrderListRead):
     events: list[OrderEventRead] = []
+
+
+class InvoiceMetadataRead(BaseModel):
+    invoice_number: str
+    invoice_title: str
+    accent_color: str | None = None
+    footer_note: str | None = None
+    terms: str | None = None
+    payment_instructions: str | None = None
+    signature_label: str | None = None
+    show_logo: bool
+    show_business_address: bool
+    show_customer_phone: bool
+    show_payment_status: bool
+    show_warehouse: bool
+    selected_template_slug: str | None = None
+    selected_template_name: str | None = None
+    template_source: str | None = None
+
+
+class InvoiceDataRead(BaseModel):
+    order: OrderRead
+    business_settings: BusinessSettingsRead
+    default_invoice_template: InvoiceTemplateRead | None = None
+    computed_invoice_metadata: InvoiceMetadataRead

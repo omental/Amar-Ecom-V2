@@ -63,6 +63,10 @@ This phase adds the logistics workflow completion migration:
 
 - `d8f9a0b1c2d3_add_logistics_shipment_events_and_reconciliation`
 
+This phase adds the advanced invoice settings and invoice templates migration:
+
+- `e6f7a8b9c0d1_add_advanced_invoice_settings_and_templates`
+
 Reports foundation adds endpoints only and does not require a new migration.
 
 ## Start API
@@ -101,6 +105,18 @@ $settingsBody = @{
   timezone = "Asia/Dhaka"
   invoice_prefix = "INV"
   order_prefix = "ORD"
+  invoice_title = "Tax Invoice"
+  invoice_footer_note = "Thank you for your business."
+  invoice_terms = "Goods sold are non-refundable after delivery."
+  payment_instructions = "Pay to bKash merchant 01XXXXXXXXX"
+  invoice_template = "standard"
+  invoice_accent_color = "#0f172a"
+  invoice_signature_label = "Authorized Signature"
+  show_logo_on_invoice = $true
+  show_business_address_on_invoice = $true
+  show_customer_phone_on_invoice = $true
+  show_payment_status_on_invoice = $true
+  show_warehouse_on_invoice = $false
   low_stock_default_threshold = 7
   tax_rate = 5
   logo_url = "https://example.com/logo.png"
@@ -113,6 +129,65 @@ Invoke-RestMethod `
   -ContentType "application/json" `
   -Body $settingsBody
 ```
+
+Expected result:
+
+- updated invoice configuration fields are returned in the response
+- a `business_settings_updated` activity log entry is created
+
+## Create Invoice Template
+
+```powershell
+$templateBody = @{
+  name = "Bold Commercial"
+  slug = "bold-commercial"
+  description = "Reusable invoice wording and accent color"
+  accent_color = "#123456"
+  header_text = "Commercial Invoice"
+  footer_text = "Template footer copy"
+  terms_text = "Template terms"
+  payment_instructions = "Template payment instructions"
+  is_active = $true
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/invoice-templates `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $templateBody
+```
+
+## Set Invoice Template Default
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/invoice-templates/{templateId}/set-default `
+  -Method Post `
+  -Headers $headers
+```
+
+Expected result:
+
+- selected template returns with `is_default = true`
+- any previous default template becomes `false`
+- a `invoice_template_default_changed` activity log entry is created
+
+## Get Order Invoice Data
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/orders/{orderId}/invoice-data `
+  -Headers $headers
+```
+
+Expected result:
+
+- response contains `order`
+- response contains `business_settings`
+- response contains `default_invoice_template`
+- response contains `computed_invoice_metadata`
+- selected or default template values override invoice title/footer/terms/payment instructions when applicable
 
 ## Health Check
 
