@@ -35,5 +35,6 @@ class User(Base):
     petty_cash_entries_approved = relationship("PettyCashEntry", back_populates="approved_by")
     salary_advances_approved = relationship("SalaryAdvance", back_populates="approved_by")
     woocommerce_sync_logs_created = relationship("WooCommerceSyncLog", back_populates="created_by")
+    courier_api_logs_created = relationship("CourierApiLog", back_populates="created_by")
     permission_assignments = relationship("UserPermission", back_populates="user", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="user")

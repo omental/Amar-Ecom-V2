@@ -1072,6 +1072,7 @@ Expected result:
 
 - lint should pass cleanly
 - build should pass once locked `.next` artifacts are released
+- if build fails because `next/font` cannot download Google-hosted fonts such as `Geist`, treat that as an environment issue rather than a courier feature failure
 
 ## Workflow Hardening Checks
 
@@ -1256,3 +1257,62 @@ Expected result:
    - external synced timestamp
    - `Refresh from WooCommerce` button
    - warning that refresh does not deduct stock automatically
+
+## Courier Integrations Workspace Checks
+
+1. Apply the latest backend migration:
+   - `venv\Scripts\alembic.exe upgrade head`
+2. Open `http://localhost:3000/dashboard/courier-integrations`
+3. Confirm the page loads tabs for:
+   - `Provider Settings`
+   - `Send Shipments`
+   - `API Logs`
+4. In `Provider Settings`, choose one of:
+   - `manual`
+   - `steadfast`
+   - `pathao`
+   - `redx`
+   - `paperfly`
+5. Save settings with display name, base URL, and any needed credentials
+6. Confirm the page shows saved or missing credential state without revealing raw values
+7. Confirm the note says credentials are stored server-side and never displayed after saving
+8. Click `Test connection`
+9. Confirm the page shows status, message, and last-tested timing
+10. Open `Send Shipments`
+11. Confirm recent shipments load without runtime errors
+12. Confirm shipment rows can show:
+   - shipment number
+   - order number
+   - courier
+   - recipient
+   - local status
+   - external provider
+   - external consignment or tracking
+   - external status
+13. Use `Send to provider` on one shipment
+14. Confirm the warning explains this sends shipment data to the selected courier provider and does not change WooCommerce or local inventory
+15. If send succeeds or is skipped safely, confirm the row updates external provider and sync metadata
+16. Use `Sync external status` on a shipment that already has external linkage
+17. Confirm external status and external synced timing update safely
+18. Open `/dashboard/shipments/{id}`
+19. Confirm the detail page shows external provider, consignment, tracking, and status fields when available
+20. Confirm `Sync External Status` only appears when the shipment has usable external linkage
+21. Open `/dashboard/logistics`
+22. Confirm courier-linked shipments show external provider or status context without cluttering rows that have no external data
+23. Open `API Logs`
+24. Filter by:
+   - provider
+   - action
+   - status
+   - shipment or external id search if available
+25. Confirm the table shows:
+   - date
+   - provider
+   - action
+   - status
+   - shipment
+   - external id
+   - message
+26. Open a log detail panel if present
+27. Confirm request and response snapshots remain sanitized
+28. Confirm no raw tokens, passwords, secrets, or auth headers appear anywhere in the UI

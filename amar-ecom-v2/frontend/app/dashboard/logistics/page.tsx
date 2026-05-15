@@ -67,6 +67,12 @@ type Shipment = {
   recipient_phone: string | null;
   delivery_address: string | null;
   tracking_number: string | null;
+  external_provider: string | null;
+  external_consignment_id: string | null;
+  external_tracking_number: string | null;
+  external_status: string | null;
+  external_synced_at: string | null;
+  sent_to_courier_at: string | null;
   status: string;
   delivery_charge: number | string;
   courier_charge: number | string;
@@ -347,7 +353,7 @@ export default function LogisticsPage() {
           <PageHeader
             eyebrow="Logistics Workspace"
             title="Internal logistics hub"
-            description="Work pending dispatch, shipment operations, courier coverage, and reconciliation from one workflow-oriented page without external courier APIs."
+            description="Work pending dispatch, shipment operations, courier coverage, reconciliation, and external courier handoff from one workflow-oriented page."
             meta={`${shipments.length} shipments`}
           />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -372,6 +378,15 @@ export default function LogisticsPage() {
               <p className="mt-2 text-xl font-semibold text-rose-900">{unsettledReconciliationCount}</p>
             </div>
           </div>
+        </div>
+        <div className="mt-4">
+          <Link
+            href="/dashboard/courier-integrations"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            <Truck className="h-4 w-4" />
+            Open Courier Integrations
+          </Link>
         </div>
       </section>
 
@@ -679,11 +694,11 @@ export default function LogisticsPage() {
                 description="Create shipments from pending dispatch or the order detail page."
               />
             ) : (
-              <DataTable columns={["Shipment", "Order", "Recipient", "Courier", "Status", "COD", "Collected", "Reconciliation", "Actions"]}>
+              <DataTable columns={["Shipment", "Order", "Recipient", "Courier", "Status", "External", "COD", "Collected", "Reconciliation", "Actions"]}>
                 {shipments.map((shipment) => (
                   <div
                     key={shipment.id}
-                    className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-9 2xl:gap-4"
+                    className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-10 2xl:gap-4"
                   >
                     <div>
                       <Link
@@ -703,6 +718,18 @@ export default function LogisticsPage() {
                     <span>
                       <StatusBadge status={shipment.status} />
                     </span>
+                    <div>
+                      {shipment.external_provider ? (
+                        <>
+                          <StatusBadge status={shipment.external_provider} />
+                          <p className="mt-1 text-xs text-slate-500">
+                            {shipment.external_status || shipment.external_tracking_number || shipment.external_consignment_id || "Linked"}
+                          </p>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">No external link</span>
+                      )}
+                    </div>
                     <span>{formatCurrency(shipment.cod_amount)}</span>
                     <span>{formatCurrency(shipment.collected_amount)}</span>
                     <span>
@@ -715,6 +742,13 @@ export default function LogisticsPage() {
                       >
                         <Rows3 className="h-3.5 w-3.5" />
                         View / Update
+                      </Link>
+                      <Link
+                        href="/dashboard/courier-integrations"
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                      >
+                        <Truck className="h-3.5 w-3.5" />
+                        Courier APIs
                       </Link>
                       <button
                         type="button"

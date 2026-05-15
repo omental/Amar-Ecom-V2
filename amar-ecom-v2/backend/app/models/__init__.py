@@ -3,6 +3,7 @@ from app.models.business_settings import BusinessSettings
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.courier import Courier, Shipment, ShipmentEvent
+from app.models.courier_integration import CourierApiLog, CourierProviderSetting
 from app.models.customer import Customer, CustomerActivity
 from app.models.finance import Account, PettyCashEntry, SupplierPayment, Transaction
 from app.models.hr import AttendanceRecord, Designation, Employee, SalaryAdvance, SalaryRecord
@@ -26,6 +27,8 @@ __all__ = [
     "Brand",
     "Category",
     "Courier",
+    "CourierApiLog",
+    "CourierProviderSetting",
     "Customer",
     "CustomerActivity",
     "Designation",

@@ -109,6 +109,10 @@ Phase 12F WooCommerce product lifecycle sync adds a new migration:
 
 - `7a8b9c0d1e2f_add_product_external_sync_fields`
 
+Phase 13A external courier API foundation adds a new migration:
+
+- `8b9c0d1e2f3a_add_courier_integrations_foundation`
+
 ## Start API
 
 ```powershell
@@ -2288,6 +2292,141 @@ Invoke-RestMethod `
 ```powershell
 venv\Scripts\pytest.exe -q
 ```
+
+## Courier Integration Foundation
+
+Phase 13A adds a safe external courier integration foundation:
+
+- provider settings are stored server-side and secrets are encrypted
+- provider reads return masked or presence metadata only
+- shipment rows can store external provider, consignment, tracking, status, sync time, and sanitized payload snapshots
+- courier API requests remain manual only in this phase
+- no background worker is included yet
+- Steadfast adapter structure is conservative and still needs endpoint confirmation before production
+
+Supported provider keys:
+
+- `manual`
+- `steadfast`
+- `pathao`
+- `redx`
+- `paperfly`
+
+### List Providers
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/providers `
+  -Headers $headers
+```
+
+### Save Provider Settings
+
+```powershell
+$courierSettingsBody = @{
+  display_name = "Steadfast Sandbox"
+  base_url = "https://portal.packzy.com/api/v1"
+  api_key = "sandbox-api-key"
+  api_secret = "sandbox-api-secret"
+  merchant_id = "sandbox-merchant"
+  username = "sandbox-user"
+  password = "sandbox-pass"
+  is_active = $true
+  is_sandbox = $true
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/providers/steadfast/settings `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $courierSettingsBody
+```
+
+Expected result:
+
+- response includes saved state such as `has_api_key` and `has_password`
+- masked values may be returned
+- raw secrets are never returned
+
+### Read Provider Settings
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/providers/steadfast/settings `
+  -Headers $headers
+```
+
+Expected result:
+
+- encrypted values remain hidden
+- test metadata such as `last_tested_at` and `last_test_success` is returned when available
+
+### Test Provider Connection
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/providers/steadfast/test-connection `
+  -Method Post `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns clean `success`, `failed`, or `skipped` messaging
+- writes a `courier_api_logs` row with `action = connection_test`
+
+### Send Shipment To Provider
+
+```powershell
+$sendShipmentBody = @{
+  provider = "steadfast"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/shipments/{shipmentId}/send `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $sendShipmentBody
+```
+
+Expected result:
+
+- shipment external metadata updates only on successful provider submission
+- a shipment event is created
+- a `courier_api_logs` row is created with `action = send_shipment`
+
+### Sync Shipment External Status
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/shipments/{shipmentId}/sync-status `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{} | ConvertTo-Json)
+```
+
+Expected result:
+
+- external status and sync time update safely
+- safe status mapping may update local shipment status when the remote state clearly matches
+- no destructive shipment, order, or inventory mutation occurs
+
+### Filter Courier API Logs
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/courier-integrations/logs?provider=steadfast&action=send_shipment&status=success&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- logs filter by provider, action, status, shipment, external id, and date window
+- request and response snapshots remain sanitized
+- auth headers, tokens, passwords, and secrets are never exposed
 
 ## Fresh Migration Validation On A Temporary Database
 

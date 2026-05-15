@@ -49,6 +49,13 @@ class Shipment(Base):
     recipient_phone: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     delivery_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     tracking_number: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    external_provider: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    external_consignment_id: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)
+    external_tracking_number: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    external_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    external_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    external_payload_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_to_courier_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", server_default="pending")
     delivery_charge: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     courier_charge: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
@@ -75,6 +82,7 @@ class Shipment(Base):
 
     order = relationship("Order", back_populates="shipments")
     courier = relationship("Courier", back_populates="shipments")
+    courier_api_logs = relationship("CourierApiLog", back_populates="shipment")
     events = relationship(
         "ShipmentEvent",
         back_populates="shipment",

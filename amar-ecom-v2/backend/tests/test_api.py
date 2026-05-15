@@ -5,13 +5,16 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.exc import InterfaceError, ProgrammingError
 
+from app.api.routes import courier_integrations as courier_integration_routes
 from app.api.routes import woocommerce as woocommerce_routes
 from app.core import crypto as crypto_utils
-from app.core.crypto import decrypt_secret, is_encrypted_secret, mask_secret
+from app.core.crypto import decrypt_secret, encrypt_secret, is_encrypted_secret, mask_secret
 from app.core.database import engine
 from app.main import app
+from app.models.courier_integration import CourierApiLog, CourierProviderSetting
 from app.models.woocommerce import WooCommerceSetting
 from app.services import woocommerce_service
 
@@ -157,6 +160,7 @@ def test_admin_tools_endpoints() -> None:
             assert checklist_response.status_code == 200, checklist_response.text
             checklist_body = checklist_response.json()
             assert any(item["key"] == "migrations_applied" for item in checklist_body["items"])
+            assert any(item["key"] == "courier_integration_readiness" for item in checklist_body["items"])
 
             export_response = client.get("/api/v1/admin/exports/products", headers=headers)
             assert export_response.status_code == 200, export_response.text
@@ -596,6 +600,260 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["woocommerce_settings", "woocommerce_sync_logs"]):
             pytest.skip("Apply the latest WooCommerce migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = auth_headers()
+    staff_email = unique_email()
+
+    async def ensure_setting(db, provider: str) -> CourierProviderSetting:
+        result = await db.execute(select(CourierProviderSetting).where(CourierProviderSetting.provider == provider))
+        setting = result.scalar_one_or_none()
+        if setting is None:
+            setting = CourierProviderSetting(
+                provider=provider,
+                display_name=provider.title(),
+            )
+            db.add(setting)
+            await db.flush()
+        return setting
+
+    async def list_settings(db):
+        rows = []
+        for provider in ["manual", "steadfast", "pathao", "redx", "paperfly"]:
+            rows.append(await ensure_setting(db, provider))
+        return rows
+
+    async def fake_get_provider_setting(db, provider, create_if_missing=True):
+        del create_if_missing
+        return await ensure_setting(db, provider)
+
+    async def fake_save_provider_setting(db, provider, **payload):
+        setting = await ensure_setting(db, provider)
+        if "display_name" in payload and payload["display_name"] is not None:
+            setting.display_name = payload["display_name"]
+        if "base_url" in payload:
+            setting.base_url = payload["base_url"]
+        if "api_key" in payload and payload["api_key"] is not None:
+            setting.api_key_encrypted = encrypt_secret(payload["api_key"])
+        if "api_secret" in payload and payload["api_secret"] is not None:
+            setting.api_secret_encrypted = encrypt_secret(payload["api_secret"])
+        if "merchant_id" in payload and payload["merchant_id"] is not None:
+            setting.merchant_id_encrypted = encrypt_secret(payload["merchant_id"])
+        if "username" in payload and payload["username"] is not None:
+            setting.username_encrypted = encrypt_secret(payload["username"])
+        if "password" in payload and payload["password"] is not None:
+            setting.password_encrypted = encrypt_secret(payload["password"])
+        if "is_active" in payload and payload["is_active"] is not None:
+            setting.is_active = payload["is_active"]
+        if "is_sandbox" in payload and payload["is_sandbox"] is not None:
+            setting.is_sandbox = payload["is_sandbox"]
+        await db.flush()
+        return setting
+
+    async def fake_test_provider_connection(db, provider, current_user):
+        log = CourierApiLog(
+            provider=provider,
+            action="connection_test",
+            status="success",
+            message="Courier provider connection succeeded.",
+            request_snapshot='{"provider":"manual"}',
+            response_snapshot='{"ok":true}',
+            created_by_id=current_user.id,
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        await db.flush()
+        return {
+            "provider": provider,
+            "success": True,
+            "message": "Courier provider connection succeeded.",
+            "tested_at": datetime.now(timezone.utc),
+        }
+
+    async def fake_send_shipment_to_provider(db, shipment_id, provider, current_user):
+        log = CourierApiLog(
+            provider=provider,
+            action="send_shipment",
+            status="success",
+            shipment_id=None,
+            external_id="CONS-101",
+            message="Shipment sent to courier provider successfully.",
+            request_snapshot='{"shipment_number":"SHP-TEST"}',
+            response_snapshot='{"consignment_id":"CONS-101"}',
+            created_by_id=current_user.id,
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        await db.flush()
+        return {
+            "status": "success",
+            "provider": provider,
+            "shipment_id": shipment_id,
+            "external_id": "CONS-101",
+            "external_tracking_number": "TRK-101",
+            "external_status": "submitted",
+            "sent_at": datetime.now(timezone.utc),
+            "message": "Shipment sent to courier provider successfully.",
+            "request_snapshot": {"shipment_number": "SHP-TEST"},
+            "response_snapshot": {"consignment_id": "CONS-101"},
+        }
+
+    async def fake_sync_shipment_status(db, shipment_id, current_user, provider=None):
+        provider_name = provider or "manual"
+        log = CourierApiLog(
+            provider=provider_name,
+            action="status_sync",
+            status="success",
+            shipment_id=None,
+            external_id="CONS-101",
+            message="Courier provider status synced successfully.",
+            request_snapshot='{"lookup":"CONS-101"}',
+            response_snapshot='{"status":"delivered"}',
+            created_by_id=current_user.id,
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(log)
+        await db.flush()
+        return {
+            "status": "success",
+            "provider": provider_name,
+            "shipment_id": shipment_id,
+            "external_id": "CONS-101",
+            "external_tracking_number": "TRK-101",
+            "external_status": "delivered",
+            "internal_status": "delivered",
+            "synced_at": datetime.now(timezone.utc),
+            "message": "Courier provider status synced successfully.",
+            "request_snapshot": {"lookup": "CONS-101"},
+            "response_snapshot": {"status": "delivered"},
+        }
+
+    monkeypatch.setattr(courier_integration_routes, "list_provider_settings", list_settings)
+    monkeypatch.setattr(courier_integration_routes, "get_provider_setting", fake_get_provider_setting)
+    monkeypatch.setattr(courier_integration_routes, "save_provider_setting", fake_save_provider_setting)
+    monkeypatch.setattr(courier_integration_routes, "test_provider_connection", fake_test_provider_connection)
+    monkeypatch.setattr(courier_integration_routes, "send_shipment_to_provider", fake_send_shipment_to_provider)
+    monkeypatch.setattr(courier_integration_routes, "sync_shipment_status", fake_sync_shipment_status)
+
+    try:
+        with TestClient(app) as client:
+            staff_register_response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "full_name": "Courier Staff User",
+                    "email": staff_email,
+                    "password": "StrongPass123",
+                    "role": "staff",
+                    "is_active": True,
+                },
+            )
+            assert staff_register_response.status_code == 201, staff_register_response.text
+
+            staff_login_response = client.post(
+                "/api/v1/auth/login",
+                json={"email": staff_email, "password": "StrongPass123"},
+            )
+            assert staff_login_response.status_code == 200, staff_login_response.text
+            staff_headers = {"Authorization": f"Bearer {staff_login_response.json()['access_token']}"}
+
+            providers_response = client.get("/api/v1/courier-integrations/providers", headers=headers)
+            assert providers_response.status_code == 200, providers_response.text
+            providers_payload = providers_response.json()
+            assert any(item["provider"] == "manual" for item in providers_payload)
+
+            forbidden_response = client.get("/api/v1/courier-integrations/providers", headers=staff_headers)
+            assert forbidden_response.status_code == 403, forbidden_response.text
+
+            settings_response = client.patch(
+                "/api/v1/courier-integrations/providers/manual/settings",
+                headers=headers,
+                json={
+                    "display_name": "Manual Test Provider",
+                    "base_url": "https://courier.example.com",
+                    "api_key": "api-key-test",
+                    "api_secret": "secret-test",
+                    "merchant_id": "merchant-42",
+                    "username": "ops-user",
+                    "password": "ops-pass",
+                    "is_active": True,
+                    "is_sandbox": True,
+                },
+            )
+            assert settings_response.status_code == 200, settings_response.text
+            settings_payload = settings_response.json()
+            assert "api_key" not in settings_payload
+            assert "api_secret" not in settings_payload
+            assert "password" not in settings_payload
+            assert "api-key-test" not in settings_response.text
+            assert "secret-test" not in settings_response.text
+            assert settings_payload["has_api_key"] is True
+            assert settings_payload["has_api_secret"] is True
+            assert settings_payload["api_key_masked"]
+
+            get_settings_response = client.get(
+                "/api/v1/courier-integrations/providers/manual/settings",
+                headers=headers,
+            )
+            assert get_settings_response.status_code == 200, get_settings_response.text
+            get_settings_payload = get_settings_response.json()
+            assert "api_key" not in get_settings_payload
+            assert "api_secret" not in get_settings_payload
+            assert "password" not in get_settings_payload
+            assert get_settings_payload["has_password"] is True
+
+            test_response = client.post(
+                "/api/v1/courier-integrations/providers/manual/test-connection",
+                headers=headers,
+                json={},
+            )
+            assert test_response.status_code == 200, test_response.text
+            assert test_response.json()["success"] is True
+
+            shipment_id = str(uuid.uuid4())
+            send_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment_id}/send",
+                headers=headers,
+                json={"provider": "manual"},
+            )
+            assert send_response.status_code == 200, send_response.text
+            assert send_response.json()["external_id"] == "CONS-101"
+
+            sync_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment_id}/sync-status",
+                headers=headers,
+                json={"provider": "manual"},
+            )
+            assert sync_response.status_code == 200, sync_response.text
+            assert sync_response.json()["external_status"] == "delivered"
+
+            logs_response = client.get("/api/v1/courier-integrations/logs?provider=manual", headers=headers)
+            assert logs_response.status_code == 200, logs_response.text
+            logs_payload = logs_response.json()
+            assert len(logs_payload) >= 3
+            assert any(log["action"] == "connection_test" for log in logs_payload)
+            assert any(log["action"] == "send_shipment" for log in logs_payload)
+            assert any(log["action"] == "status_sync" for log in logs_payload)
+
+            filtered_logs_response = client.get(
+                "/api/v1/courier-integrations/logs?provider=manual&action=status_sync&status=success",
+                headers=headers,
+            )
+            assert filtered_logs_response.status_code == 200, filtered_logs_response.text
+            filtered_logs_payload = filtered_logs_response.json()
+            assert filtered_logs_payload
+            assert all(log["action"] == "status_sync" for log in filtered_logs_payload)
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["courier_provider_settings", "courier_api_logs", "shipments.external_provider"]):
+            pytest.skip("Apply the latest courier integration migration before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
         raise

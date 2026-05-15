@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Clock3, Loader2, Truck, Wallet } from "lucide-react";
+import { ArrowLeft, Clock3, Loader2, RefreshCw, Truck, Wallet } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
@@ -34,6 +34,12 @@ type ShipmentDetail = {
   recipient_phone: string | null;
   delivery_address: string | null;
   tracking_number: string | null;
+  external_provider: string | null;
+  external_consignment_id: string | null;
+  external_tracking_number: string | null;
+  external_status: string | null;
+  external_synced_at: string | null;
+  sent_to_courier_at: string | null;
   status: string;
   delivery_charge: number | string;
   courier_charge: number | string;
@@ -121,6 +127,7 @@ export default function ShipmentDetailPage() {
   const [form, setForm] = useState<ShipmentForm | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncingExternalStatus, setIsSyncingExternalStatus] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -196,6 +203,30 @@ export default function ShipmentDetailPage() {
     }
   }
 
+  async function handleSyncExternalStatus() {
+    if (!shipment?.external_provider) {
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsSyncingExternalStatus(true);
+
+    try {
+      await api.post(`/courier-integrations/shipments/${shipment.id}/sync-status`, {
+        provider: shipment.external_provider,
+      });
+      const refreshed = await api.get<ShipmentDetail>(`/shipments/${shipment.id}`);
+      setShipment(refreshed);
+      setForm(shipmentToForm(refreshed));
+      setSuccess("External courier status synced successfully.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to sync external courier status");
+    } finally {
+      setIsSyncingExternalStatus(false);
+    }
+  }
+
   if (isLoading) {
     return <LoadingState label="Loading shipment detail..." />;
   }
@@ -259,6 +290,26 @@ export default function ShipmentDetailPage() {
             </div>
           </div>
         </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link
+            href="/dashboard/courier-integrations"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            <Truck className="h-4 w-4" />
+            Open Courier Integrations
+          </Link>
+          {shipment.external_provider ? (
+            <button
+              type="button"
+              onClick={() => void handleSyncExternalStatus()}
+              disabled={isSyncingExternalStatus}
+              className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
+            >
+              {isSyncingExternalStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Sync External Status
+            </button>
+          ) : null}
+        </div>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
@@ -266,8 +317,14 @@ export default function ShipmentDetailPage() {
           <PageHeader
             eyebrow="Update Shipment"
             title="Shipment controls"
-            description="Adjust recipient details, courier assignment, tracking, status, and reconciliation values. Backend events and timestamps are recorded automatically."
+            description="Adjust recipient details, courier assignment, tracking, status, and reconciliation values. External courier sync remains safe and non-destructive."
           />
+
+          {shipment.external_provider ? (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+              Sync external status updates courier tracking metadata safely. It does not change WooCommerce or local inventory.
+            </div>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
@@ -461,6 +518,21 @@ export default function ShipmentDetailPage() {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Courier code: <span className="font-semibold text-slate-950">{selectedCourier?.code || "Not assigned"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                External provider: <span className="font-semibold text-slate-950">{shipment.external_provider ? formatLabel(shipment.external_provider) : "Not linked"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                External consignment: <span className="font-semibold text-slate-950">{shipment.external_consignment_id || "Not available"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                External tracking: <span className="font-semibold text-slate-950">{shipment.external_tracking_number || "Not available"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                External status: <span className="font-semibold text-slate-950">{shipment.external_status ? formatLabel(shipment.external_status) : "Not synced"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                External synced: <span className="font-semibold text-slate-950">{shipment.external_synced_at ? formatDate(shipment.external_synced_at) : "Never"}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Recipient phone: <span className="font-semibold text-slate-950">{shipment.recipient_phone || "No phone"}</span>

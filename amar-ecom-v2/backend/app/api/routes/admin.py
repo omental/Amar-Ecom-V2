@@ -18,6 +18,8 @@ from app.core.config import settings
 from app.models import (
     Account,
     BusinessSettings,
+    CourierApiLog,
+    CourierProviderSetting,
     Customer,
     Employee,
     InventoryItem,
@@ -262,6 +264,24 @@ async def get_maintenance_checklist(
     except ProgrammingError:
         woo_sync_log_count = 0
     try:
+        active_courier_provider_count = int(
+            await db.scalar(
+                select(func.count())
+                .select_from(CourierProviderSetting)
+                .where(CourierProviderSetting.is_active.is_(True))
+            )
+            or 0
+        )
+        recent_failed_courier_logs = int(
+            await db.scalar(
+                select(func.count()).select_from(CourierApiLog).where(CourierApiLog.status == "failed")
+            )
+            or 0
+        )
+    except ProgrammingError:
+        active_courier_provider_count = 0
+        recent_failed_courier_logs = 0
+    try:
         woo_settings = await db.scalar(select(WooCommerceSetting).limit(1))
         recent_failed_woo_syncs = int(
             await db.scalar(
@@ -392,6 +412,14 @@ async def get_maintenance_checklist(
             value=f"{woo_value} | Log rows: {woo_sync_log_count}",
             recommended_action="Confirm active settings, save encrypted credentials, run a successful connection test, and review recent failed WooCommerce sync logs before relying on manual imports.",
             route="/dashboard/woocommerce",
+        ),
+        MaintenanceChecklistItemRead(
+            key="courier_integration_readiness",
+            label="Courier integration readiness",
+            status="pass" if active_courier_provider_count > 0 else "warning",
+            value=f"Active providers: {active_courier_provider_count} | Recent failed API calls: {recent_failed_courier_logs}",
+            recommended_action="Save external courier provider settings, run a successful connection test, and review recent courier API failures before sending live shipments.",
+            route="/dashboard/courier-integrations",
         ),
     ]
 

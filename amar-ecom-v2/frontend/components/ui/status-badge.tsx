@@ -13,7 +13,7 @@ const toneClasses: Record<StatusTone, string> = {
 function resolveTone(status: string): StatusTone {
   const normalized = status.toLowerCase();
 
-  if (["active", "paid", "delivered", "confirmed", "received", "restocked", "in stock", "completed", "matched", "settled"].includes(normalized)) {
+  if (["active", "paid", "delivered", "confirmed", "received", "restocked", "in stock", "completed", "matched", "settled", "success"].includes(normalized)) {
     return "success";
   }
 
@@ -21,7 +21,7 @@ function resolveTone(status: string): StatusTone {
     return "success";
   }
 
-  if (["pending", "processing", "partial", "partially_received", "ordered", "low stock", "partial_delivered", "draft"].includes(normalized)) {
+  if (["pending", "processing", "partial", "partially_received", "ordered", "low stock", "partial_delivered", "draft", "skipped"].includes(normalized)) {
     return "warning";
   }
 
@@ -33,7 +33,7 @@ function resolveTone(status: string): StatusTone {
     return "danger";
   }
 
-  if (["shipped", "ready_to_ship", "in_transit", "manual", "website", "facebook", "woocommerce", "unpaid"].includes(normalized)) {
+  if (["shipped", "ready_to_ship", "in_transit", "manual", "website", "facebook", "woocommerce", "unpaid", "submitted"].includes(normalized)) {
     return "info";
   }
 

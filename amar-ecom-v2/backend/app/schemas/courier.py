@@ -124,6 +124,13 @@ class ShipmentListRead(ORMBaseSchema):
     recipient_phone: str | None
     delivery_address: str | None
     tracking_number: str | None
+    external_provider: str | None = None
+    external_consignment_id: str | None = None
+    external_tracking_number: str | None = None
+    external_status: str | None = None
+    external_synced_at: datetime | None = None
+    external_payload_snapshot: str | None = None
+    sent_to_courier_at: datetime | None = None
     status: str
     delivery_charge: Decimal
     courier_charge: Decimal

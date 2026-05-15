@@ -23,6 +23,17 @@ from app.schemas.courier import (
     ShipmentRead,
     ShipmentUpdate,
 )
+from app.schemas.courier_integration import (
+    CourierApiLogRead,
+    CourierConnectionTestRead,
+    CourierProviderSettingCreate,
+    CourierProviderSettingRead,
+    CourierProviderSettingUpdate,
+    CourierSendShipmentRequest,
+    CourierSendShipmentResult,
+    CourierStatusSyncRequest,
+    CourierStatusSyncResult,
+)
 from app.schemas.customer import (
     CustomerActivityCreate,
     CustomerActivityRead,
@@ -182,6 +193,15 @@ __all__ = [
     "CourierCreate",
     "CourierRead",
     "CourierUpdate",
+    "CourierApiLogRead",
+    "CourierConnectionTestRead",
+    "CourierProviderSettingCreate",
+    "CourierProviderSettingRead",
+    "CourierProviderSettingUpdate",
+    "CourierSendShipmentRequest",
+    "CourierSendShipmentResult",
+    "CourierStatusSyncRequest",
+    "CourierStatusSyncResult",
     "CustomerActivityCreate",
     "CustomerActivityRead",
     "CustomerActivityUpdate",

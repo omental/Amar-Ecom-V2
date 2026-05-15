@@ -239,6 +239,35 @@ Expected:
 - sync log detail stays safe and does not expose WooCommerce credentials
 - imported WooCommerce orders do not deduct local stock automatically in this phase
 
+### Courier Integration Foundation
+
+1. Open `/dashboard/courier-integrations`.
+2. Save provider settings for `manual` or `steadfast`.
+3. Confirm the UI shows saved credential state without revealing raw values.
+4. Run `Test connection`.
+5. Confirm success, failed, or skipped messaging appears cleanly.
+6. Open `Send Shipments`.
+7. Send a shipment to a selected provider manually.
+8. Confirm the shipment stores external provider, consignment or tracking, external status, payload snapshot, and sent timestamp when the provider returns success.
+9. Open `/dashboard/shipments/{id}` for a linked shipment.
+10. Confirm external provider and status metadata are visible when values exist.
+11. Use `Sync External Status` on a shipment with external linkage.
+12. Confirm external status and synced time update safely.
+13. Open `API Logs`.
+14. Filter by provider, action, and status.
+15. Review at least one log entry or detail panel.
+16. Open `/dashboard/admin-tools` and confirm the maintenance checklist includes courier integration readiness.
+
+Expected:
+- provider credentials are encrypted server-side and never returned raw
+- connection testing creates a courier API log entry
+- manual send creates an external courier event and API log entry
+- external status sync updates safe shipment metadata only
+- local WooCommerce, inventory, and unrelated order fields are not modified by courier API actions
+- request and response snapshots are sanitized and do not expose tokens, passwords, keys, or auth headers
+- no background courier worker is running in this phase
+- provider adapters are foundational only, and Steadfast endpoint mapping still requires production confirmation
+
 ### Reports Check
 
 1. Open `/dashboard/reports`.

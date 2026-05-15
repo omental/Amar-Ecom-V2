@@ -1,0 +1,130 @@
+from typing import Any
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+from app.schemas.common import ORMBaseSchema
+from app.schemas.user import UserRead
+
+
+class CourierProviderSettingCreate(BaseModel):
+    display_name: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    api_secret: str | None = None
+    merchant_id: str | None = None
+    username: str | None = None
+    password: str | None = None
+    is_active: bool = True
+    is_sandbox: bool = True
+
+
+class CourierProviderSettingUpdate(BaseModel):
+    display_name: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    api_secret: str | None = None
+    merchant_id: str | None = None
+    username: str | None = None
+    password: str | None = None
+    is_active: bool | None = None
+    is_sandbox: bool | None = None
+
+
+class CourierProviderSettingRead(ORMBaseSchema):
+    id: UUID
+    provider: str
+    display_name: str
+    base_url: str | None
+    has_api_key: bool
+    has_api_secret: bool
+    has_merchant_id: bool
+    has_username: bool
+    has_password: bool
+    api_key_masked: str | None = None
+    api_secret_masked: str | None = None
+    merchant_id_masked: str | None = None
+    username_masked: str | None = None
+    password_masked: str | None = None
+    credentials_encrypted: bool
+    encryption_key_configured: bool
+    encryption_warning: str | None = None
+    is_active: bool
+    is_sandbox: bool
+    last_tested_at: datetime | None
+    last_test_success: bool
+    last_test_message: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CourierConnectionTestRead(BaseModel):
+    provider: str
+    success: bool
+    message: str
+    tested_at: datetime
+
+
+class CourierApiLogRead(ORMBaseSchema):
+    id: UUID
+    provider: str
+    action: str
+    status: str
+    shipment_id: UUID | None
+    external_id: str | None
+    request_snapshot: Any | None = None
+    response_snapshot: Any | None = None
+    message: str | None
+    created_by_id: UUID | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    created_by: UserRead | None = None
+
+
+class CourierSendShipmentRequest(BaseModel):
+    provider: str
+
+
+class CourierSendShipmentResult(BaseModel):
+    status: str
+    provider: str
+    shipment_id: UUID
+    external_id: str | None = None
+    external_tracking_number: str | None = None
+    external_status: str | None = None
+    sent_at: datetime | None = None
+    message: str
+    request_snapshot: Any | None = None
+    response_snapshot: Any | None = None
+
+
+class CourierStatusSyncRequest(BaseModel):
+    provider: str | None = None
+
+
+class CourierStatusSyncResult(BaseModel):
+    status: str
+    provider: str
+    shipment_id: UUID
+    external_id: str | None = None
+    external_tracking_number: str | None = None
+    external_status: str | None = None
+    internal_status: str | None = None
+    synced_at: datetime | None = None
+    message: str
+    request_snapshot: Any | None = None
+    response_snapshot: Any | None = None
+
+
+class CourierLogListFilters(BaseModel):
+    provider: str | None = None
+    action: str | None = None
+    status: str | None = None
+    shipment_id: UUID | None = None
+    external_id: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    skip: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=200)

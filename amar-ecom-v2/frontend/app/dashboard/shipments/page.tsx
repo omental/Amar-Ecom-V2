@@ -32,6 +32,11 @@ type Shipment = {
   order_id: string;
   courier_id: string | null;
   tracking_number: string | null;
+  external_provider: string | null;
+  external_consignment_id: string | null;
+  external_tracking_number: string | null;
+  external_status: string | null;
+  external_synced_at: string | null;
   status: string;
   delivery_charge: number | string;
   cod_amount: number | string;
@@ -173,9 +178,18 @@ export default function ShipmentsPage() {
         <PageHeader
           eyebrow="Logistics Operations"
           title="Shipments"
-          description="Create internal shipment records, assign couriers, and track delivery status without relying on external API integrations."
+          description="Create internal shipment records, assign couriers, and review safe external courier linkage without destructive local changes."
           meta={`${shipments.length} shipments`}
         />
+        <div className="mt-4">
+          <Link
+            href="/dashboard/courier-integrations"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+          >
+            <Truck className="h-4 w-4" />
+            Open Courier Integrations
+          </Link>
+        </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
@@ -338,9 +352,9 @@ export default function ShipmentsPage() {
                 description="Create the first shipment after an order is ready to move into logistics."
               />
             ) : (
-              <DataTable columns={["Shipment #", "Order", "Courier", "Tracking", "Status", "Delivery", "COD", "Created"]}>
+              <DataTable columns={["Shipment #", "Order", "Courier", "Tracking", "External", "Status", "Delivery", "COD", "Created"]}>
                 {shipments.map((shipment) => (
-                  <div key={shipment.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-8 2xl:gap-4">
+                  <div key={shipment.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-9 2xl:gap-4">
                     <div>
                       <Link
                         href={`/dashboard/shipments/${shipment.id}`}
@@ -368,6 +382,18 @@ export default function ShipmentsPage() {
                         (shipment.courier_id ? courierMap.get(shipment.courier_id)?.name || "Unknown courier" : "Not assigned")}
                     </span>
                     <span>{shipment.tracking_number || "Pending"}</span>
+                    <div>
+                      {shipment.external_provider ? (
+                        <>
+                          <StatusBadge status={shipment.external_provider} />
+                          <p className="mt-1 text-xs text-slate-500">
+                            {shipment.external_status || shipment.external_tracking_number || shipment.external_consignment_id || "Linked"}
+                          </p>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">No external link</span>
+                      )}
+                    </div>
                     <span>
                       <StatusBadge
                         status={shipment.status}

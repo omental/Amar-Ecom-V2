@@ -8,6 +8,7 @@ from app.api.routes import (
     brands,
     categories,
     couriers,
+    courier_integrations,
     customers,
     finance,
     hr,
@@ -51,6 +52,7 @@ api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
 api_router.include_router(brands.router, prefix="/brands", tags=["brands"])
 api_router.include_router(couriers.router, prefix="/couriers", tags=["couriers"])
+api_router.include_router(courier_integrations.router, prefix="/courier-integrations", tags=["courier-integrations"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(designations.router, prefix="/designations", tags=["designations"])

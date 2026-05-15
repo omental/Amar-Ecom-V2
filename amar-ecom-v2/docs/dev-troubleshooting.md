@@ -99,3 +99,27 @@ If the warning still appears in a local environment:
 - verify the app is started from `D:\Amar-eCom\amar-ecom-v2\frontend`
 - check whether another parent workspace tool is overriding the root at runtime
 - confirm the build command is being run from the frontend workspace before changing config again
+
+## Next Font Download Failure In Restricted Environments
+
+Symptom:
+
+- `npm run build` fails while downloading Google-hosted fonts
+- example:
+  - `Failed to fetch 'Geist' from Google Fonts`
+
+Cause:
+
+- the frontend currently uses `next/font/google`
+- builds in restricted or offline environments can fail during font download even when application code is valid
+
+Recommended checks:
+
+- confirm the machine can reach Google Fonts
+- rerun the build from `D:\Amar-eCom\amar-ecom-v2\frontend`
+- if the environment is intentionally offline or filtered, treat this as an environment limitation rather than a courier integration regression
+
+Note:
+
+- this is separate from the Windows `.next` `EPERM` file-lock issue above
+- Phase 13A courier integration validation still passed backend tests, frontend lint, and frontend type-checking when this network-dependent build step failed
