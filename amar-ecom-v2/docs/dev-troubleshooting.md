@@ -42,6 +42,32 @@ venv\Scripts\alembic.exe upgrade head
    - call `GET /api/v1/health`
 5. Drop the temporary database after verification.
 
+## WooCommerce Credential Encryption Key
+
+Symptom:
+- `/api/v1/woocommerce/settings` returns an encryption warning
+- the WooCommerce workspace says a dedicated encryption key is not configured
+
+Recommended setup:
+
+Add one of these to `backend/.env`:
+
+```env
+FERNET_SECRET_KEY=YOUR_FERNET_KEY_HERE
+```
+
+or:
+
+```env
+APP_SECRET_KEY=YOUR_APP_SECRET_KEY_HERE
+```
+
+Notes:
+- `FERNET_SECRET_KEY` is preferred when you want to control the Fernet key directly
+- `APP_SECRET_KEY` is also supported and is derived into a Fernet-compatible key by the backend
+- if neither is set, the backend falls back to `SECRET_KEY`, which still works but keeps the dedicated-key warning visible in the WooCommerce UI
+- legacy plaintext WooCommerce credentials from Phase 12A are still readable for backward compatibility, but the settings should be saved again so they are re-encrypted
+
 ## Next.js Workspace Root Warning
 
 Observed during build during Phase 11A:

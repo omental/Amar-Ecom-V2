@@ -186,6 +186,8 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
                     "status": "publish",
                     "category": "Apparel",
                     "image_url": "https://example.com/image.jpg",
+                    "duplicate_status": "new",
+                    "local_product_id": None,
                 }
             ],
             "page": page,
@@ -205,6 +207,8 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
                     "total": "2400.00",
                     "currency": "BDT",
                     "created_at": "2026-05-13T10:00:00+00:00",
+                    "duplicate_status": "new",
+                    "local_order_id": None,
                 }
             ],
             "page": page,
@@ -214,10 +218,20 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
         }
 
     async def fake_import_products(db, external_ids, current_user):
-        return {"imported": len(external_ids), "skipped": 0, "failed": 0, "messages": ["Products imported."]}
+        return {
+            "imported_count": len(external_ids),
+            "skipped_count": 0,
+            "failed_count": 0,
+            "rows": [{"external_id": external_ids[0], "status": "imported", "local_entity_id": None, "message": "Products imported."}],
+        }
 
     async def fake_import_orders(db, external_ids, current_user):
-        return {"imported": len(external_ids), "skipped": 0, "failed": 0, "messages": ["Orders imported."]}
+        return {
+            "imported_count": len(external_ids),
+            "skipped_count": 0,
+            "failed_count": 0,
+            "rows": [{"external_id": external_ids[0], "status": "imported", "local_entity_id": None, "message": "Orders imported."}],
+        }
 
     monkeypatch.setattr(woocommerce_routes, "test_connection", fake_test_connection)
     monkeypatch.setattr(woocommerce_routes, "fetch_products_preview", fake_products_preview)
@@ -260,10 +274,18 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             assert settings_response.status_code == 200, settings_response.text
             assert settings_response.json()["has_consumer_key"] is True
             assert settings_response.json()["has_consumer_secret"] is True
+            assert settings_response.json()["consumer_key_masked"]
 
             get_settings_response = client.get("/api/v1/woocommerce/settings", headers=headers)
             assert get_settings_response.status_code == 200, get_settings_response.text
-            assert "consumer_secret" not in get_settings_response.text
+            settings_payload = get_settings_response.json()
+            assert "consumer_secret" not in settings_payload
+            assert "consumer_key" not in settings_payload
+            assert settings_payload["has_consumer_key"] is True
+            assert settings_payload["has_consumer_secret"] is True
+            assert settings_payload["consumer_key_masked"]
+            assert "ck_test" not in get_settings_response.text
+            assert "cs_test" not in get_settings_response.text
 
             test_response = client.post("/api/v1/woocommerce/test-connection", headers=headers)
             assert test_response.status_code == 200, test_response.text
@@ -282,7 +304,7 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
                 json={"external_ids": ["101"]},
             )
             assert products_import_response.status_code == 200, products_import_response.text
-            assert products_import_response.json()["imported"] == 1
+            assert products_import_response.json()["imported_count"] == 1
 
             orders_preview_response = client.get(
                 "/api/v1/woocommerce/orders-preview?page=1&per_page=20&status=processing",
@@ -297,11 +319,14 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
                 json={"external_ids": ["501"]},
             )
             assert orders_import_response.status_code == 200, orders_import_response.text
-            assert orders_import_response.json()["imported"] == 1
+            assert orders_import_response.json()["imported_count"] == 1
 
             logs_response = client.get("/api/v1/woocommerce/sync-logs", headers=headers)
             assert logs_response.status_code == 200, logs_response.text
             assert isinstance(logs_response.json(), list)
+            if logs_response.json():
+                detail_response = client.get(f"/api/v1/woocommerce/sync-logs/{logs_response.json()[0]['id']}", headers=headers)
+                assert detail_response.status_code == 200, detail_response.text
 
             forbidden_response = client.get("/api/v1/woocommerce/settings", headers=staff_headers)
             assert forbidden_response.status_code == 403, forbidden_response.text

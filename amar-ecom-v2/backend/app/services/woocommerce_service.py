@@ -5,9 +5,10 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crypto import decrypt_secret
 from app.models.category import Category
 from app.models.customer import Customer
 from app.models.order import Order, OrderEvent, OrderItem
@@ -84,6 +85,24 @@ def _map_payment_status(order_payload: dict[str, Any]) -> str:
     return "unpaid"
 
 
+def _get_decrypted_credentials(settings: WooCommerceSetting) -> tuple[str, str]:
+    raw_key = settings.consumer_key_encrypted or ""
+    raw_secret = settings.consumer_secret_encrypted or ""
+    if not raw_key or not raw_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce settings are incomplete")
+    try:
+        consumer_key = decrypt_secret(raw_key).strip()
+        consumer_secret = decrypt_secret(raw_secret).strip()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="WooCommerce credentials could not be decrypted. Re-save the credentials and try again.",
+        ) from exc
+    if not consumer_key or not consumer_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce settings are incomplete")
+    return consumer_key, consumer_secret
+
+
 async def _create_sync_log(
     db: AsyncSession,
     *,
@@ -134,12 +153,99 @@ async def _request_woo(
     *,
     params: dict[str, Any] | None = None,
 ) -> httpx.Response:
+    consumer_key, consumer_secret = _get_decrypted_credentials(settings)
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         return await client.get(
             f"{_build_api_base(settings)}{path}",
             params=params,
-            auth=(settings.consumer_key_encrypted or "", settings.consumer_secret_encrypted or ""),
+            auth=(consumer_key, consumer_secret),
         )
+
+
+async def _match_products_for_preview(db: AsyncSession, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sku_values = sorted({(item.get("sku") or "").strip() for item in payload if (item.get("sku") or "").strip()})
+    slug_values = sorted(
+        {
+            _safe_slug(item.get("slug") or item.get("name") or f"woo-product-{item.get('id')}", f"woo-product-{item.get('id')}")
+            for item in payload
+        }
+    )
+
+    existing_products: list[Product] = []
+    conditions = []
+    if sku_values:
+        conditions.append(Product.sku.in_(sku_values))
+    if slug_values:
+        conditions.append(Product.slug.in_(slug_values))
+    if conditions:
+        existing_products = list((await db.execute(select(Product).where(or_(*conditions)))).scalars().all())
+
+    by_sku = {product.sku: product for product in existing_products}
+    by_slug = {product.slug: product for product in existing_products}
+    items: list[dict[str, Any]] = []
+
+    for item in payload:
+        external_id = str(item.get("id"))
+        sku = (item.get("sku") or "").strip() or None
+        slug = _safe_slug(item.get("slug") or item.get("name") or f"woo-product-{external_id}", f"woo-product-{external_id}")
+        matched_product = by_sku.get(sku) if sku else None
+        duplicate_status = "new"
+
+        if matched_product is not None:
+            duplicate_status = "existing_by_sku"
+        else:
+            matched_product = by_slug.get(slug)
+            if matched_product is not None:
+                duplicate_status = "existing_by_slug"
+            elif not sku:
+                duplicate_status = "missing_sku"
+
+        items.append(
+            {
+                "external_id": external_id,
+                "name": item.get("name") or "Untitled product",
+                "slug": item.get("slug"),
+                "sku": sku,
+                "price": _to_decimal(item.get("regular_price") or item.get("price")),
+                "status": item.get("status"),
+                "category": ", ".join(category.get("name", "") for category in item.get("categories", []) if category.get("name")) or None,
+                "image_url": (item.get("images") or [{}])[0].get("src"),
+                "duplicate_status": duplicate_status,
+                "local_product_id": matched_product.id if matched_product is not None else None,
+            }
+        )
+
+    return items
+
+
+async def _match_orders_for_preview(db: AsyncSession, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    order_numbers = {f"WC-{item.get('number') or item.get('id')}" for item in payload}
+    existing_orders = list((await db.execute(select(Order).where(Order.order_number.in_(order_numbers)))).scalars().all()) if order_numbers else []
+    by_order_number = {order.order_number: order for order in existing_orders}
+
+    items: list[dict[str, Any]] = []
+    for item in payload:
+        external_id = str(item.get("id"))
+        local_order_number = f"WC-{item.get('number') or item.get('id')}"
+        matched_order = by_order_number.get(local_order_number)
+        items.append(
+            {
+                "external_id": external_id,
+                "number": str(item.get("number") or item.get("id")),
+                "customer": " ".join(
+                    part for part in [(item.get("billing") or {}).get("first_name"), (item.get("billing") or {}).get("last_name")] if part
+                )
+                or (item.get("billing") or {}).get("email")
+                or "Walk-in customer",
+                "status": item.get("status"),
+                "total": _to_decimal(item.get("total")),
+                "currency": item.get("currency"),
+                "created_at": item.get("date_created"),
+                "duplicate_status": "existing_by_order_number" if matched_order is not None else "new",
+                "local_order_id": matched_order.id if matched_order is not None else None,
+            }
+        )
+    return items
 
 
 async def test_connection(db: AsyncSession, current_user: User) -> dict[str, Any]:
@@ -189,19 +295,7 @@ async def fetch_products_preview(
     if response.status_code != 200:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"WooCommerce returned status {response.status_code}.")
     payload = response.json()
-    items = [
-        {
-            "external_id": str(item.get("id")),
-            "name": item.get("name") or "Untitled product",
-            "slug": item.get("slug"),
-            "sku": item.get("sku") or None,
-            "price": _to_decimal(item.get("regular_price") or item.get("price")),
-            "status": item.get("status"),
-            "category": ", ".join(category.get("name", "") for category in item.get("categories", []) if category.get("name")) or None,
-            "image_url": (item.get("images") or [{}])[0].get("src"),
-        }
-        for item in payload
-    ]
+    items = await _match_products_for_preview(db, payload)
     await _create_sync_log(
         db,
         sync_type="product_preview",
@@ -235,22 +329,7 @@ async def fetch_orders_preview(
     if response.status_code != 200:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"WooCommerce returned status {response.status_code}.")
     payload = response.json()
-    items = [
-        {
-            "external_id": str(item.get("id")),
-            "number": str(item.get("number") or item.get("id")),
-            "customer": " ".join(
-                part for part in [(item.get("billing") or {}).get("first_name"), (item.get("billing") or {}).get("last_name")] if part
-            )
-            or (item.get("billing") or {}).get("email")
-            or "Walk-in customer",
-            "status": item.get("status"),
-            "total": _to_decimal(item.get("total")),
-            "currency": item.get("currency"),
-            "created_at": item.get("date_created"),
-        }
-        for item in payload
-    ]
+    items = await _match_orders_for_preview(db, payload)
     await _create_sync_log(
         db,
         sync_type="order_preview",
@@ -288,7 +367,7 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
     imported = 0
     skipped = 0
     failed = 0
-    messages: list[str] = []
+    rows: list[dict[str, Any]] = []
 
     for external_id in external_ids:
         try:
@@ -296,7 +375,7 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
             if response.status_code != 200:
                 failed += 1
                 message = f"Product {external_id}: WooCommerce returned status {response.status_code}."
-                messages.append(message)
+                rows.append({"external_id": external_id, "status": "failed", "local_entity_id": None, "message": message})
                 await _create_sync_log(db, sync_type="product_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
                 continue
 
@@ -309,7 +388,14 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
             if existing_product is not None:
                 skipped += 1
                 message = f"Product {external_id} skipped because SKU or slug already exists locally."
-                messages.append(message)
+                rows.append(
+                    {
+                        "external_id": external_id,
+                        "status": "skipped",
+                        "local_entity_id": existing_product.id,
+                        "message": message,
+                    }
+                )
                 await _create_sync_log(
                     db,
                     sync_type="product_import",
@@ -339,7 +425,7 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
             await db.flush()
             imported += 1
             message = f"Imported WooCommerce product {external_id}."
-            messages.append(message)
+            rows.append({"external_id": external_id, "status": "imported", "local_entity_id": product.id, "message": message})
             await _create_sync_log(
                 db,
                 sync_type="product_import",
@@ -354,10 +440,10 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
         except Exception as exc:
             failed += 1
             message = f"Product {external_id} failed: {exc}"
-            messages.append(message)
+            rows.append({"external_id": external_id, "status": "failed", "local_entity_id": None, "message": message})
             await _create_sync_log(db, sync_type="product_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
 
-    return {"imported": imported, "skipped": skipped, "failed": failed, "messages": messages}
+    return {"imported_count": imported, "skipped_count": skipped, "failed_count": failed, "rows": rows}
 
 
 async def _find_or_create_customer_from_woo(db: AsyncSession, order_payload: dict[str, Any]) -> Customer | None:
@@ -395,7 +481,7 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
     imported = 0
     skipped = 0
     failed = 0
-    messages: list[str] = []
+    rows: list[dict[str, Any]] = []
 
     for external_id in external_ids:
         try:
@@ -403,7 +489,7 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
             if response.status_code != 200:
                 failed += 1
                 message = f"Order {external_id}: WooCommerce returned status {response.status_code}."
-                messages.append(message)
+                rows.append({"external_id": external_id, "status": "failed", "local_entity_id": None, "message": message})
                 await _create_sync_log(db, sync_type="order_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
                 continue
 
@@ -413,7 +499,14 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
             if existing_order is not None:
                 skipped += 1
                 message = f"Order {external_id} skipped because {order_number} already exists locally."
-                messages.append(message)
+                rows.append(
+                    {
+                        "external_id": external_id,
+                        "status": "skipped",
+                        "local_entity_id": existing_order.id,
+                        "message": message,
+                    }
+                )
                 await _create_sync_log(
                     db,
                     sync_type="order_import",
@@ -486,7 +579,7 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
             await db.flush()
             imported += 1
             message = f"Imported WooCommerce order {external_id}."
-            messages.append(message)
+            rows.append({"external_id": external_id, "status": "imported", "local_entity_id": order.id, "message": message})
             await _create_sync_log(
                 db,
                 sync_type="order_import",
@@ -501,7 +594,7 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
         except Exception as exc:
             failed += 1
             message = f"Order {external_id} failed: {exc}"
-            messages.append(message)
+            rows.append({"external_id": external_id, "status": "failed", "local_entity_id": None, "message": message})
             await _create_sync_log(db, sync_type="order_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
 
-    return {"imported": imported, "skipped": skipped, "failed": failed, "messages": messages}
+    return {"imported_count": imported, "skipped_count": skipped, "failed_count": failed, "rows": rows}

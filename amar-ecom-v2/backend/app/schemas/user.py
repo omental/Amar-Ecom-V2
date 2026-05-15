@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.schemas.common import ORMBaseSchema
 
@@ -9,7 +9,7 @@ from app.schemas.common import ORMBaseSchema
 class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
-    password: str
+    password: str = Field(max_length=72)
     role: str = "admin"
     is_active: bool = True
 
@@ -17,7 +17,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     full_name: str | None = None
     email: EmailStr | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, max_length=72)
     role: str | None = None
     is_active: bool | None = None
 
@@ -34,7 +34,7 @@ class UserRead(ORMBaseSchema):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=72)
 
 
 class TokenResponse(BaseModel):

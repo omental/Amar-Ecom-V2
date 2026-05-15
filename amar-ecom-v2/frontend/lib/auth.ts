@@ -93,6 +93,7 @@ const modulePermissionMap: Record<string, string> = {
   purchase_orders: "purchase_orders.view",
   products: "products.view",
   customers: "customers.view",
+  woocommerce: "woocommerce.view",
   finance: "finance.view",
   hr: "hr.view",
   tasks: "tasks.view",

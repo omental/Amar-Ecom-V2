@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DATABASE_URL: str
     SECRET_KEY: str = "change-this-secret-key"
+    APP_SECRET_KEY: str | None = None
+    FERNET_SECRET_KEY: str | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     FRONTEND_URL: str = "http://localhost:3000"
 

@@ -91,6 +91,12 @@ Reports foundation adds endpoints only and does not require a new migration.
 
 Phase 11C adds admin tooling endpoints only and does not require a new migration.
 
+Phase 12A adds the WooCommerce sync foundation migration:
+
+- `4d5e6f7a8b9c_add_woocommerce_sync_foundation`
+
+Phase 12B WooCommerce sync hardening adds no new migration.
+
 ## Start API
 
 ```powershell
@@ -820,6 +826,177 @@ Repeat the same pattern for:
 - `/api/v1/admin/exports/transactions`
 - `/api/v1/admin/exports/suppliers`
 - `/api/v1/admin/exports/purchase-orders`
+
+## Configure WooCommerce Settings
+
+Recommended `backend/.env` additions before saving production-like WooCommerce credentials:
+
+```env
+FERNET_SECRET_KEY=YOUR_FERNET_KEY_HERE
+```
+
+or:
+
+```env
+APP_SECRET_KEY=YOUR_APP_SECRET_KEY_HERE
+```
+
+If neither is set, the backend falls back to `SECRET_KEY`, but the WooCommerce UI will continue warning that a dedicated credential-encryption key is not configured.
+
+```powershell
+$wooSettingsBody = @{
+  store_url = "https://store.example.com"
+  consumer_key = "ck_xxxxxxxxxxxxxxxxxxxx"
+  consumer_secret = "cs_xxxxxxxxxxxxxxxxxxxx"
+  api_version = "wc/v3"
+  is_active = $true
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/settings `
+  -Method Patch `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wooSettingsBody
+```
+
+Expected result:
+
+- secret values are accepted for save
+- read response does not expose the saved secret values
+- `has_consumer_key` and `has_consumer_secret` reflect whether server-side values exist
+- `consumer_key_masked` is returned when a key is stored
+- raw `consumer_key` and `consumer_secret` are never returned in read responses
+- `credentials_encrypted` reports whether stored credentials are already encrypted
+- `encryption_warning` is returned when a dedicated env key is missing or when legacy plaintext credentials still need re-save
+
+## Test WooCommerce Connection
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/test-connection `
+  -Method Post `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns `success`, `message`, and `tested_at`
+- creates a WooCommerce sync log row
+
+## Preview WooCommerce Products
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/woocommerce/products-preview?page=1&per_page=20&search=shirt" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns preview rows only
+- includes `external_id`, `name`, `sku`, `price`, `status`, and category summary
+- each row also includes `duplicate_status` and `local_product_id` when matched
+- does not create or update local products
+
+## Import Selected WooCommerce Products
+
+```powershell
+$wooProductImportBody = @{
+  external_ids = @("101", "102")
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/products-import `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wooProductImportBody
+```
+
+Expected result:
+
+- returns `imported_count`, `skipped_count`, and `failed_count`
+- returns row-level `rows[]` entries with `external_id`, `status`, `local_entity_id`, and `message`
+- imports new products into the local catalog only
+- skips duplicates safely by SKU or slug
+
+## Preview WooCommerce Orders
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/woocommerce/orders-preview?page=1&per_page=20&status=processing" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns preview rows only
+- includes `external_id`, `number`, `customer`, `status`, `total`, and `created_at`
+- each row also includes `duplicate_status` and `local_order_id` when matched
+- does not create or update local orders
+
+## Import Selected WooCommerce Orders
+
+```powershell
+$wooOrderImportBody = @{
+  external_ids = @("501", "502")
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/orders-import `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wooOrderImportBody
+```
+
+Expected result:
+
+- returns `imported_count`, `skipped_count`, and `failed_count`
+- returns row-level `rows[]` entries with `external_id`, `status`, `local_entity_id`, and `message`
+- imported orders use source `woocommerce`
+- imported orders do not deduct local stock automatically in this phase
+- duplicate imported orders are skipped safely by local order number
+
+## View WooCommerce Sync Logs
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/sync-logs `
+  -Headers $headers
+```
+
+Expected result:
+
+- lists connection tests, previews, and import actions
+- includes status, external id, local entity references, and message text
+- supports filters for `sync_type`, `status`, `direction`, `date_from`, `date_to`, `external_id`, `limit`, and `skip`
+
+## View WooCommerce Sync Log Detail
+
+Use an ID from the list response above:
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/woocommerce/sync-logs/PUT_LOG_UUID_HERE" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns the selected sync log row
+- includes safe `payload_snapshot` content when available
+- does not expose WooCommerce credentials or other secrets in the payload snapshot
+
+## WooCommerce Safety Limitations
+
+- read-only against WooCommerce in this phase
+- credentials are encrypted at rest when saved through the hardened settings flow
+- no auto-sync
+- no background sync
+- no local push-back to WooCommerce
+- no destructive WooCommerce updates
 
 ## Register
 

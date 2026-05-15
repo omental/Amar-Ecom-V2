@@ -17,7 +17,15 @@ function resolveTone(status: string): StatusTone {
     return "success";
   }
 
+  if (["new"].includes(normalized)) {
+    return "success";
+  }
+
   if (["pending", "processing", "partial", "partially_received", "ordered", "low stock", "partial_delivered", "draft"].includes(normalized)) {
+    return "warning";
+  }
+
+  if (["existing_by_sku", "existing_by_slug", "existing_by_order_number", "existing_by_external_id_if_available", "missing_sku"].includes(normalized)) {
     return "warning";
   }
 

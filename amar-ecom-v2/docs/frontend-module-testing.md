@@ -1120,3 +1120,78 @@ Expected result:
 7. In `Maintenance Checklist`, confirm pass/warning/fail badges, recommended action text, and module links render correctly
 8. Open `http://localhost:3000/dashboard/settings`
 9. Confirm there is now an `Admin Tools` link for backup/export operations
+
+## WooCommerce Workspace Checks
+
+1. Apply the latest backend migration:
+   - `venv\Scripts\alembic.exe upgrade head`
+2. Open `http://localhost:3000/dashboard/woocommerce`
+3. Confirm `backend/.env` includes `FERNET_SECRET_KEY` or `APP_SECRET_KEY` if you want the dedicated encryption warning to clear
+4. In `Connection Settings`, enter:
+   - `store URL`
+   - `consumer key`
+   - `consumer secret`
+   - `api version`
+5. Save the settings
+6. Confirm the page indicates keys are never displayed after save
+7. Confirm the page shows:
+   - saved key state
+   - saved secret state
+   - masked key value when available
+   - encryption warning only when needed
+8. Click `Test connection`
+9. Confirm the page shows the last test status, message, and timestamp
+10. Open `Product Import`
+11. Load a WooCommerce product preview
+12. Confirm the table shows:
+   - select checkbox
+   - external id
+   - name
+   - sku
+   - duplicate status badge
+   - local product link when matched
+   - price
+   - status
+   - category
+13. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled
+14. Select one or more products and click `Import selected`
+15. Confirm the import summary shows:
+   - imported
+   - skipped
+   - failed
+   - compact row-level messages
+16. Open `Order Import`
+17. Load a WooCommerce order preview with or without a status filter
+18. Confirm the table shows:
+   - select checkbox
+   - external id
+   - number
+   - customer
+   - duplicate status badge
+   - local order link when matched
+   - status
+   - total
+   - created at
+19. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled
+20. Select one or more orders and click `Import selected`
+21. Confirm the import summary shows:
+   - imported
+   - skipped
+   - failed
+   - compact row-level messages
+22. Confirm imported WooCommerce orders are informational imports only and do not deduct local stock automatically in this phase
+23. Open `Sync Logs`
+24. Confirm the log table shows:
+   - date
+   - sync type
+   - status
+   - external id
+   - local entity
+   - message
+   - user
+   - `View details` button
+25. Apply filters for:
+   - sync type
+   - status
+   - external id
+26. Open a log detail view and confirm the safe payload snapshot renders without any WooCommerce key or secret value

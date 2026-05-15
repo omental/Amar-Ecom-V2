@@ -1,3 +1,4 @@
+from typing import Any
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
@@ -31,6 +32,10 @@ class WooCommerceSettingRead(ORMBaseSchema):
     is_active: bool
     has_consumer_key: bool
     has_consumer_secret: bool
+    consumer_key_masked: str | None = None
+    credentials_encrypted: bool
+    encryption_key_configured: bool
+    encryption_warning: str | None = None
     last_tested_at: datetime | None
     last_test_success: bool
     last_test_message: str | None
@@ -53,6 +58,8 @@ class WooCommerceProductPreviewRead(BaseModel):
     status: str | None = None
     category: str | None = None
     image_url: str | None = None
+    duplicate_status: str
+    local_product_id: UUID | None = None
 
 
 class WooCommerceProductPreviewListRead(BaseModel):
@@ -71,6 +78,8 @@ class WooCommerceOrderPreviewRead(BaseModel):
     total: Decimal = Decimal("0.00")
     currency: str | None = None
     created_at: datetime | None = None
+    duplicate_status: str
+    local_order_id: UUID | None = None
 
 
 class WooCommerceOrderPreviewListRead(BaseModel):
@@ -85,11 +94,18 @@ class WooCommerceImportRequest(BaseModel):
     external_ids: list[str] = Field(default_factory=list, min_length=1)
 
 
+class WooCommerceImportResultRow(BaseModel):
+    external_id: str
+    status: str
+    local_entity_id: UUID | None = None
+    message: str
+
+
 class WooCommerceImportResult(BaseModel):
-    imported: int
-    skipped: int
-    failed: int
-    messages: list[str] = Field(default_factory=list)
+    imported_count: int
+    skipped_count: int
+    failed_count: int
+    rows: list[WooCommerceImportResultRow] = Field(default_factory=list)
 
 
 class WooCommerceSyncLogRead(ORMBaseSchema):
@@ -101,7 +117,7 @@ class WooCommerceSyncLogRead(ORMBaseSchema):
     local_entity_type: str | None
     local_entity_id: str | None
     message: str | None
-    payload_snapshot: str | None
+    payload_snapshot: Any | None = None
     created_by_id: UUID | None
     started_at: datetime | None
     finished_at: datetime | None

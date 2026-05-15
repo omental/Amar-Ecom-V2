@@ -1,9 +1,18 @@
+import json
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409
+from app.core.crypto import (
+    decrypt_secret,
+    is_dedicated_secret_key_configured,
+    is_encrypted_secret,
+    mask_secret,
+)
 from app.models.user import User
 from app.models.woocommerce import WooCommerceSetting, WooCommerceSyncLog
 from app.schemas.woocommerce import (
@@ -44,7 +53,55 @@ async def _get_or_create_settings(db: DBSession) -> WooCommerceSetting:
     return settings
 
 
+def _parse_payload_snapshot(payload_snapshot: str | None):
+    if not payload_snapshot:
+        return None
+    try:
+        return json.loads(payload_snapshot)
+    except json.JSONDecodeError:
+        return payload_snapshot
+
+
+def _sync_log_to_read(log: WooCommerceSyncLog) -> WooCommerceSyncLogRead:
+    return WooCommerceSyncLogRead(
+        id=log.id,
+        sync_type=log.sync_type,
+        direction=log.direction,
+        status=log.status,
+        external_id=log.external_id,
+        local_entity_type=log.local_entity_type,
+        local_entity_id=log.local_entity_id,
+        message=log.message,
+        payload_snapshot=_parse_payload_snapshot(log.payload_snapshot),
+        created_by_id=log.created_by_id,
+        started_at=log.started_at,
+        finished_at=log.finished_at,
+        created_at=log.created_at,
+        created_by=log.created_by,
+    )
+
+
 def _settings_to_read(settings: WooCommerceSetting) -> WooCommerceSettingRead:
+    decrypted_key = None
+    credentials_encrypted = True
+
+    if settings.consumer_key_encrypted:
+        try:
+            decrypted_key = decrypt_secret(settings.consumer_key_encrypted)
+            credentials_encrypted = is_encrypted_secret(settings.consumer_key_encrypted)
+        except ValueError:
+            decrypted_key = None
+            credentials_encrypted = False
+
+    if settings.consumer_secret_encrypted and not is_encrypted_secret(settings.consumer_secret_encrypted):
+        credentials_encrypted = False
+
+    encryption_warning = None
+    if not is_dedicated_secret_key_configured():
+        encryption_warning = "Set FERNET_SECRET_KEY or APP_SECRET_KEY for a dedicated WooCommerce credential encryption key."
+    if not credentials_encrypted and (settings.consumer_key_encrypted or settings.consumer_secret_encrypted):
+        encryption_warning = "Stored WooCommerce credentials include legacy plaintext values. Save settings again to re-encrypt them."
+
     return WooCommerceSettingRead(
         id=settings.id,
         store_url=settings.store_url,
@@ -52,6 +109,10 @@ def _settings_to_read(settings: WooCommerceSetting) -> WooCommerceSettingRead:
         is_active=settings.is_active,
         has_consumer_key=bool(settings.consumer_key_encrypted),
         has_consumer_secret=bool(settings.consumer_secret_encrypted),
+        consumer_key_masked=mask_secret(decrypted_key) if decrypted_key else None,
+        credentials_encrypted=credentials_encrypted,
+        encryption_key_configured=is_dedicated_secret_key_configured(),
+        encryption_warning=encryption_warning,
         last_tested_at=settings.last_tested_at,
         last_test_success=settings.last_test_success,
         last_test_message=settings.last_test_message,
@@ -77,13 +138,20 @@ async def update_settings(
     _ensure_admin(current_user)
     settings = await _get_or_create_settings(db)
     payload = settings_in.model_dump(exclude_unset=True)
+    credentials_updated = False
 
     if "store_url" in payload:
         settings.store_url = payload["store_url"]
     if "consumer_key" in payload and payload["consumer_key"] is not None:
-        settings.consumer_key_encrypted = payload["consumer_key"]
+        from app.core.crypto import encrypt_secret
+
+        settings.consumer_key_encrypted = encrypt_secret(payload["consumer_key"])
+        credentials_updated = True
     if "consumer_secret" in payload and payload["consumer_secret"] is not None:
-        settings.consumer_secret_encrypted = payload["consumer_secret"]
+        from app.core.crypto import encrypt_secret
+
+        settings.consumer_secret_encrypted = encrypt_secret(payload["consumer_secret"])
+        credentials_updated = True
     if "api_version" in payload and payload["api_version"] is not None:
         settings.api_version = payload["api_version"]
     if "is_active" in payload and payload["is_active"] is not None:
@@ -99,6 +167,17 @@ async def update_settings(
         message="Updated WooCommerce connection settings.",
         request=request,
     )
+    if credentials_updated:
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="woocommerce_credentials_updated",
+            module="woocommerce",
+            entity_type="woocommerce_setting",
+            entity_id=settings.id,
+            message="Updated WooCommerce credentials.",
+            request=request,
+        )
     await commit_or_409(db, "Could not update WooCommerce settings")
     await db.refresh(settings)
     return _settings_to_read(settings)
@@ -156,7 +235,17 @@ async def import_selected_products(
         module="woocommerce",
         entity_type="product",
         entity_id=None,
-        message=f"Imported {result['imported']} WooCommerce products, skipped {result['skipped']}, failed {result['failed']}.",
+        message=f"Imported {result['imported_count']} WooCommerce products, skipped {result['skipped_count']}, failed {result['failed_count']}.",
+        request=request,
+    )
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_import_completed",
+        module="woocommerce",
+        entity_type="product",
+        entity_id=None,
+        message=f"Completed WooCommerce product import: {result['imported_count']} imported, {result['skipped_count']} skipped, {result['failed_count']} failed.",
         request=request,
     )
     await commit_or_409(db, "Could not complete WooCommerce product import")
@@ -193,7 +282,17 @@ async def import_selected_orders(
         module="woocommerce",
         entity_type="order",
         entity_id=None,
-        message=f"Imported {result['imported']} WooCommerce orders, skipped {result['skipped']}, failed {result['failed']}.",
+        message=f"Imported {result['imported_count']} WooCommerce orders, skipped {result['skipped_count']}, failed {result['failed_count']}.",
+        request=request,
+    )
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_import_completed",
+        module="woocommerce",
+        entity_type="order",
+        entity_id=None,
+        message=f"Completed WooCommerce order import: {result['imported_count']} imported, {result['skipped_count']} skipped, {result['failed_count']} failed.",
         request=request,
     )
     await commit_or_409(db, "Could not complete WooCommerce order import")
@@ -203,17 +302,49 @@ async def import_selected_orders(
 @router.get("/sync-logs", response_model=list[WooCommerceSyncLogRead])
 async def list_sync_logs(
     db: DBSession,
+    sync_type: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    direction: str | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    external_id: str | None = Query(default=None),
+    skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=200),
     current_user: User = Depends(get_current_user),
-) -> list[WooCommerceSyncLog]:
+) -> list[WooCommerceSyncLogRead]:
+    _ensure_admin(current_user)
+    stmt = select(WooCommerceSyncLog).options(selectinload(WooCommerceSyncLog.created_by)).order_by(WooCommerceSyncLog.created_at.desc())
+    if sync_type:
+        stmt = stmt.where(WooCommerceSyncLog.sync_type == sync_type)
+    if status_value:
+        stmt = stmt.where(WooCommerceSyncLog.status == status_value)
+    if direction:
+        stmt = stmt.where(WooCommerceSyncLog.direction == direction)
+    if date_from:
+        stmt = stmt.where(WooCommerceSyncLog.created_at >= date_from)
+    if date_to:
+        stmt = stmt.where(WooCommerceSyncLog.created_at <= date_to)
+    if external_id:
+        stmt = stmt.where(WooCommerceSyncLog.external_id.ilike(f"%{external_id}%"))
+    stmt = stmt.offset(skip).limit(limit)
+    result = await db.execute(stmt)
+    return [_sync_log_to_read(log) for log in result.scalars().all()]
+
+
+@router.get("/sync-logs/{log_id}", response_model=WooCommerceSyncLogRead)
+async def get_sync_log_detail(
+    log_id: str,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceSyncLogRead:
     _ensure_admin(current_user)
     result = await db.execute(
-        select(WooCommerceSyncLog)
-        .options(selectinload(WooCommerceSyncLog.created_by))
-        .order_by(WooCommerceSyncLog.created_at.desc())
-        .limit(limit)
+        select(WooCommerceSyncLog).options(selectinload(WooCommerceSyncLog.created_by)).where(WooCommerceSyncLog.id == log_id)
     )
-    return list(result.scalars().all())
+    log = result.scalar_one_or_none()
+    if log is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="WooCommerce sync log not found")
+    return _sync_log_to_read(log)
 
 
 async def get_woocommerce_sync_log_count(db: DBSession) -> int:

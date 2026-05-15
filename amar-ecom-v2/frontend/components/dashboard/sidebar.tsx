@@ -26,6 +26,7 @@ import {
   Users,
   Wallet,
   Warehouse,
+  Waypoints,
 } from "lucide-react";
 
 import { canAccessModule, getUser } from "@/lib/auth";
@@ -46,6 +47,7 @@ const links = [
   { href: "/dashboard/purchase-orders", label: "Purchase Orders", icon: ClipboardList, moduleKey: "purchase_orders" },
   { href: "/dashboard/products", label: "Products", icon: Package, moduleKey: "products" },
   { href: "/dashboard/customers", label: "Customers", icon: Users, moduleKey: "customers" },
+  { href: "/dashboard/woocommerce", label: "WooCommerce", icon: Waypoints, moduleKey: "woocommerce", requiresAdmin: true },
   { href: "/dashboard/finance", label: "Finance", icon: Wallet, moduleKey: "finance" },
   { href: "/dashboard/hr", label: "HR", icon: IdCard, moduleKey: "hr" },
   { href: "/dashboard/tasks", label: "Tasks", icon: TicketCheck, moduleKey: "tasks" },

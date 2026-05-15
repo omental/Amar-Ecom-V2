@@ -33,6 +33,7 @@ from app.models import (
     Transaction,
     User,
     Warehouse,
+    WooCommerceSetting,
     WooCommerceSyncLog,
 )
 from app.schemas.admin import (
@@ -260,6 +261,35 @@ async def get_maintenance_checklist(
         woo_sync_log_count = await _count_rows(db, WooCommerceSyncLog)
     except ProgrammingError:
         woo_sync_log_count = 0
+    try:
+        woo_settings = await db.scalar(select(WooCommerceSetting).limit(1))
+        recent_failed_woo_syncs = int(
+            await db.scalar(
+                select(func.count()).select_from(WooCommerceSyncLog).where(WooCommerceSyncLog.status == "failed")
+            )
+            or 0
+        )
+    except ProgrammingError:
+        woo_settings = None
+        recent_failed_woo_syncs = 0
+
+    woo_active_settings = bool(
+        woo_settings
+        and woo_settings.is_active
+        and woo_settings.store_url
+        and woo_settings.consumer_key_encrypted
+        and woo_settings.consumer_secret_encrypted
+    )
+    woo_connection_ok = bool(woo_settings and woo_settings.last_test_success)
+    woo_last_test = woo_settings.last_tested_at.isoformat() if woo_settings and woo_settings.last_tested_at else "Never"
+    woo_value = (
+        f"Settings: {'ready' if woo_active_settings else 'incomplete'} | "
+        f"Last test: {woo_last_test} | "
+        f"Recent failed syncs: {recent_failed_woo_syncs}"
+    )
+    woo_status = "pass" if woo_active_settings and woo_connection_ok else "warning"
+    if not woo_active_settings:
+        woo_status = "fail"
 
     items = [
         MaintenanceChecklistItemRead(
@@ -352,10 +382,10 @@ async def get_maintenance_checklist(
         ),
         MaintenanceChecklistItemRead(
             key="woo_sync_logs",
-            label="WooCommerce sync log entries",
-            status="pass" if woo_sync_log_count > 0 else "warning",
-            value=str(woo_sync_log_count),
-            recommended_action="Run a connection test and a preview/import dry pass before relying on manual WooCommerce imports.",
+            label="WooCommerce manual import readiness",
+            status=woo_status,
+            value=f"{woo_value} | Log rows: {woo_sync_log_count}",
+            recommended_action="Confirm active settings, save encrypted credentials, run a successful connection test, and review recent failed WooCommerce sync logs before relying on manual imports.",
             route="/dashboard/woocommerce",
         ),
     ]
