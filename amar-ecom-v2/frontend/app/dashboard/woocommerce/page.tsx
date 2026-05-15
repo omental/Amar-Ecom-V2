@@ -27,6 +27,16 @@ type WooCommerceSetting = {
   last_tested_at: string | null;
   last_test_success: boolean;
   last_test_message: string | null;
+  auto_sync_enabled: boolean;
+  sync_products_enabled: boolean;
+  sync_orders_enabled: boolean;
+  sync_interval_minutes: number;
+  last_product_sync_at: string | null;
+  last_order_sync_at: string | null;
+  last_sync_started_at: string | null;
+  last_sync_finished_at: string | null;
+  last_sync_status: string | null;
+  last_sync_message: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -84,6 +94,21 @@ type ImportResult = {
   rows: ImportResultRow[];
 };
 
+type OrderRefreshResultRow = {
+  external_id: string;
+  status: "refreshed" | "imported" | "skipped" | "failed";
+  local_order_id: string | null;
+  message: string;
+};
+
+type OrderRefreshResult = {
+  refreshed_count: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  rows: OrderRefreshResultRow[];
+};
+
 type SyncLog = {
   id: string;
   sync_type: string;
@@ -101,12 +126,36 @@ type SyncLog = {
   created_by: { full_name: string } | null;
 };
 
+type SyncStatus = {
+  settings: WooCommerceSetting;
+  recent_sync_logs: SyncLog[];
+  failed_sync_count: number;
+  recent_order_refresh_failures_count: number;
+  imported_woocommerce_orders_count: number;
+  last_order_refresh_at: string | null;
+  ready_to_sync: boolean;
+  readiness_warnings: string[];
+};
+
+type RunSyncResult = {
+  status: string;
+  started_at: string;
+  finished_at: string;
+  product_result: ImportResult | null;
+  order_result: ImportResult | null;
+  message: string;
+};
+
 type SettingsForm = {
   store_url: string;
   consumer_key: string;
   consumer_secret: string;
   api_version: string;
   is_active: boolean;
+  auto_sync_enabled: boolean;
+  sync_products_enabled: boolean;
+  sync_orders_enabled: boolean;
+  sync_interval_minutes: number;
 };
 
 type SyncLogFilters = {
@@ -117,6 +166,7 @@ type SyncLogFilters = {
 
 const tabs = [
   { id: "connection", label: "Connection Settings", icon: PlugZap },
+  { id: "schedule", label: "Sync Schedule", icon: RefreshCw },
   { id: "products", label: "Product Import", icon: ShoppingBag },
   { id: "orders", label: "Order Import", icon: ShoppingCart },
   { id: "logs", label: "Sync Logs", icon: DownloadCloud },
@@ -130,6 +180,10 @@ const initialSettingsForm: SettingsForm = {
   consumer_secret: "",
   api_version: "wc/v3",
   is_active: true,
+  auto_sync_enabled: false,
+  sync_products_enabled: true,
+  sync_orders_enabled: true,
+  sync_interval_minutes: 60,
 };
 
 const initialLogFilters: SyncLogFilters = {
@@ -191,6 +245,7 @@ export default function WooCommercePage() {
   const [activeTab, setActiveTab] = useState<TabId>("connection");
   const [settings, setSettings] = useState<WooCommerceSetting | null>(null);
   const [settingsForm, setSettingsForm] = useState<SettingsForm>(initialSettingsForm);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [productPreview, setProductPreview] = useState<PreviewList<ProductPreview> | null>(null);
   const [orderPreview, setOrderPreview] = useState<PreviewList<OrderPreview> | null>(null);
   const [syncLogs, setSyncLogs] = useState<SyncLog[]>([]);
@@ -208,15 +263,27 @@ export default function WooCommercePage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [lastProductImportResult, setLastProductImportResult] = useState<ImportResult | null>(null);
   const [lastOrderImportResult, setLastOrderImportResult] = useState<ImportResult | null>(null);
+  const [lastManualSyncResult, setLastManualSyncResult] = useState<RunSyncResult | null>(null);
+  const [lastBulkOrderRefreshResult, setLastBulkOrderRefreshResult] = useState<OrderRefreshResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [isLoadingSyncStatus, setIsLoadingSyncStatus] = useState(false);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [isImportingProducts, setIsImportingProducts] = useState(false);
   const [isImportingOrders, setIsImportingOrders] = useState(false);
+  const [isRunningManualSync, setIsRunningManualSync] = useState(false);
+  const [isRefreshingImportedOrders, setIsRefreshingImportedOrders] = useState(false);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
   const [isLoadingLogDetail, setIsLoadingLogDetail] = useState(false);
+  const [runSyncProducts, setRunSyncProducts] = useState(true);
+  const [runSyncOrders, setRunSyncOrders] = useState(true);
+  const [runSyncSinceLast, setRunSyncSinceLast] = useState(true);
+  const [runSyncPerPage, setRunSyncPerPage] = useState(20);
+  const [refreshImportedOrdersSinceLast, setRefreshImportedOrdersSinceLast] = useState(true);
+  const [refreshImportedOrdersPerPage, setRefreshImportedOrdersPerPage] = useState(20);
+  const [refreshImportedOrdersStatus, setRefreshImportedOrdersStatus] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -243,23 +310,45 @@ export default function WooCommercePage() {
     }
   }
 
+  async function refreshSyncStatus() {
+    const statusPayload = await api.get<SyncStatus>("/woocommerce/sync-status");
+    setSyncStatus(statusPayload);
+    setSettings(statusPayload.settings);
+    setSettingsForm((current) => ({
+      ...current,
+      store_url: statusPayload.settings.store_url || "",
+      api_version: statusPayload.settings.api_version,
+      is_active: statusPayload.settings.is_active,
+      auto_sync_enabled: statusPayload.settings.auto_sync_enabled,
+      sync_products_enabled: statusPayload.settings.sync_products_enabled,
+      sync_orders_enabled: statusPayload.settings.sync_orders_enabled,
+      sync_interval_minutes: statusPayload.settings.sync_interval_minutes,
+    }));
+  }
+
   useEffect(() => {
     let isMounted = true;
 
     async function bootstrap() {
       try {
-        const [settingsData, logsData] = await Promise.all([
+        const [settingsData, syncStatusData, logsData] = await Promise.all([
           api.get<WooCommerceSetting>("/woocommerce/settings"),
+          api.get<SyncStatus>("/woocommerce/sync-status"),
           api.get<SyncLog[]>("/woocommerce/sync-logs?limit=100"),
         ]);
         if (!isMounted) return;
         setSettings(settingsData);
+        setSyncStatus(syncStatusData);
         setSettingsForm({
           store_url: settingsData.store_url || "",
           consumer_key: "",
           consumer_secret: "",
           api_version: settingsData.api_version,
           is_active: settingsData.is_active,
+          auto_sync_enabled: settingsData.auto_sync_enabled,
+          sync_products_enabled: settingsData.sync_products_enabled,
+          sync_orders_enabled: settingsData.sync_orders_enabled,
+          sync_interval_minutes: settingsData.sync_interval_minutes,
         });
         setSyncLogs(logsData);
       } catch (err) {
@@ -316,13 +405,19 @@ export default function WooCommercePage() {
         consumer_secret: settingsForm.consumer_secret || undefined,
         api_version: settingsForm.api_version,
         is_active: settingsForm.is_active,
+        auto_sync_enabled: settingsForm.auto_sync_enabled,
+        sync_products_enabled: settingsForm.sync_products_enabled,
+        sync_orders_enabled: settingsForm.sync_orders_enabled,
+        sync_interval_minutes: settingsForm.sync_interval_minutes,
       });
       setSettings(updated);
+      setSyncStatus((current) => (current ? { ...current, settings: updated } : current));
       setSettingsForm((current) => ({
         ...current,
         consumer_key: "",
         consumer_secret: "",
       }));
+      await refreshSyncStatus();
       setSuccess("WooCommerce settings saved. Keys are never displayed after saving.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save WooCommerce settings");
@@ -337,8 +432,7 @@ export default function WooCommercePage() {
     setIsTestingConnection(true);
     try {
       const result = await api.post<ConnectionTestResult>("/woocommerce/test-connection", {});
-      const refreshedSettings = await api.get<WooCommerceSetting>("/woocommerce/settings");
-      setSettings(refreshedSettings);
+      await refreshSyncStatus();
       setSuccess(result.message);
       await refreshLogs();
     } catch (err) {
@@ -428,6 +522,62 @@ export default function WooCommercePage() {
     }
   }
 
+  async function handleSyncStatusRefresh() {
+    setError("");
+    setIsLoadingSyncStatus(true);
+    try {
+      await refreshSyncStatus();
+      await refreshLogs();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to refresh WooCommerce sync status");
+    } finally {
+      setIsLoadingSyncStatus(false);
+    }
+  }
+
+  async function handleRunManualSync() {
+    setError("");
+    setSuccess("");
+    setIsRunningManualSync(true);
+    try {
+      const result = await api.post<RunSyncResult>("/woocommerce/run-sync", {
+        sync_products: runSyncProducts,
+        sync_orders: runSyncOrders,
+        since_last_sync: runSyncSinceLast,
+        per_page: runSyncPerPage,
+      });
+      setLastManualSyncResult(result);
+      setSuccess(result.message);
+      await Promise.all([refreshSyncStatus(), refreshLogs()]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to run WooCommerce manual sync");
+    } finally {
+      setIsRunningManualSync(false);
+    }
+  }
+
+  async function handleRefreshImportedOrders() {
+    setError("");
+    setSuccess("");
+    setIsRefreshingImportedOrders(true);
+    try {
+      const result = await api.post<OrderRefreshResult>("/woocommerce/orders-refresh", {
+        since_last_sync: refreshImportedOrdersSinceLast,
+        per_page: refreshImportedOrdersPerPage,
+        status: refreshImportedOrdersStatus || undefined,
+      });
+      setLastBulkOrderRefreshResult(result);
+      setSuccess(
+        `WooCommerce order refresh complete: ${result.refreshed_count} refreshed, ${result.imported_count} imported, ${result.skipped_count} skipped, ${result.failed_count} failed.`,
+      );
+      await Promise.all([refreshSyncStatus(), refreshLogs(), loadOrderPreview()]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to refresh imported WooCommerce orders");
+    } finally {
+      setIsRefreshingImportedOrders(false);
+    }
+  }
+
   async function handleViewLogDetails(logId: string) {
     setError("");
     setIsLoadingLogDetail(true);
@@ -464,9 +614,9 @@ export default function WooCommercePage() {
     <div className="space-y-4">
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
         <PageHeader
-          eyebrow="Manual Import Hardening"
+          eyebrow="Scheduled Sync Foundation"
           title="WooCommerce workspace"
-          description="Configure a safer read-only WooCommerce connection, preview duplicate risk before import, review row-level outcomes, and inspect sync-log details."
+          description="Configure a safer read-only WooCommerce connection, store sync schedule preferences, run manual sync safely, preview duplicate risk before import, and inspect sync-log details."
           meta="Read-only"
         />
       </section>
@@ -611,6 +761,284 @@ export default function WooCommercePage() {
             </button>
           </form>
         </FormCard>
+      ) : null}
+
+      {activeTab === "schedule" ? (
+        <div className="space-y-4">
+          <FormCard
+            title="Sync schedule"
+            description="Store schedule preferences, inspect sync readiness, and trigger a safe manual sync run. Manual sync now refreshes existing WooCommerce orders and imports new ones without pushing anything back. Auto-sync settings are saved here, but no production background worker is running unless you deploy one separately."
+            action={
+              <button
+                type="button"
+                onClick={() => void handleSyncStatusRefresh()}
+                disabled={isLoadingSyncStatus}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                {isLoadingSyncStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh status
+              </button>
+            }
+          >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Ready to sync:{" "}
+                <span className={`font-semibold ${syncStatus?.ready_to_sync ? "text-emerald-700" : "text-amber-700"}`}>
+                  {syncStatus?.ready_to_sync ? "Ready" : "Needs review"}
+                </span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Auto sync: <span className="font-semibold text-slate-950">{settingsForm.auto_sync_enabled ? "Enabled" : "Stored only"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Last product sync: <span className="font-semibold text-slate-950">{settings?.last_product_sync_at ? formatDateTime(settings.last_product_sync_at) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Last order sync: <span className="font-semibold text-slate-950">{settings?.last_order_sync_at ? formatDateTime(settings.last_order_sync_at) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Last sync status: <span className="font-semibold text-slate-950">{settings?.last_sync_status ? formatLabel(settings.last_sync_status) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Last sync finished: <span className="font-semibold text-slate-950">{settings?.last_sync_finished_at ? formatDateTime(settings.last_sync_finished_at) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Failed recent syncs: <span className="font-semibold text-slate-950">{syncStatus?.failed_sync_count ?? 0}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Interval: <span className="font-semibold text-slate-950">{settingsForm.sync_interval_minutes} minutes</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Imported Woo orders: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_orders_count ?? 0}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Last order refresh: <span className="font-semibold text-slate-950">{syncStatus?.last_order_refresh_at ? formatDateTime(syncStatus.last_order_refresh_at) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Order refresh failures: <span className="font-semibold text-slate-950">{syncStatus?.recent_order_refresh_failures_count ?? 0}</span>
+              </div>
+            </div>
+
+            {settings?.last_sync_message ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <span className="font-semibold text-slate-950">Last sync message:</span> {settings.last_sync_message}
+              </div>
+            ) : null}
+
+            {syncStatus?.readiness_warnings?.length ? (
+              <div className="mt-4 space-y-3">
+                {syncStatus.readiness_warnings.map((warning) => (
+                  <div key={warning} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                WooCommerce is ready for safe manual sync runs.
+              </div>
+            )}
+
+            <form onSubmit={handleSettingsSave} className="mt-5 space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="text-sm font-medium text-slate-700">Store auto-sync preference</span>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.auto_sync_enabled}
+                    onChange={(event) => setSettingsForm((current) => ({ ...current, auto_sync_enabled: event.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="text-sm font-medium text-slate-700">Sync products</span>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.sync_products_enabled}
+                    onChange={(event) => setSettingsForm((current) => ({ ...current, sync_products_enabled: event.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="text-sm font-medium text-slate-700">Sync orders</span>
+                  <input
+                    type="checkbox"
+                    checked={settingsForm.sync_orders_enabled}
+                    onChange={(event) => setSettingsForm((current) => ({ ...current, sync_orders_enabled: event.target.checked }))}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                </label>
+                <label className="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="mb-2 block text-sm font-medium text-slate-700">Interval minutes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10080}
+                    value={settingsForm.sync_interval_minutes}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        sync_interval_minutes: Number(event.target.value) || 60,
+                      }))
+                    }
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  />
+                </label>
+              </div>
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                Auto-sync settings are stored for future worker deployment. Manual sync is still the only execution path in this phase.
+              </div>
+              <button
+                type="submit"
+                disabled={isSavingSettings}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSavingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Save schedule settings
+              </button>
+            </form>
+          </FormCard>
+
+          <FormCard title="Run manual sync" description="Run a safe import-only sync using the existing duplicate-skip rules. This reads from WooCommerce and never pushes data back.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-sm font-medium text-slate-700">Sync products</span>
+                <input type="checkbox" checked={runSyncProducts} onChange={(event) => setRunSyncProducts(event.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              </label>
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-sm font-medium text-slate-700">Sync orders</span>
+                <input type="checkbox" checked={runSyncOrders} onChange={(event) => setRunSyncOrders(event.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              </label>
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-sm font-medium text-slate-700">Since last sync</span>
+                <input type="checkbox" checked={runSyncSinceLast} onChange={(event) => setRunSyncSinceLast(event.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              </label>
+              <label className="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Per page</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={runSyncPerPage}
+                  onChange={(event) => setRunSyncPerPage(Number(event.target.value) || 20)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span>Manual import only. This will not modify your WooCommerce store.</span>
+              <button
+                type="button"
+                onClick={() => void handleRunManualSync()}
+                disabled={isRunningManualSync}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isRunningManualSync ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Run manual sync
+              </button>
+            </div>
+
+            {lastManualSyncResult ? (
+              <div className="mt-5 space-y-4">
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Status: <span className="font-semibold text-slate-950">{formatLabel(lastManualSyncResult.status)}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Started: <span className="font-semibold text-slate-950">{formatDateTime(lastManualSyncResult.started_at)}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Finished: <span className="font-semibold text-slate-950">{formatDateTime(lastManualSyncResult.finished_at)}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Mode: <span className="font-semibold text-slate-950">{runSyncSinceLast ? "Since last sync" : "Full page fetch"}</span>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-semibold text-slate-950">Message:</span> {lastManualSyncResult.message}
+                </div>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {[{ title: "Product result", type: "product", result: lastManualSyncResult.product_result }, { title: "Order result", type: "order", result: lastManualSyncResult.order_result }].map(({ title, type, result }) => (
+                    <div key={title} className="rounded-3xl border border-slate-200 p-4">
+                      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+                      {result ? (
+                        <div className="mt-3 space-y-4">
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
+                              Imported: <span className="font-semibold text-emerald-900">{result.imported_count}</span>
+                            </div>
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-700">
+                              Skipped: <span className="font-semibold text-amber-900">{result.skipped_count}</span>
+                            </div>
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+                              Failed: <span className="font-semibold text-rose-900">{result.failed_count}</span>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto rounded-3xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50 text-left text-slate-600">
+                                <tr>
+                                  <th className="px-4 py-3">External ID</th>
+                                  <th className="px-4 py-3">Status</th>
+                                  <th className="px-4 py-3">Local entity</th>
+                                  <th className="px-4 py-3">Message</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 bg-white">
+                                {result.rows.map((row) => (
+                                  <tr key={`${title}-${row.external_id}-${row.status}-${row.local_entity_id || "none"}`}>
+                                    <td className="px-4 py-3 font-medium text-slate-950">{row.external_id}</td>
+                                    <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                                    <td className="px-4 py-3">{type === "product" ? <LocalEntityLink type="product" id={row.local_entity_id} /> : <LocalEntityLink type="order" id={row.local_entity_id} />}</td>
+                                    <td className="px-4 py-3 text-slate-500">{row.message}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">This entity type was not included in the last manual sync.</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </FormCard>
+
+          <FormCard title="Recent sync summary" description="A quick view of the latest scheduled-sync foundation logs and readiness signals.">
+            {syncStatus?.recent_sync_logs?.length ? (
+              <div className="overflow-x-auto rounded-3xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-left text-slate-600">
+                    <tr>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Message</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {syncStatus.recent_sync_logs.map((log) => (
+                      <tr key={log.id}>
+                        <td className="px-4 py-3 text-slate-500">{formatDateTime(log.created_at)}</td>
+                        <td className="px-4 py-3 text-slate-700">{formatLabel(log.sync_type)}</td>
+                        <td className="px-4 py-3"><StatusBadge status={log.status} /></td>
+                        <td className="px-4 py-3 text-slate-500">{log.message || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState
+                title="No sync history yet"
+                description="Save schedule preferences or run a manual sync to start building WooCommerce sync history."
+              />
+            )}
+          </FormCard>
+        </div>
       ) : null}
 
       {activeTab === "products" ? (
@@ -777,7 +1205,7 @@ export default function WooCommercePage() {
 
       {activeTab === "orders" ? (
         <div className="space-y-4">
-          <FormCard title="Order preview and import" description="Preview WooCommerce orders, inspect duplicate status, and import only the selected rows without automatic stock deduction.">
+          <FormCard title="Order preview and import" description="Preview WooCommerce orders, inspect duplicate status, import only the selected rows without automatic stock deduction, or refresh existing imported WooCommerce orders safely.">
             <div className="grid gap-4 md:grid-cols-[1fr_160px_160px_auto]">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Status filter</span>
@@ -900,6 +1328,72 @@ export default function WooCommercePage() {
             )}
           </FormCard>
 
+          <FormCard title="Refresh imported orders" description="Refresh lifecycle changes for existing WooCommerce orders and import new changed orders when needed. This updates safe order fields only and never deducts stock automatically.">
+            <div className="grid gap-4 md:grid-cols-[160px_160px_1fr_auto]">
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={refreshImportedOrdersSinceLast}
+                  onChange={(event) => setRefreshImportedOrdersSinceLast(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Since last sync
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Per page</span>
+                <select value={refreshImportedOrdersPerPage} onChange={(event) => setRefreshImportedOrdersPerPage(Number(event.target.value))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
+                  {[10, 20, 50, 100].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Woo status filter</span>
+                <select value={refreshImportedOrdersStatus} onChange={(event) => setRefreshImportedOrdersStatus(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
+                  <option value="">All statuses</option>
+                  {["pending", "processing", "completed", "cancelled", "refunded", "failed", "on-hold"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
+                </select>
+              </label>
+              <div className="flex items-end">
+                <button type="button" onClick={() => void handleRefreshImportedOrders()} disabled={isRefreshingImportedOrders} className="inline-flex items-center gap-2 rounded-full bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60">
+                  {isRefreshingImportedOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Refresh imported orders
+                </button>
+              </div>
+            </div>
+
+            {lastBulkOrderRefreshResult ? (
+              <div className="mt-5 space-y-4">
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4"><p className="text-sm text-sky-700">Refreshed</p><p className="mt-2 text-2xl font-semibold text-sky-900">{lastBulkOrderRefreshResult.refreshed_count}</p></div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4"><p className="text-sm text-emerald-700">Imported</p><p className="mt-2 text-2xl font-semibold text-emerald-900">{lastBulkOrderRefreshResult.imported_count}</p></div>
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4"><p className="text-sm text-amber-700">Skipped</p><p className="mt-2 text-2xl font-semibold text-amber-900">{lastBulkOrderRefreshResult.skipped_count}</p></div>
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4"><p className="text-sm text-rose-700">Failed</p><p className="mt-2 text-2xl font-semibold text-rose-900">{lastBulkOrderRefreshResult.failed_count}</p></div>
+                </div>
+                <div className="overflow-x-auto rounded-3xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3">External ID</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Local order</th>
+                        <th className="px-4 py-3">Message</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {lastBulkOrderRefreshResult.rows.map((row) => (
+                        <tr key={`${row.external_id}-${row.status}-${row.local_order_id || "none"}`}>
+                          <td className="px-4 py-3 font-medium text-slate-950">{row.external_id}</td>
+                          <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                          <td className="px-4 py-3"><LocalEntityLink type="order" id={row.local_order_id} /></td>
+                          <td className="px-4 py-3 text-slate-500">{row.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </FormCard>
+
           {lastOrderImportResult ? (
             <FormCard title="Latest order import result" description="Review imported, skipped, and failed rows from the last manual order import run.">
               <div className="grid gap-4 md:grid-cols-3">
@@ -938,7 +1432,7 @@ export default function WooCommercePage() {
         <div className="space-y-4">
           <FormCard
             title="Sync logs"
-            description="Filter connection tests, previews, and manual import runs, then inspect safe payload snapshots for a single log row."
+            description="Filter connection tests, previews, imports, and sync-run summaries, then inspect safe payload snapshots for a single log row."
             action={
               <button type="button" onClick={() => void handleLogsRefresh()} disabled={isRefreshingLogs} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
                 {isRefreshingLogs ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -951,7 +1445,7 @@ export default function WooCommercePage() {
                 <span className="mb-2 block text-sm font-medium text-slate-700">Sync type</span>
                 <select value={logFilters.sync_type} onChange={(event) => setLogFilters((current) => ({ ...current, sync_type: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
                   <option value="">All types</option>
-                  {["connection_test", "product_preview", "product_import", "order_preview", "order_import"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
+                  {["connection_test", "manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "order_refresh", "orders_bulk_refresh", "product_preview", "product_import", "order_preview", "order_import"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
                 </select>
               </label>
               <label className="block">

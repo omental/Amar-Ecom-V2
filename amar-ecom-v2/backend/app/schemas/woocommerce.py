@@ -122,6 +122,31 @@ class WooCommerceImportResult(BaseModel):
     rows: list[WooCommerceImportResultRow] = Field(default_factory=list)
 
 
+class WooCommerceOrderRefreshRequest(BaseModel):
+    status: str | None = None
+
+
+class WooCommerceOrderRefreshResultRow(BaseModel):
+    external_id: str
+    status: str
+    local_order_id: UUID | None = None
+    message: str
+
+
+class WooCommerceOrderRefreshResult(BaseModel):
+    refreshed_count: int = 0
+    imported_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    rows: list[WooCommerceOrderRefreshResultRow] = Field(default_factory=list)
+
+
+class WooCommerceBulkOrderRefreshRequest(BaseModel):
+    since_last_sync: bool = True
+    per_page: int = Field(default=20, ge=1, le=100)
+    status: str | None = None
+
+
 class WooCommerceSyncLogRead(ORMBaseSchema):
     id: UUID
     sync_type: str
@@ -159,5 +184,8 @@ class WooCommerceSyncStatusRead(BaseModel):
     settings: WooCommerceSettingRead
     recent_sync_logs: list[WooCommerceSyncLogRead] = Field(default_factory=list)
     failed_sync_count: int
+    recent_order_refresh_failures_count: int
+    imported_woocommerce_orders_count: int
+    last_order_refresh_at: datetime | None = None
     ready_to_sync: bool
     readiness_warnings: list[str] = Field(default_factory=list)

@@ -106,6 +106,10 @@ class OrderListRead(ORMBaseSchema):
     payment_status: str
     payment_method: str | None
     source: str
+    external_id: str | None = None
+    external_number: str | None = None
+    external_status: str | None = None
+    external_synced_at: datetime | None = None
     subtotal: Decimal
     discount: Decimal
     delivery_charge: Decimal
@@ -122,6 +126,7 @@ class OrderListRead(ORMBaseSchema):
 
 
 class OrderRead(OrderListRead):
+    external_payload_snapshot: str | None = None
     events: list[OrderEventRead] = []
 
 

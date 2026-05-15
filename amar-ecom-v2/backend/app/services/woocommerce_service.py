@@ -120,6 +120,17 @@ def _map_payment_status(order_payload: dict[str, Any]) -> str:
     return "unpaid"
 
 
+def _build_local_order_number(order_payload: dict[str, Any]) -> str:
+    return f"WC-{order_payload.get('number') or order_payload.get('id')}"
+
+
+def _build_external_snapshot(order_payload: dict[str, Any], warnings: list[str] | None = None) -> str:
+    payload: dict[str, Any] = {"woo_order": order_payload}
+    if warnings:
+        payload["sync_warnings"] = warnings
+    return _safe_payload_snapshot(payload)
+
+
 def _validate_store_url(store_url: str | None) -> str:
     normalized = (store_url or "").strip()
     if not normalized:
@@ -607,6 +618,228 @@ async def _find_or_create_customer_from_woo(db: AsyncSession, order_payload: dic
     return customer
 
 
+async def _find_existing_woocommerce_order(db: AsyncSession, order_payload: dict[str, Any]):
+    external_id = str(order_payload.get("id"))
+    external_number = str(order_payload.get("number") or order_payload.get("id"))
+    local_order_number = _build_local_order_number(order_payload)
+
+    result = await db.execute(
+        select(Order).where(
+            (Order.source == "woocommerce") & (Order.external_id == external_id)
+        )
+    )
+    existing_order = result.scalar_one_or_none()
+    if existing_order is not None:
+        return existing_order
+
+    result = await db.execute(
+        select(Order).where(
+            (Order.source == "woocommerce") & (Order.external_number == external_number)
+        )
+    )
+    existing_order = result.scalar_one_or_none()
+    if existing_order is not None:
+        return existing_order
+
+    result = await db.execute(select(Order).where(Order.order_number == local_order_number))
+    return result.scalar_one_or_none()
+
+
+async def _create_order_items_from_woo_payload(db: AsyncSession, order: Order, order_payload: dict[str, Any]) -> None:
+    for line_item in order_payload.get("line_items", []):
+        sku = (line_item.get("sku") or "").strip() or None
+        product = None
+        if sku:
+            product = (await db.execute(select(Product).where(Product.sku == sku))).scalar_one_or_none()
+        quantity = max(int(line_item.get("quantity") or 1), 1)
+        line_total = _to_decimal(line_item.get("total"))
+        unit_price = line_total / quantity if quantity else line_total
+        order.items.append(
+            OrderItem(
+                product_id=product.id if product else None,
+                variant_id=None,
+                product_name=line_item.get("name") or "WooCommerce Item",
+                sku=sku,
+                quantity=quantity,
+                unit_price=unit_price,
+                total_price=line_total,
+            )
+        )
+
+
+async def _create_local_order_from_woo_payload(
+    db: AsyncSession,
+    *,
+    order_payload: dict[str, Any],
+    current_user: User,
+) -> tuple[Order, list[str]]:
+    customer = await _find_or_create_customer_from_woo(db, order_payload)
+    subtotal = sum(_to_decimal(item.get("subtotal")) for item in order_payload.get("line_items", []))
+    total = _to_decimal(order_payload.get("total"))
+    delivery_charge = _to_decimal(order_payload.get("shipping_total"))
+    paid_amount = total if _map_payment_status(order_payload) == "paid" else Decimal("0.00")
+    billing = order_payload.get("billing") or {}
+    customer_name = " ".join(part for part in [billing.get("first_name"), billing.get("last_name")] if part).strip() or None
+    warnings: list[str] = []
+    if not (billing.get("phone") or "").strip():
+        warnings.append("WooCommerce order is missing a customer phone number.")
+    if not _shipping_address_from_order_payload(order_payload):
+        warnings.append("WooCommerce order is missing a shipping address.")
+
+    order = Order(
+        order_number=_build_local_order_number(order_payload),
+        customer_id=customer.id if customer else None,
+        warehouse_id=None,
+        customer_name=customer_name,
+        customer_phone=billing.get("phone") or None,
+        shipping_address=_shipping_address_from_order_payload(order_payload),
+        notes=f"Imported from WooCommerce order {order_payload.get('id')}.",
+        tags="woocommerce-import",
+        status=_map_woo_status(order_payload.get("status")),
+        payment_status=_map_payment_status(order_payload),
+        payment_method=order_payload.get("payment_method_title") or order_payload.get("payment_method") or None,
+        source="woocommerce",
+        external_id=str(order_payload.get("id")),
+        external_number=str(order_payload.get("number") or order_payload.get("id")),
+        external_status=order_payload.get("status"),
+        external_synced_at=_now(),
+        subtotal=subtotal,
+        discount=Decimal("0.00"),
+        delivery_charge=delivery_charge,
+        paid_amount=paid_amount,
+        total=total,
+        stock_deducted=False,
+    )
+    await _create_order_items_from_woo_payload(db, order, order_payload)
+    order.external_payload_snapshot = _build_external_snapshot(order_payload, warnings)
+    order.events.append(
+        OrderEvent(
+            event_type="woo_order_imported",
+            message=f"Imported from WooCommerce order {order_payload.get('id')}.",
+            created_by_id=current_user.id,
+        )
+    )
+    db.add(order)
+    await db.flush()
+    return order, warnings
+
+
+def _collect_line_item_signature(order: Order) -> list[tuple[str | None, str, int, str]]:
+    return sorted(
+        (
+            item.sku,
+            item.product_name,
+            int(item.quantity or 0),
+            str(_to_decimal(item.total_price)),
+        )
+        for item in order.items
+    )
+
+
+def _collect_woo_line_item_signature(order_payload: dict[str, Any]) -> list[tuple[str | None, str, int, str]]:
+    return sorted(
+        (
+            ((item.get("sku") or "").strip() or None),
+            item.get("name") or "WooCommerce Item",
+            max(int(item.get("quantity") or 1), 1),
+            str(_to_decimal(item.get("total"))),
+        )
+        for item in order_payload.get("line_items", [])
+    )
+
+
+async def _refresh_local_order_from_woo_payload(
+    db: AsyncSession,
+    *,
+    order: Order,
+    order_payload: dict[str, Any],
+    current_user: User,
+) -> tuple[Order, list[str]]:
+    warnings: list[str] = []
+    previous_status = order.status
+
+    order.external_id = str(order_payload.get("id"))
+    order.external_number = str(order_payload.get("number") or order_payload.get("id"))
+    order.external_status = order_payload.get("status")
+    order.external_synced_at = _now()
+    order.order_number = order.order_number or _build_local_order_number(order_payload)
+    order.status = _map_woo_status(order_payload.get("status"))
+    order.payment_status = _map_payment_status(order_payload)
+    order.payment_method = order_payload.get("payment_method_title") or order_payload.get("payment_method") or order.payment_method
+
+    billing = order_payload.get("billing") or {}
+    incoming_phone = (billing.get("phone") or "").strip() or None
+    incoming_shipping_address = _shipping_address_from_order_payload(order_payload)
+    incoming_subtotal = sum(_to_decimal(item.get("subtotal")) for item in order_payload.get("line_items", []))
+    incoming_total = _to_decimal(order_payload.get("total"))
+    incoming_delivery_charge = _to_decimal(order_payload.get("shipping_total"))
+
+    if incoming_phone:
+        order.customer_phone = incoming_phone
+    else:
+        warnings.append("WooCommerce order is missing a customer phone number.")
+
+    if incoming_shipping_address:
+        order.shipping_address = incoming_shipping_address
+    else:
+        warnings.append("WooCommerce order is missing a shipping address.")
+
+    if order.stock_deducted and previous_status != order.status and order.status in {"cancelled", "returned"}:
+        warnings.append("Local stock was already deducted before WooCommerce changed the order to a non-fulfillment status.")
+
+    if order.stock_deducted and any(
+        value != current
+        for value, current in [
+            (incoming_total, order.total),
+            (incoming_subtotal, order.subtotal),
+            (incoming_delivery_charge, order.delivery_charge),
+        ]
+    ):
+        warnings.append("WooCommerce totals changed after local fulfillment activity. Financial fields were left unchanged.")
+    else:
+        order.subtotal = incoming_subtotal
+        order.total = incoming_total
+        order.delivery_charge = incoming_delivery_charge
+        order.discount = Decimal("0.00")
+        order.paid_amount = incoming_total if order.payment_status == "paid" else Decimal("0.00")
+
+    if not order.notes:
+        order.notes = f"Imported from WooCommerce order {order_payload.get('id')}."
+    elif order.notes.strip() != f"Imported from WooCommerce order {order_payload.get('id')}." and order_payload.get("customer_note"):
+        warnings.append("Local staff notes were preserved instead of being overwritten by WooCommerce notes.")
+
+    if order.items:
+        local_signature = _collect_line_item_signature(order)
+        woo_signature = _collect_woo_line_item_signature(order_payload)
+        if local_signature != woo_signature:
+            warnings.append("WooCommerce line items differ from local order items. Local items were preserved.")
+    else:
+        await _create_order_items_from_woo_payload(db, order, order_payload)
+
+    order.external_payload_snapshot = _build_external_snapshot(order_payload, warnings)
+
+    status_fragment = f"Status changed from {previous_status} to {order.status}." if previous_status != order.status else f"Status remains {order.status}."
+    warning_fragment = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+    order.events.append(
+        OrderEvent(
+            event_type="woocommerce_order_refreshed",
+            message=f"Refreshed from WooCommerce. {status_fragment}{warning_fragment}",
+            created_by_id=current_user.id,
+        )
+    )
+    await db.flush()
+    return order, warnings
+
+
+def _build_refresh_row(*, external_id: str, status_value: str, local_order_id, message: str) -> dict[str, Any]:
+    return {
+        "external_id": external_id,
+        "status": status_value,
+        "local_order_id": local_order_id,
+        "message": message,
+    }
+
+
 async def import_orders(db: AsyncSession, external_ids: list[str], current_user: User) -> dict[str, Any]:
     settings = await get_active_woocommerce_settings(db)
     imported = 0
@@ -628,11 +861,13 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
                 continue
 
             payload = _parse_woocommerce_json(response, "order")
-            order_number = f"WC-{payload.get('number') or payload.get('id')}"
-            existing_order = (await db.execute(select(Order).where(Order.order_number == order_number))).scalar_one_or_none()
+            existing_order = await _find_existing_woocommerce_order(db, payload)
             if existing_order is not None:
                 skipped += 1
-                message = f"Order {external_id} skipped because {order_number} already exists locally."
+                if existing_order.source == "woocommerce" and existing_order.external_id == str(payload.get("id")):
+                    message = f"Order {external_id} skipped because it is already linked to local WooCommerce order {existing_order.order_number}."
+                else:
+                    message = f"Order {external_id} skipped because {_build_local_order_number(payload)} already exists locally."
                 rows.append(
                     {
                         "external_id": external_id,
@@ -653,66 +888,10 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
                 )
                 continue
 
-            customer = await _find_or_create_customer_from_woo(db, payload)
-            subtotal = sum(_to_decimal(item.get("subtotal")) for item in payload.get("line_items", []))
-            total = _to_decimal(payload.get("total"))
-            delivery_charge = _to_decimal(payload.get("shipping_total"))
-            paid_amount = total if _map_payment_status(payload) == "paid" else Decimal("0.00")
-            billing = payload.get("billing") or {}
-            customer_name = " ".join(part for part in [billing.get("first_name"), billing.get("last_name")] if part).strip() or None
-
-            order = Order(
-                order_number=order_number,
-                customer_id=customer.id if customer else None,
-                warehouse_id=None,
-                customer_name=customer_name,
-                customer_phone=billing.get("phone") or None,
-                shipping_address=_shipping_address_from_order_payload(payload),
-                notes=f"Imported from WooCommerce order {payload.get('id')}.",
-                tags="woocommerce-import",
-                status=_map_woo_status(payload.get("status")),
-                payment_status=_map_payment_status(payload),
-                payment_method=payload.get("payment_method_title") or payload.get("payment_method") or None,
-                source="woocommerce",
-                subtotal=subtotal,
-                discount=Decimal("0.00"),
-                delivery_charge=delivery_charge,
-                paid_amount=paid_amount,
-                total=total,
-                stock_deducted=False,
-            )
-            order.events.append(
-                OrderEvent(
-                    event_type="woo_order_imported",
-                    message=f"Imported from WooCommerce order {payload.get('id')}.",
-                    created_by_id=current_user.id,
-                )
-            )
-
-            for line_item in payload.get("line_items", []):
-                sku = (line_item.get("sku") or "").strip() or None
-                product = None
-                if sku:
-                    product = (await db.execute(select(Product).where(Product.sku == sku))).scalar_one_or_none()
-                quantity = max(int(line_item.get("quantity") or 1), 1)
-                line_total = _to_decimal(line_item.get("total"))
-                unit_price = line_total / quantity if quantity else line_total
-                order.items.append(
-                    OrderItem(
-                        product_id=product.id if product else None,
-                        variant_id=None,
-                        product_name=line_item.get("name") or "WooCommerce Item",
-                        sku=sku,
-                        quantity=quantity,
-                        unit_price=unit_price,
-                        total_price=line_total,
-                    )
-                )
-
-            db.add(order)
-            await db.flush()
+            order, warnings = await _create_local_order_from_woo_payload(db, order_payload=payload, current_user=current_user)
             imported += 1
-            message = f"Imported WooCommerce order {external_id}."
+            warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+            message = f"Imported WooCommerce order {external_id}.{warning_suffix}"
             rows.append({"external_id": external_id, "status": "imported", "local_entity_id": order.id, "message": message})
             await _create_sync_log(
                 db,
@@ -722,7 +901,7 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
                 local_entity_type="order",
                 local_entity_id=str(order.id),
                 message=message,
-                payload_snapshot={"order_number": order.order_number, "status": order.status},
+                payload_snapshot={"order_number": order.order_number, "status": order.status, "warnings": warnings},
                 created_by_id=current_user.id,
             )
         except Exception as exc:
@@ -732,6 +911,212 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
             await _create_sync_log(db, sync_type="order_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
 
     return {"imported_count": imported, "skipped_count": skipped, "failed_count": failed, "rows": rows}
+
+
+async def refresh_imported_order_from_woocommerce(
+    db: AsyncSession,
+    local_order_id,
+    current_user: User,
+) -> dict[str, Any]:
+    order = (await db.execute(select(Order).where(Order.id == local_order_id))).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local WooCommerce order not found.")
+    if order.source != "woocommerce":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only WooCommerce orders can be refreshed from WooCommerce.")
+    if not order.external_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This WooCommerce order is missing an external reference ID.")
+
+    settings = await get_active_woocommerce_settings(db)
+    external_id = order.external_id
+    try:
+        response = await _request_woo(settings, f"/orders/{external_id}")
+        if response.status_code != 200:
+            if response.status_code in {401, 403}:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"WooCommerce credentials were rejected while refreshing order {external_id}.",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"WooCommerce returned status {response.status_code} while refreshing order {external_id}.",
+            )
+
+        payload = _parse_woocommerce_json(response, "order")
+        order, warnings = await _refresh_local_order_from_woo_payload(
+            db,
+            order=order,
+            order_payload=payload,
+            current_user=current_user,
+        )
+        warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+        message = f"Refreshed WooCommerce order {external_id}.{warning_suffix}"
+        await _create_sync_log(
+            db,
+            sync_type="order_refresh",
+            status_value="success",
+            external_id=external_id,
+            local_entity_type="order",
+            local_entity_id=str(order.id),
+            message=message,
+            payload_snapshot={"external_id": external_id, "warnings": warnings, "status": order.external_status},
+            created_by_id=current_user.id,
+        )
+        return {
+            "refreshed_count": 1,
+            "imported_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "rows": [_build_refresh_row(external_id=external_id, status_value="refreshed", local_order_id=order.id, message=message)],
+        }
+    except HTTPException as exc:
+        await _create_sync_log(
+            db,
+            sync_type="order_refresh",
+            status_value="failed",
+            external_id=external_id,
+            local_entity_type="order",
+            local_entity_id=str(order.id),
+            message=str(exc.detail),
+            created_by_id=current_user.id,
+        )
+        raise
+
+
+async def refresh_imported_orders_since_last_sync(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    per_page: int = 20,
+    since_last_sync: bool = True,
+    status_value: str | None = None,
+) -> dict[str, Any]:
+    settings = await get_active_woocommerce_settings(db)
+    settings.last_sync_started_at = _now()
+    settings.last_sync_finished_at = None
+    settings.last_sync_status = "pending"
+    settings.last_sync_message = "WooCommerce bulk order refresh started."
+    after_value = settings.last_order_sync_at if since_last_sync else None
+    root_log = await _create_sync_log(
+        db,
+        sync_type="orders_bulk_refresh",
+        created_by_id=current_user.id,
+        message="WooCommerce bulk order refresh started.",
+        payload_snapshot={"since_last_sync": since_last_sync, "after": after_value.isoformat() if after_value else None, "status": status_value, "per_page": per_page},
+    )
+
+    refreshed_count = 0
+    imported_count = 0
+    skipped_count = 0
+    failed_count = 0
+    rows: list[dict[str, Any]] = []
+
+    params = _build_order_preview_params(page=1, per_page=per_page, status_value=status_value, after=after_value)
+    response = await _request_woo(settings, "/orders", params=params)
+    if response.status_code != 200:
+        if response.status_code in {401, 403}:
+            detail = "WooCommerce credentials were rejected while loading order refresh changes."
+        else:
+            detail = f"WooCommerce returned status {response.status_code} while loading order refresh changes."
+        settings.last_sync_finished_at = _now()
+        settings.last_sync_status = "failed"
+        settings.last_sync_message = detail
+        root_log.status = "failed"
+        root_log.message = detail
+        root_log.finished_at = _now()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+    payload = _parse_woocommerce_json(response, "order refresh list")
+    for order_payload in payload:
+        external_id = str(order_payload.get("id"))
+        try:
+            existing_order = await _find_existing_woocommerce_order(db, order_payload)
+            if existing_order is not None:
+                if existing_order.source != "woocommerce":
+                    skipped_count += 1
+                    message = f"Order {external_id} matched a non-WooCommerce local order and was skipped."
+                    rows.append(_build_refresh_row(external_id=external_id, status_value="skipped", local_order_id=existing_order.id, message=message))
+                    await _create_sync_log(
+                        db,
+                        sync_type="orders_bulk_refresh",
+                        status_value="skipped",
+                        external_id=external_id,
+                        local_entity_type="order",
+                        local_entity_id=str(existing_order.id),
+                        message=message,
+                        created_by_id=current_user.id,
+                    )
+                    continue
+
+                refreshed_order, warnings = await _refresh_local_order_from_woo_payload(
+                    db,
+                    order=existing_order,
+                    order_payload=order_payload,
+                    current_user=current_user,
+                )
+                refreshed_count += 1
+                warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+                message = f"Refreshed WooCommerce order {external_id}.{warning_suffix}"
+                rows.append(_build_refresh_row(external_id=external_id, status_value="refreshed", local_order_id=refreshed_order.id, message=message))
+                await _create_sync_log(
+                    db,
+                    sync_type="order_refresh",
+                    status_value="success",
+                    external_id=external_id,
+                    local_entity_type="order",
+                    local_entity_id=str(refreshed_order.id),
+                    message=message,
+                    payload_snapshot={"external_id": external_id, "warnings": warnings, "status": refreshed_order.external_status},
+                    created_by_id=current_user.id,
+                )
+            else:
+                imported_order, warnings = await _create_local_order_from_woo_payload(db, order_payload=order_payload, current_user=current_user)
+                imported_count += 1
+                warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+                message = f"Imported new WooCommerce order {external_id}.{warning_suffix}"
+                rows.append(_build_refresh_row(external_id=external_id, status_value="imported", local_order_id=imported_order.id, message=message))
+                await _create_sync_log(
+                    db,
+                    sync_type="orders_bulk_refresh",
+                    status_value="success",
+                    external_id=external_id,
+                    local_entity_type="order",
+                    local_entity_id=str(imported_order.id),
+                    message=message,
+                    payload_snapshot={"external_id": external_id, "warnings": warnings, "status": imported_order.external_status},
+                    created_by_id=current_user.id,
+                )
+        except Exception as exc:
+            failed_count += 1
+            message = f"Order {external_id} refresh failed: {exc}"
+            rows.append(_build_refresh_row(external_id=external_id, status_value="failed", local_order_id=None, message=message))
+            await _create_sync_log(
+                db,
+                sync_type="order_refresh",
+                status_value="failed",
+                external_id=external_id,
+                message=message,
+                created_by_id=current_user.id,
+            )
+
+    finished_at = _now()
+    summary_message = (
+        f"Bulk WooCommerce order refresh complete: {refreshed_count} refreshed, "
+        f"{imported_count} imported, {skipped_count} skipped, {failed_count} failed."
+    )
+    settings.last_order_sync_at = finished_at
+    settings.last_sync_finished_at = finished_at
+    settings.last_sync_status = "success" if failed_count == 0 else "failed"
+    settings.last_sync_message = summary_message
+    root_log.status = "success" if failed_count == 0 else "failed"
+    root_log.message = summary_message
+    root_log.finished_at = finished_at
+    return {
+        "refreshed_count": refreshed_count,
+        "imported_count": imported_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "rows": rows,
+    }
 
 
 def _summarize_import_result(entity_label: str, result: dict[str, Any]) -> str:
@@ -756,7 +1141,11 @@ async def get_sync_status_summary(
     recent_logs_result = await db.execute(
         select(WooCommerceSyncLog)
         .options(selectinload(WooCommerceSyncLog.created_by))
-        .where(WooCommerceSyncLog.sync_type.in_(["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import"]))
+        .where(
+            WooCommerceSyncLog.sync_type.in_(
+                ["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "order_refresh", "orders_bulk_refresh"]
+            )
+        )
         .order_by(WooCommerceSyncLog.created_at.desc())
         .limit(recent_limit)
     )
@@ -767,10 +1156,23 @@ async def get_sync_status_summary(
             .select_from(WooCommerceSyncLog)
             .where(
                 WooCommerceSyncLog.status == "failed",
-                WooCommerceSyncLog.sync_type.in_(["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import"]),
+                WooCommerceSyncLog.sync_type.in_(
+                    ["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "order_refresh", "orders_bulk_refresh"]
+                ),
             )
         )
         or 0
+    )
+    recent_order_refresh_failures_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(WooCommerceSyncLog)
+            .where(WooCommerceSyncLog.status == "failed", WooCommerceSyncLog.sync_type.in_(["order_refresh", "orders_bulk_refresh"]))
+        )
+        or 0
+    )
+    imported_woocommerce_orders_count = int(
+        await db.scalar(select(func.count()).select_from(Order).where(Order.source == "woocommerce")) or 0
     )
 
     warnings: list[str] = []
@@ -799,6 +1201,9 @@ async def get_sync_status_summary(
         "settings": settings,
         "recent_sync_logs": recent_logs,
         "failed_sync_count": failed_sync_count,
+        "recent_order_refresh_failures_count": recent_order_refresh_failures_count,
+        "imported_woocommerce_orders_count": imported_woocommerce_orders_count,
+        "last_order_refresh_at": settings.last_order_sync_at,
         "ready_to_sync": ready_to_sync,
         "readiness_warnings": warnings,
     }
@@ -897,40 +1302,33 @@ async def run_manual_sync(
                 failed_sections += 1
 
         if sync_orders:
-            order_since = settings.last_order_sync_at if since_last_sync else None
-            order_preview = await fetch_orders_preview(
+            order_refresh_result = await refresh_imported_orders_since_last_sync(
                 db,
-                page=1,
+                current_user,
                 per_page=per_page,
+                since_last_sync=since_last_sync,
                 status_value=None,
-                after=order_since,
-                current_user=current_user,
             )
-            order_external_ids = [item["external_id"] for item in order_preview["items"]]
-            if order_external_ids:
-                order_result = await import_orders(db, order_external_ids, current_user)
-            else:
-                order_result = {"imported_count": 0, "skipped_count": 0, "failed_count": 0, "rows": []}
-            order_message = _summarize_import_result("Order", order_result)
-            if since_last_sync and order_since is not None and not order_preview["items"]:
-                order_message += " No WooCommerce orders matched the last-sync filter."
+            order_result = {
+                "imported_count": order_refresh_result["imported_count"],
+                "skipped_count": order_refresh_result["skipped_count"],
+                "failed_count": order_refresh_result["failed_count"],
+                "rows": [
+                    {
+                        "external_id": row["external_id"],
+                        "status": "imported" if row["status"] == "imported" else ("failed" if row["status"] == "failed" else "skipped"),
+                        "local_entity_id": row["local_order_id"],
+                        "message": row["message"],
+                    }
+                    for row in order_refresh_result["rows"]
+                ],
+            }
+            order_message = (
+                f"Order sync: {order_refresh_result['refreshed_count']} refreshed, {order_refresh_result['imported_count']} imported, "
+                f"{order_refresh_result['skipped_count']} skipped, {order_refresh_result['failed_count']} failed."
+            )
             messages.append(order_message)
-            await _create_sync_log(
-                db,
-                sync_type="order_scheduled_import",
-                status_value="failed" if order_result["failed_count"] else "success",
-                message=order_message,
-                payload_snapshot={
-                    "since_last_sync": since_last_sync,
-                    "after": order_since.isoformat() if order_since else None,
-                    "per_page": per_page,
-                    "row_count": len(order_result["rows"]),
-                },
-                created_by_id=current_user.id,
-            )
-            if order_result["failed_count"] == 0:
-                settings.last_order_sync_at = _now()
-            else:
+            if order_refresh_result["failed_count"] != 0:
                 failed_sections += 1
 
         finished_at = _now()

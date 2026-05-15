@@ -84,6 +84,11 @@ type OrderDetail = {
   payment_status: string;
   payment_method: string | null;
   source: string;
+  external_id: string | null;
+  external_number: string | null;
+  external_status: string | null;
+  external_synced_at: string | null;
+  external_payload_snapshot: string | null;
   subtotal: number | string;
   discount: number | string;
   delivery_charge: number | string;
@@ -149,6 +154,7 @@ export default function OrderDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isMarkingPrinted, setIsMarkingPrinted] = useState(false);
+  const [isRefreshingWoo, setIsRefreshingWoo] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -161,6 +167,16 @@ export default function OrderDetailPage() {
 
     return selectedStatus === "shipped" || selectedStatus === "delivered";
   }, [order, selectedStatus]);
+
+  async function loadOrderData() {
+    const [data, shipmentsData] = await Promise.all([
+      api.get<OrderDetail>(`/orders/${orderId}`),
+      api.get<Shipment[]>(`/shipments?order_id=${orderId}&skip=0&limit=20`),
+    ]);
+    setOrder(data);
+    setShipments(shipmentsData);
+    setSelectedStatus(data.status);
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -234,6 +250,26 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function handleWooRefresh() {
+    if (!order) {
+      return;
+    }
+
+    setError("");
+    setSuccess("");
+    setIsRefreshingWoo(true);
+
+    try {
+      await api.post(`/woocommerce/orders/${order.id}/refresh`, {});
+      await loadOrderData();
+      setSuccess("WooCommerce order refreshed successfully.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to refresh WooCommerce order");
+    } finally {
+      setIsRefreshingWoo(false);
+    }
+  }
+
   if (isLoading) {
     return <LoadingState label="Loading order detail..." />;
   }
@@ -282,6 +318,17 @@ export default function OrderDetailPage() {
               <PackagePlus className="h-4 w-4" />
               {shipments.length > 0 ? "Open Logistics" : "Create Shipment"}
             </Link>
+            {order.source === "woocommerce" && order.external_id ? (
+              <button
+                type="button"
+                onClick={handleWooRefresh}
+                disabled={isRefreshingWoo}
+                className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+              >
+                {isRefreshingWoo ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                Refresh from WooCommerce
+              </button>
+            ) : null}
             <a
               href="#update-status"
               className="inline-flex items-center gap-2 rounded-full border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -308,7 +355,19 @@ export default function OrderDetailPage() {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Source</p>
             <p className="mt-2 text-sm font-semibold text-slate-950">
-              {formatLabel(order.source)}
+              {order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">External status</p>
+            <p className="mt-2 text-sm font-semibold text-slate-950">
+              {order.external_status ? formatLabel(order.external_status) : "Not linked"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">External synced</p>
+            <p className="mt-2 text-sm font-semibold text-slate-950">
+              {order.external_synced_at ? formatDateTime(order.external_synced_at) : "Never"}
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -336,6 +395,12 @@ export default function OrderDetailPage() {
           ) : null}
         </section>
       )}
+
+      {order.source === "woocommerce" && order.external_id ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Refresh updates order status, payment, shipping, and safe external metadata from WooCommerce but does not deduct stock automatically.
+        </section>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">

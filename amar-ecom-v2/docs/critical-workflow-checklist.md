@@ -198,29 +198,40 @@ Expected:
 - optional `customer_payment` transaction is created
 - invoice/receipt link opens correctly
 
-### WooCommerce Manual Import
+### WooCommerce Manual Sync
 
 1. Open `/dashboard/woocommerce`.
 2. Confirm `backend/.env` includes `FERNET_SECRET_KEY` or `APP_SECRET_KEY` if you want the dedicated encryption warning to clear.
 3. Save WooCommerce connection settings.
 4. Confirm the page shows saved-key state and a masked key value, and that keys are never displayed after saving.
 5. Run `Test connection`.
-6. Load product preview and confirm duplicate badges appear before import.
-7. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled.
-8. Import one or more selected products.
-9. Confirm the import result includes imported, skipped, and failed totals plus row-level messages.
-10. Load order preview and confirm duplicate badges appear before import.
-11. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled.
-12. Import one or more selected orders.
-13. Confirm the import result includes imported, skipped, and failed totals plus row-level messages.
-14. Open the `Sync Logs` tab, apply filters, and review at least one `View details` panel.
+6. Open the `Sync Schedule` tab.
+7. Confirm readiness warnings and last-sync metadata render without exposing credentials.
+8. Save schedule settings such as auto-sync preference, entity toggles, and interval minutes.
+9. Run `Run manual sync`.
+10. Confirm the manual sync result shows timestamps plus product/order summaries.
+11. Load product preview and confirm duplicate badges appear before import.
+12. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled.
+13. Import one or more selected products.
+14. Confirm the import result includes imported, skipped, and failed totals plus row-level messages.
+15. Load order preview and confirm duplicate badges appear before import.
+16. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled.
+17. Import one or more selected orders.
+18. Confirm the import result includes imported, skipped, and failed totals plus row-level messages.
+19. Use `Refresh imported orders` and confirm existing WooCommerce orders refresh safely while changed-but-missing WooCommerce orders import as new rows.
+20. Open one WooCommerce-sourced local order in `/dashboard/orders/{id}` and use `Refresh from WooCommerce`.
+21. Open the `Sync Logs` tab, apply filters, and review at least one `View details` panel.
 
 Expected:
 - connection test succeeds or returns a clean error
 - preview endpoints stay read-only against WooCommerce
 - credentials are never returned raw by the API
+- sync schedule fields are stored safely but do not start a background worker by themselves
+- manual run-sync stays import-only and does not push local changes back to WooCommerce
 - product import creates or skips local rows safely by SKU or slug
 - order import creates or skips local rows safely by `WC-{id}` style order numbers
+- imported WooCommerce orders store external reference metadata for later refresh
+- WooCommerce refresh updates safe lifecycle fields only and logs warnings instead of force-overwriting conflict-prone local changes
 - sync log detail stays safe and does not expose WooCommerce credentials
 - imported WooCommerce orders do not deduct local stock automatically in this phase
 

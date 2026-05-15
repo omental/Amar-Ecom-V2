@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
@@ -16,10 +17,13 @@ from app.core.crypto import (
 from app.models.user import User
 from app.models.woocommerce import WooCommerceSetting, WooCommerceSyncLog
 from app.schemas.woocommerce import (
+    WooCommerceBulkOrderRefreshRequest,
     WooCommerceConnectionTestRead,
     WooCommerceImportRequest,
     WooCommerceImportResult,
     WooCommerceOrderPreviewListRead,
+    WooCommerceOrderRefreshResult,
+    WooCommerceOrderRefreshRequest,
     WooCommerceProductPreviewListRead,
     WooCommerceRunSyncRequest,
     WooCommerceRunSyncResult,
@@ -35,6 +39,8 @@ from app.services.woocommerce_service import (
     get_sync_status_summary,
     import_orders,
     import_products,
+    refresh_imported_order_from_woocommerce,
+    refresh_imported_orders_since_last_sync,
     run_manual_sync,
     test_connection,
 )
@@ -354,6 +360,63 @@ async def import_selected_orders(
     return WooCommerceImportResult(**result)
 
 
+@router.post("/orders/{local_order_id}/refresh", response_model=WooCommerceOrderRefreshResult)
+async def refresh_single_imported_order(
+    local_order_id: UUID,
+    refresh_in: WooCommerceOrderRefreshRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceOrderRefreshResult:
+    _ensure_admin(current_user)
+    result = await refresh_imported_order_from_woocommerce(db, local_order_id, current_user)
+    row = result["rows"][0] if result["rows"] else None
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_order_refreshed",
+        module="woocommerce",
+        entity_type="order",
+        entity_id=row["local_order_id"] if row else None,
+        message=row["message"] if row else "Refreshed WooCommerce order.",
+        request=request,
+    )
+    await commit_or_409(db, "Could not refresh WooCommerce order")
+    return WooCommerceOrderRefreshResult(**result)
+
+
+@router.post("/orders-refresh", response_model=WooCommerceOrderRefreshResult)
+async def refresh_orders_bulk(
+    refresh_in: WooCommerceBulkOrderRefreshRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceOrderRefreshResult:
+    _ensure_admin(current_user)
+    result = await refresh_imported_orders_since_last_sync(
+        db,
+        current_user,
+        per_page=refresh_in.per_page,
+        since_last_sync=refresh_in.since_last_sync,
+        status_value=refresh_in.status,
+    )
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_orders_bulk_refreshed",
+        module="woocommerce",
+        entity_type="order",
+        entity_id=None,
+        message=(
+            f"WooCommerce bulk order refresh: {result['refreshed_count']} refreshed, "
+            f"{result['imported_count']} imported, {result['skipped_count']} skipped, {result['failed_count']} failed."
+        ),
+        request=request,
+    )
+    await commit_or_409(db, "Could not complete WooCommerce bulk order refresh")
+    return WooCommerceOrderRefreshResult(**result)
+
+
 @router.post("/run-sync", response_model=WooCommerceRunSyncResult)
 async def trigger_manual_sync(
     sync_in: WooCommerceRunSyncRequest,
@@ -420,6 +483,9 @@ async def get_sync_status(
         settings=_settings_to_read(summary["settings"]),
         recent_sync_logs=[_sync_log_to_read(log) for log in summary["recent_sync_logs"]],
         failed_sync_count=summary["failed_sync_count"],
+        recent_order_refresh_failures_count=summary["recent_order_refresh_failures_count"],
+        imported_woocommerce_orders_count=summary["imported_woocommerce_orders_count"],
+        last_order_refresh_at=summary["last_order_refresh_at"],
         ready_to_sync=summary["ready_to_sync"],
         readiness_warnings=summary["readiness_warnings"],
     )

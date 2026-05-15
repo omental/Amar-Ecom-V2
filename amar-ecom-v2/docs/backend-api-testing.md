@@ -97,6 +97,14 @@ Phase 12A adds the WooCommerce sync foundation migration:
 
 Phase 12B WooCommerce sync hardening adds no new migration.
 
+Phase 12D WooCommerce scheduled-sync foundation adds a new migration:
+
+- `5e6f7a8b9c0d_add_woocommerce_sync_schedule_fields`
+
+Phase 12E WooCommerce order lifecycle sync adds a new migration:
+
+- `6f7a8b9c0d1e_add_order_external_sync_fields`
+
 ## Start API
 
 ```powershell
@@ -885,6 +893,21 @@ Expected result:
 - creates a WooCommerce sync log row
 - returns clear user-facing errors for invalid URL, missing credentials, timeout, invalid credentials, unreadable WooCommerce responses, or upstream unavailability
 
+## Review WooCommerce Sync Status
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/sync-status `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns schedule fields without exposing secrets
+- returns `ready_to_sync`, `failed_sync_count`, and `readiness_warnings`
+- returns last product/order sync timestamps and overall last sync status/message
+- warns clearly when credentials are missing, connection tests have not succeeded, or auto-sync is enabled without a worker
+
 ## Preview WooCommerce Products
 
 ```powershell
@@ -957,8 +980,55 @@ Expected result:
 - returns `imported_count`, `skipped_count`, and `failed_count`
 - returns row-level `rows[]` entries with `external_id`, `status`, `local_entity_id`, and `message`
 - imported orders use source `woocommerce`
+- imported orders store `external_id`, `external_number`, `external_status`, `external_synced_at`, and a sanitized `external_payload_snapshot`
 - imported orders do not deduct local stock automatically in this phase
 - duplicate imported orders are skipped safely by local order number
+
+## Refresh One Imported WooCommerce Order
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/woocommerce/orders/PUT_LOCAL_ORDER_UUID_HERE/refresh" `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{} | ConvertTo-Json)
+```
+
+Expected result:
+
+- only works for local orders with `source = woocommerce`
+- refreshes safe fields such as external status, payment state, phone, shipping, and external sync metadata
+- creates `woocommerce_order_refreshed` order events
+- creates `order_refresh` sync logs
+- does not deduct stock
+- does not create finance transactions
+- logs warnings instead of deleting local items or force-overwriting conflict-prone changes
+
+## Bulk Refresh Imported WooCommerce Orders
+
+```powershell
+$wooBulkRefreshBody = @{
+  since_last_sync = $true
+  per_page = 20
+  status = "processing"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/orders-refresh `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wooBulkRefreshBody
+```
+
+Expected result:
+
+- returns `refreshed_count`, `imported_count`, `skipped_count`, and `failed_count`
+- refreshes existing WooCommerce orders by `source + external_id` when possible
+- imports changed WooCommerce orders that do not exist locally yet
+- logs `orders_bulk_refresh` and per-order `order_refresh` rows
+- logs conflicts or warnings for line-item or fulfillment mismatches instead of auto-resolving them
 
 ## View WooCommerce Sync Logs
 
@@ -990,12 +1060,41 @@ Expected result:
 - includes safe `payload_snapshot` content when available
 - does not expose WooCommerce credentials or other secrets in the payload snapshot
 
+## Run WooCommerce Manual Sync
+
+```powershell
+$wooRunSyncBody = @{
+  sync_products = $true
+  sync_orders = $true
+  since_last_sync = $true
+  per_page = 20
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/run-sync `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wooRunSyncBody
+```
+
+Expected result:
+
+- returns `status`, `started_at`, `finished_at`, and `message`
+- returns `product_result` and `order_result` summaries when included
+- refreshes existing imported WooCommerce orders and imports new changed WooCommerce orders when `sync_orders = true`
+- uses `modified_after` or `after` when `since_last_sync = true`
+- does not deduct stock for imported WooCommerce orders
+- does not push local data back to WooCommerce
+
 ## WooCommerce Safety Limitations
 
 - read-only against WooCommerce in this phase
 - credentials are encrypted at rest when saved through the hardened settings flow
-- no auto-sync
-- no background sync
+- auto-sync settings are configuration-only in this phase
+- no production background worker is included yet
+- WooCommerce order refresh only updates safe local fields
+- conflicts are logged as warnings instead of auto-resolved destructive changes
 - no local push-back to WooCommerce
 - no destructive WooCommerce updates
 

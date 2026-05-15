@@ -68,6 +68,9 @@ type Order = {
   status: string;
   payment_status: string;
   source: string;
+  external_id?: string | null;
+  external_status?: string | null;
+  external_synced_at?: string | null;
   subtotal: number | string;
   discount: number | string;
   delivery_charge: number | string;
@@ -1063,8 +1066,20 @@ export default function OrdersPage() {
                           {order.order_number}
                         </Link>
                         <p className="mt-1 text-xs text-slate-500">
-                          {formatLabel(order.source)}
+                          {order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)}
                         </p>
+                        {order.source === "woocommerce" ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                              WooCommerce
+                            </span>
+                            {order.external_status ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700">
+                                {formatLabel(order.external_status)}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                       <div>
                         <p className="font-medium text-slate-950">
@@ -1114,7 +1129,11 @@ export default function OrdersPage() {
                             {tagList.length > 2 ? "..." : ""}
                           </p>
                         ) : (
-                          <p className="text-xs text-slate-400">No notes or tags</p>
+                          <p className="text-xs text-slate-400">
+                            {order.source === "woocommerce" && order.external_synced_at
+                              ? `Woo synced ${formatDateTime(order.external_synced_at)}`
+                              : "No notes or tags"}
+                          </p>
                         )}
                       </div>
                       <span>

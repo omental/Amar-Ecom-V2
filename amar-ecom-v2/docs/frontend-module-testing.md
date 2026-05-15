@@ -1141,9 +1141,32 @@ Expected result:
    - encryption warning only when needed
 8. Click `Test connection`
 9. Confirm the page shows the last test status, message, and timestamp
-10. Open `Product Import`
-11. Load a WooCommerce product preview
-12. Confirm the table shows:
+10. Open `Sync Schedule`
+11. Confirm the page shows:
+   - ready or needs-review state
+   - auto-sync enabled state
+   - product sync enabled state
+   - order sync enabled state
+   - interval minutes
+   - last product sync
+   - last order sync
+   - last sync status and message
+   - failed recent sync count
+12. Confirm warnings appear when the connection has not been tested successfully or when auto-sync is enabled without a worker
+13. Toggle one or more schedule settings and save
+14. Confirm the page keeps credentials hidden and updates the schedule values
+15. Use `Run manual sync`
+16. Confirm the page shows:
+   - loading state while the sync is running
+   - status
+   - started and finished timestamps
+   - product and order result summaries
+   - row-level messages when rows are returned
+17. Confirm `since last sync` can be toggled without showing any write-back behavior
+18. Confirm the sync schedule note explains that manual sync now refreshes existing WooCommerce orders and imports new ones
+19. Open `Product Import`
+20. Load a WooCommerce product preview
+21. Confirm the table shows:
    - select checkbox
    - external id
    - name
@@ -1153,17 +1176,17 @@ Expected result:
    - price
    - status
    - category
-13. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled
-14. If no rows are returned, confirm the page shows a clear empty state instead of a blank table
-15. Select one or more products and click `Import selected`
-16. Confirm the import summary shows:
+22. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled
+23. If no rows are returned, confirm the page shows a clear empty state instead of a blank table
+24. Select one or more products and click `Import selected`
+25. Confirm the import summary shows:
    - imported
    - skipped
    - failed
    - compact row-level messages
-17. Open `Order Import`
-18. Load a WooCommerce order preview with or without a status filter
-19. Confirm the table shows:
+26. Open `Order Import`
+27. Load a WooCommerce order preview with or without a status filter
+28. Confirm the table shows:
    - select checkbox
    - external id
    - number
@@ -1173,17 +1196,24 @@ Expected result:
    - status
    - total
    - created at
-20. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled
-21. If no rows are returned, confirm the page shows a clear empty state instead of a blank table
-22. Select one or more orders and click `Import selected`
-23. Confirm the import summary shows:
+29. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled
+30. If no rows are returned, confirm the page shows a clear empty state instead of a blank table
+31. Select one or more orders and click `Import selected`
+32. Confirm the import summary shows:
    - imported
    - skipped
    - failed
    - compact row-level messages
-24. Confirm imported WooCommerce orders are informational imports only and do not deduct local stock automatically in this phase
-25. Open `Sync Logs`
-26. Confirm the log table shows:
+33. Use `Refresh imported orders`
+34. Confirm the result summary shows:
+   - refreshed
+   - imported
+   - skipped
+   - failed
+   - row-level messages
+35. Confirm imported WooCommerce orders remain informational imports and do not deduct local stock automatically in this phase
+36. Open `Sync Logs`
+37. Confirm the log table shows:
    - date
    - sync type
    - status
@@ -1192,8 +1222,17 @@ Expected result:
    - message
    - user
    - `View details` button
-27. Apply filters for:
+38. Apply filters for:
    - sync type
    - status
    - external id
-28. Open a log detail view and confirm the safe payload snapshot renders in a preformatted block without any WooCommerce key or secret value
+39. Confirm the sync type filter includes `order_refresh` and `orders_bulk_refresh`
+40. Open a log detail view and confirm the safe payload snapshot renders in a preformatted block without any WooCommerce key or secret value
+41. Confirm local product or order links appear when the log references a local entity
+42. Open a WooCommerce-sourced order in `/dashboard/orders/{id}`
+43. Confirm the detail page shows:
+   - WooCommerce source badge
+   - external status
+   - external synced timestamp
+   - `Refresh from WooCommerce` button
+   - warning that refresh does not deduct stock automatically

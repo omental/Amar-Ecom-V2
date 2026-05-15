@@ -68,6 +68,20 @@ Notes:
 - if neither is set, the backend falls back to `SECRET_KEY`, which still works but keeps the dedicated-key warning visible in the WooCommerce UI
 - legacy plaintext WooCommerce credentials from Phase 12A are still readable for backward compatibility, but the settings should be saved again so they are re-encrypted
 
+## WooCommerce Auto-Sync Warning
+
+Symptoms:
+
+- `/dashboard/woocommerce` shows a readiness warning that auto-sync is enabled but no worker is configured
+- `/api/v1/woocommerce/sync-status` returns a warning about configuration-only auto-sync
+
+What to check:
+
+- this is expected in Phase 12D
+- `auto_sync_enabled` only stores preference and interval metadata
+- no background worker, cron process, or queue consumer is bundled in this phase
+- manual sync through `POST /api/v1/woocommerce/run-sync` remains the only supported execution path
+
 ## Next.js Workspace Root Warning
 
 Observed during build during Phase 11A:
