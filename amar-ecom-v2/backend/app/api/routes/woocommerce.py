@@ -21,16 +21,21 @@ from app.schemas.woocommerce import (
     WooCommerceImportResult,
     WooCommerceOrderPreviewListRead,
     WooCommerceProductPreviewListRead,
+    WooCommerceRunSyncRequest,
+    WooCommerceRunSyncResult,
     WooCommerceSettingRead,
     WooCommerceSettingUpdate,
     WooCommerceSyncLogRead,
+    WooCommerceSyncStatusRead,
 )
 from app.services.activity_log_service import log_activity
 from app.services.woocommerce_service import (
     fetch_orders_preview,
     fetch_products_preview,
+    get_sync_status_summary,
     import_orders,
     import_products,
+    run_manual_sync,
     test_connection,
 )
 
@@ -116,6 +121,16 @@ def _settings_to_read(settings: WooCommerceSetting) -> WooCommerceSettingRead:
         last_tested_at=settings.last_tested_at,
         last_test_success=settings.last_test_success,
         last_test_message=settings.last_test_message,
+        auto_sync_enabled=settings.auto_sync_enabled,
+        sync_products_enabled=settings.sync_products_enabled,
+        sync_orders_enabled=settings.sync_orders_enabled,
+        sync_interval_minutes=settings.sync_interval_minutes,
+        last_product_sync_at=settings.last_product_sync_at,
+        last_order_sync_at=settings.last_order_sync_at,
+        last_sync_started_at=settings.last_sync_started_at,
+        last_sync_finished_at=settings.last_sync_finished_at,
+        last_sync_status=settings.last_sync_status,
+        last_sync_message=settings.last_sync_message,
         created_at=settings.created_at,
         updated_at=settings.updated_at,
     )
@@ -156,6 +171,19 @@ async def update_settings(
         settings.api_version = payload["api_version"]
     if "is_active" in payload and payload["is_active"] is not None:
         settings.is_active = payload["is_active"]
+    sync_settings_updated = False
+    if "auto_sync_enabled" in payload and payload["auto_sync_enabled"] is not None:
+        settings.auto_sync_enabled = payload["auto_sync_enabled"]
+        sync_settings_updated = True
+    if "sync_products_enabled" in payload and payload["sync_products_enabled"] is not None:
+        settings.sync_products_enabled = payload["sync_products_enabled"]
+        sync_settings_updated = True
+    if "sync_orders_enabled" in payload and payload["sync_orders_enabled"] is not None:
+        settings.sync_orders_enabled = payload["sync_orders_enabled"]
+        sync_settings_updated = True
+    if "sync_interval_minutes" in payload and payload["sync_interval_minutes"] is not None:
+        settings.sync_interval_minutes = payload["sync_interval_minutes"]
+        sync_settings_updated = True
 
     await log_activity(
         db,
@@ -176,6 +204,17 @@ async def update_settings(
             entity_type="woocommerce_setting",
             entity_id=settings.id,
             message="Updated WooCommerce credentials.",
+            request=request,
+        )
+    if sync_settings_updated:
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="woocommerce_sync_settings_updated",
+            module="woocommerce",
+            entity_type="woocommerce_setting",
+            entity_id=settings.id,
+            message="Updated WooCommerce sync schedule settings.",
             request=request,
         )
     await commit_or_409(db, "Could not update WooCommerce settings")
@@ -211,10 +250,18 @@ async def get_products_preview(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
     search: str | None = Query(default=None),
+    modified_after: datetime | None = Query(default=None),
     current_user: User = Depends(get_current_user),
 ) -> WooCommerceProductPreviewListRead:
     _ensure_admin(current_user)
-    preview = await fetch_products_preview(db, page=page, per_page=per_page, search=search, current_user=current_user)
+    preview = await fetch_products_preview(
+        db,
+        page=page,
+        per_page=per_page,
+        search=search,
+        modified_after=modified_after,
+        current_user=current_user,
+    )
     await commit_or_409(db, "Could not store WooCommerce product preview log")
     return WooCommerceProductPreviewListRead(**preview)
 
@@ -258,10 +305,18 @@ async def get_orders_preview(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
+    after: datetime | None = Query(default=None),
     current_user: User = Depends(get_current_user),
 ) -> WooCommerceOrderPreviewListRead:
     _ensure_admin(current_user)
-    preview = await fetch_orders_preview(db, page=page, per_page=per_page, status_value=status, current_user=current_user)
+    preview = await fetch_orders_preview(
+        db,
+        page=page,
+        per_page=per_page,
+        status_value=status,
+        after=after,
+        current_user=current_user,
+    )
     await commit_or_409(db, "Could not store WooCommerce order preview log")
     return WooCommerceOrderPreviewListRead(**preview)
 
@@ -297,6 +352,77 @@ async def import_selected_orders(
     )
     await commit_or_409(db, "Could not complete WooCommerce order import")
     return WooCommerceImportResult(**result)
+
+
+@router.post("/run-sync", response_model=WooCommerceRunSyncResult)
+async def trigger_manual_sync(
+    sync_in: WooCommerceRunSyncRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceRunSyncResult:
+    _ensure_admin(current_user)
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_manual_sync_started",
+        module="woocommerce",
+        entity_type="woocommerce_setting",
+        entity_id=None,
+        message="Started WooCommerce manual sync.",
+        request=request,
+    )
+    try:
+        result = await run_manual_sync(
+            db,
+            current_user,
+            sync_products=sync_in.sync_products,
+            sync_orders=sync_in.sync_orders,
+            since_last_sync=sync_in.since_last_sync,
+            per_page=sync_in.per_page,
+        )
+    except HTTPException as exc:
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="woocommerce_manual_sync_failed",
+            module="woocommerce",
+            entity_type="woocommerce_setting",
+            entity_id=None,
+            message=str(exc.detail),
+            request=request,
+        )
+        await commit_or_409(db, "Could not store WooCommerce manual sync failure")
+        raise
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_manual_sync_completed",
+        module="woocommerce",
+        entity_type="woocommerce_setting",
+        entity_id=None,
+        message=result["message"],
+        request=request,
+    )
+    await commit_or_409(db, "Could not complete WooCommerce manual sync")
+    return WooCommerceRunSyncResult(**result)
+
+
+@router.get("/sync-status", response_model=WooCommerceSyncStatusRead)
+async def get_sync_status(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceSyncStatusRead:
+    _ensure_admin(current_user)
+    summary = await get_sync_status_summary(db)
+    return WooCommerceSyncStatusRead(
+        settings=_settings_to_read(summary["settings"]),
+        recent_sync_logs=[_sync_log_to_read(log) for log in summary["recent_sync_logs"]],
+        failed_sync_count=summary["failed_sync_count"],
+        ready_to_sync=summary["ready_to_sync"],
+        readiness_warnings=summary["readiness_warnings"],
+    )
 
 
 @router.get("/sync-logs", response_model=list[WooCommerceSyncLogRead])

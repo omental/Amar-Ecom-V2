@@ -176,7 +176,7 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             "tested_at": "2026-05-13T10:00:00+00:00",
         }
 
-    async def fake_products_preview(db, *, page, per_page, search, current_user):
+    async def fake_products_preview(db, *, page, per_page, search, modified_after=None, current_user):
         return {
             "items": [
                 {
@@ -198,7 +198,7 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             "total_pages": 1,
         }
 
-    async def fake_orders_preview(db, *, page, per_page, status_value, current_user):
+    async def fake_orders_preview(db, *, page, per_page, status_value, after=None, current_user):
         return {
             "items": [
                 {
@@ -235,11 +235,85 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             "rows": [{"external_id": external_ids[0], "status": "imported", "local_entity_id": None, "message": "Orders imported."}],
         }
 
+    async def fake_run_manual_sync(db, current_user, *, sync_products=True, sync_orders=True, since_last_sync=True, per_page=20):
+        return {
+            "status": "success",
+            "started_at": "2026-05-15T10:00:00+00:00",
+            "finished_at": "2026-05-15T10:05:00+00:00",
+            "product_result": {
+                "imported_count": 1,
+                "skipped_count": 1,
+                "failed_count": 0,
+                "rows": [
+                    {"external_id": "101", "status": "imported", "local_entity_id": None, "message": "Products imported."},
+                    {"external_id": "102", "status": "skipped", "local_entity_id": None, "message": "Duplicate skipped."},
+                ],
+            },
+            "order_result": {
+                "imported_count": 1,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "rows": [{"external_id": "501", "status": "imported", "local_entity_id": None, "message": "Orders imported."}],
+            },
+            "message": "Product sync complete. Order sync complete.",
+        }
+
+    class FakeSyncStatusSettings:
+        id = "00000000-0000-0000-0000-000000000123"
+        store_url = "https://store.example.com"
+        api_version = "wc/v3"
+        is_active = True
+        consumer_key_encrypted = "gAAAAABmasked"
+        consumer_secret_encrypted = "gAAAAABmaskedsecret"
+        last_tested_at = "2026-05-15T09:30:00+00:00"
+        last_test_success = True
+        last_test_message = "WooCommerce connection succeeded."
+        auto_sync_enabled = True
+        sync_products_enabled = True
+        sync_orders_enabled = True
+        sync_interval_minutes = 60
+        last_product_sync_at = "2026-05-15T08:00:00+00:00"
+        last_order_sync_at = "2026-05-15T08:30:00+00:00"
+        last_sync_started_at = "2026-05-15T09:00:00+00:00"
+        last_sync_finished_at = "2026-05-15T09:05:00+00:00"
+        last_sync_status = "success"
+        last_sync_message = "Previous sync succeeded."
+        created_at = "2026-05-13T10:00:00+00:00"
+        updated_at = "2026-05-15T09:05:00+00:00"
+
+    class FakeSyncLog:
+        def __init__(self):
+            self.id = "00000000-0000-0000-0000-000000000789"
+            self.sync_type = "manual_sync"
+            self.direction = "import"
+            self.status = "success"
+            self.external_id = None
+            self.local_entity_type = None
+            self.local_entity_id = None
+            self.message = "WooCommerce manual sync finished."
+            self.payload_snapshot = '{"per_page": 20}'
+            self.created_by_id = None
+            self.started_at = "2026-05-15T09:00:00+00:00"
+            self.finished_at = "2026-05-15T09:05:00+00:00"
+            self.created_at = "2026-05-15T09:05:00+00:00"
+            self.created_by = None
+
+    async def fake_get_sync_status_summary(db, *, recent_limit=10):
+        return {
+            "settings": FakeSyncStatusSettings(),
+            "recent_sync_logs": [FakeSyncLog()],
+            "failed_sync_count": 2,
+            "ready_to_sync": True,
+            "readiness_warnings": ["Auto-sync is configuration-only right now. No background worker is running in this deployment by default."],
+        }
+
     monkeypatch.setattr(woocommerce_routes, "test_connection", fake_test_connection)
     monkeypatch.setattr(woocommerce_routes, "fetch_products_preview", fake_products_preview)
     monkeypatch.setattr(woocommerce_routes, "fetch_orders_preview", fake_orders_preview)
     monkeypatch.setattr(woocommerce_routes, "import_products", fake_import_products)
     monkeypatch.setattr(woocommerce_routes, "import_orders", fake_import_orders)
+    monkeypatch.setattr(woocommerce_routes, "run_manual_sync", fake_run_manual_sync)
+    monkeypatch.setattr(woocommerce_routes, "get_sync_status_summary", fake_get_sync_status_summary)
 
     try:
         with TestClient(app) as client:
@@ -277,6 +351,10 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             assert settings_response.json()["has_consumer_key"] is True
             assert settings_response.json()["has_consumer_secret"] is True
             assert settings_response.json()["consumer_key_masked"]
+            assert settings_response.json()["auto_sync_enabled"] is False
+            assert settings_response.json()["sync_products_enabled"] is True
+            assert settings_response.json()["sync_orders_enabled"] is True
+            assert settings_response.json()["sync_interval_minutes"] == 60
 
             get_settings_response = client.get("/api/v1/woocommerce/settings", headers=headers)
             assert get_settings_response.status_code == 200, get_settings_response.text
@@ -338,8 +416,54 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             if logs_response.json():
                 detail_response = client.get(f"/api/v1/woocommerce/sync-logs/{logs_response.json()[0]['id']}", headers=headers)
                 assert detail_response.status_code == 200, detail_response.text
+
+            schedule_settings_response = client.patch(
+                "/api/v1/woocommerce/settings",
+                headers=headers,
+                json={
+                    "auto_sync_enabled": True,
+                    "sync_products_enabled": True,
+                    "sync_orders_enabled": False,
+                    "sync_interval_minutes": 180,
+                },
+            )
+            assert schedule_settings_response.status_code == 200, schedule_settings_response.text
+            schedule_payload = schedule_settings_response.json()
+            assert schedule_payload["auto_sync_enabled"] is True
+            assert schedule_payload["sync_products_enabled"] is True
+            assert schedule_payload["sync_orders_enabled"] is False
+            assert schedule_payload["sync_interval_minutes"] == 180
+
+            sync_status_response = client.get("/api/v1/woocommerce/sync-status", headers=headers)
+            assert sync_status_response.status_code == 200, sync_status_response.text
+            sync_status_payload = sync_status_response.json()
+            assert sync_status_payload["ready_to_sync"] is True
+            assert sync_status_payload["failed_sync_count"] == 2
+            assert sync_status_payload["settings"]["auto_sync_enabled"] is True
+            assert sync_status_payload["recent_sync_logs"][0]["sync_type"] == "manual_sync"
+            assert sync_status_payload["readiness_warnings"]
+
+            run_sync_response = client.post(
+                "/api/v1/woocommerce/run-sync",
+                headers=headers,
+                json={
+                    "sync_products": True,
+                    "sync_orders": True,
+                    "since_last_sync": True,
+                    "per_page": 20,
+                },
+            )
+            assert run_sync_response.status_code == 200, run_sync_response.text
+            run_sync_payload = run_sync_response.json()
+            assert run_sync_payload["status"] == "success"
+            assert run_sync_payload["product_result"]["imported_count"] == 1
+            assert run_sync_payload["product_result"]["rows"][1]["status"] == "skipped"
+            assert run_sync_payload["order_result"]["imported_count"] == 1
+
             forbidden_response = client.get("/api/v1/woocommerce/settings", headers=staff_headers)
             assert forbidden_response.status_code == 403, forbidden_response.text
+            forbidden_run_sync_response = client.post("/api/v1/woocommerce/run-sync", headers=staff_headers, json={})
+            assert forbidden_run_sync_response.status_code == 403, forbidden_run_sync_response.text
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["woocommerce_settings", "woocommerce_sync_logs"]):
             pytest.skip("Apply the latest WooCommerce migration before running this test.")

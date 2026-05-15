@@ -23,6 +23,10 @@ class WooCommerceSettingUpdate(BaseModel):
     consumer_secret: str | None = None
     api_version: str | None = None
     is_active: bool | None = None
+    auto_sync_enabled: bool | None = None
+    sync_products_enabled: bool | None = None
+    sync_orders_enabled: bool | None = None
+    sync_interval_minutes: int | None = Field(default=None, ge=1, le=10080)
 
 
 class WooCommerceSettingRead(ORMBaseSchema):
@@ -39,6 +43,16 @@ class WooCommerceSettingRead(ORMBaseSchema):
     last_tested_at: datetime | None
     last_test_success: bool
     last_test_message: str | None
+    auto_sync_enabled: bool
+    sync_products_enabled: bool
+    sync_orders_enabled: bool
+    sync_interval_minutes: int
+    last_product_sync_at: datetime | None
+    last_order_sync_at: datetime | None
+    last_sync_started_at: datetime | None
+    last_sync_finished_at: datetime | None
+    last_sync_status: str | None
+    last_sync_message: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -123,3 +137,27 @@ class WooCommerceSyncLogRead(ORMBaseSchema):
     finished_at: datetime | None
     created_at: datetime
     created_by: UserRead | None = None
+
+
+class WooCommerceRunSyncRequest(BaseModel):
+    sync_products: bool = True
+    sync_orders: bool = True
+    since_last_sync: bool = True
+    per_page: int = Field(default=20, ge=1, le=100)
+
+
+class WooCommerceRunSyncResult(BaseModel):
+    status: str
+    started_at: datetime
+    finished_at: datetime
+    product_result: WooCommerceImportResult | None = None
+    order_result: WooCommerceImportResult | None = None
+    message: str
+
+
+class WooCommerceSyncStatusRead(BaseModel):
+    settings: WooCommerceSettingRead
+    recent_sync_logs: list[WooCommerceSyncLogRead] = Field(default_factory=list)
+    failed_sync_count: int
+    ready_to_sync: bool
+    readiness_warnings: list[str] = Field(default_factory=list)

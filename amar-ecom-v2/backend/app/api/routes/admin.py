@@ -282,9 +282,14 @@ async def get_maintenance_checklist(
     )
     woo_connection_ok = bool(woo_settings and woo_settings.last_test_success)
     woo_last_test = woo_settings.last_tested_at.isoformat() if woo_settings and woo_settings.last_tested_at else "Never"
+    woo_last_sync = woo_settings.last_sync_finished_at.isoformat() if woo_settings and woo_settings.last_sync_finished_at else "Never"
+    woo_last_sync_status = woo_settings.last_sync_status if woo_settings and woo_settings.last_sync_status else "Never"
+    woo_auto_sync = bool(woo_settings and woo_settings.auto_sync_enabled)
     woo_value = (
         f"Settings: {'ready' if woo_active_settings else 'incomplete'} | "
         f"Last test: {woo_last_test} | "
+        f"Auto-sync: {'enabled' if woo_auto_sync else 'stored only'} | "
+        f"Last sync: {woo_last_sync_status} at {woo_last_sync} | "
         f"Recent failed syncs: {recent_failed_woo_syncs}"
     )
     woo_status = "pass" if woo_active_settings and woo_connection_ok else "warning"

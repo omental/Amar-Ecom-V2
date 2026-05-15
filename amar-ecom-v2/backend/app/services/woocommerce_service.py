@@ -6,8 +6,9 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.crypto import decrypt_secret
 from app.models.category import Category
@@ -245,6 +246,36 @@ def _parse_woocommerce_json(response: httpx.Response, entity_label: str) -> Any:
         ) from exc
 
 
+def _build_product_preview_params(
+    *,
+    page: int,
+    per_page: int,
+    search: str | None = None,
+    modified_after: datetime | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if search:
+        params["search"] = search
+    if modified_after:
+        params["modified_after"] = modified_after.isoformat()
+    return params
+
+
+def _build_order_preview_params(
+    *,
+    page: int,
+    per_page: int,
+    status_value: str | None = None,
+    after: datetime | None = None,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if status_value:
+        params["status"] = status_value
+    if after:
+        params["after"] = after.isoformat()
+    return params
+
+
 async def _match_products_for_preview(db: AsyncSession, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sku_values = sorted({(item.get("sku") or "").strip() for item in payload if (item.get("sku") or "").strip()})
     slug_values = sorted(
@@ -371,12 +402,11 @@ async def fetch_products_preview(
     page: int = 1,
     per_page: int = 20,
     search: str | None = None,
+    modified_after: datetime | None = None,
     current_user: User,
 ) -> dict[str, Any]:
     settings = await get_active_woocommerce_settings(db)
-    params: dict[str, Any] = {"page": page, "per_page": per_page}
-    if search:
-        params["search"] = search
+    params = _build_product_preview_params(page=page, per_page=per_page, search=search, modified_after=modified_after)
     response = await _request_woo(settings, "/products", params=params)
     if response.status_code != 200:
         if response.status_code in {401, 403}:
@@ -392,7 +422,7 @@ async def fetch_products_preview(
         sync_type="product_preview",
         status_value="success",
         message=f"Previewed {len(items)} WooCommerce products.",
-        payload_snapshot={"page": page, "per_page": per_page, "search": search},
+        payload_snapshot={"page": page, "per_page": per_page, "search": search, "modified_after": params.get("modified_after")},
         created_by_id=current_user.id,
     )
     return {
@@ -410,12 +440,11 @@ async def fetch_orders_preview(
     page: int = 1,
     per_page: int = 20,
     status_value: str | None = None,
+    after: datetime | None = None,
     current_user: User,
 ) -> dict[str, Any]:
     settings = await get_active_woocommerce_settings(db)
-    params: dict[str, Any] = {"page": page, "per_page": per_page}
-    if status_value:
-        params["status"] = status_value
+    params = _build_order_preview_params(page=page, per_page=per_page, status_value=status_value, after=after)
     response = await _request_woo(settings, "/orders", params=params)
     if response.status_code != 200:
         if response.status_code in {401, 403}:
@@ -431,7 +460,7 @@ async def fetch_orders_preview(
         sync_type="order_preview",
         status_value="success",
         message=f"Previewed {len(items)} WooCommerce orders.",
-        payload_snapshot={"page": page, "per_page": per_page, "status": status_value},
+        payload_snapshot={"page": page, "per_page": per_page, "status": status_value, "after": params.get("after")},
         created_by_id=current_user.id,
     )
     return {
@@ -703,3 +732,230 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
             await _create_sync_log(db, sync_type="order_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
 
     return {"imported_count": imported, "skipped_count": skipped, "failed_count": failed, "rows": rows}
+
+
+def _summarize_import_result(entity_label: str, result: dict[str, Any]) -> str:
+    return (
+        f"{entity_label} sync: {result['imported_count']} imported, "
+        f"{result['skipped_count']} skipped, {result['failed_count']} failed."
+    )
+
+
+async def get_sync_status_summary(
+    db: AsyncSession,
+    *,
+    recent_limit: int = 10,
+) -> dict[str, Any]:
+    settings_result = await db.execute(select(WooCommerceSetting).order_by(WooCommerceSetting.created_at.asc()).limit(1))
+    settings = settings_result.scalar_one_or_none()
+    if settings is None:
+        settings = WooCommerceSetting()
+        db.add(settings)
+        await db.flush()
+
+    recent_logs_result = await db.execute(
+        select(WooCommerceSyncLog)
+        .options(selectinload(WooCommerceSyncLog.created_by))
+        .where(WooCommerceSyncLog.sync_type.in_(["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import"]))
+        .order_by(WooCommerceSyncLog.created_at.desc())
+        .limit(recent_limit)
+    )
+    recent_logs = list(recent_logs_result.scalars().all())
+    failed_sync_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(WooCommerceSyncLog)
+            .where(
+                WooCommerceSyncLog.status == "failed",
+                WooCommerceSyncLog.sync_type.in_(["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import"]),
+            )
+        )
+        or 0
+    )
+
+    warnings: list[str] = []
+    if not settings.is_active:
+        warnings.append("WooCommerce integration is inactive.")
+    if not (settings.store_url or "").strip():
+        warnings.append("WooCommerce store URL is missing.")
+    if not settings.consumer_key_encrypted or not settings.consumer_secret_encrypted:
+        warnings.append("WooCommerce credentials are missing.")
+    if not settings.last_tested_at:
+        warnings.append("WooCommerce connection has not been tested yet.")
+    elif not settings.last_test_success:
+        warnings.append("The last WooCommerce connection test did not succeed.")
+    if settings.auto_sync_enabled:
+        warnings.append("Auto-sync is configuration-only right now. No background worker is running in this deployment by default.")
+    if not settings.sync_products_enabled and not settings.sync_orders_enabled:
+        warnings.append("Both product and order sync toggles are disabled.")
+
+    ready_to_sync = (
+        settings.is_active
+        and bool((settings.store_url or "").strip())
+        and bool(settings.consumer_key_encrypted and settings.consumer_secret_encrypted)
+        and bool(settings.last_test_success)
+    )
+    return {
+        "settings": settings,
+        "recent_sync_logs": recent_logs,
+        "failed_sync_count": failed_sync_count,
+        "ready_to_sync": ready_to_sync,
+        "readiness_warnings": warnings,
+    }
+
+
+async def run_manual_sync(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    sync_products: bool = True,
+    sync_orders: bool = True,
+    since_last_sync: bool = True,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    settings = await get_active_woocommerce_settings(db)
+    started_at = _now()
+    settings.last_sync_started_at = started_at
+    settings.last_sync_finished_at = None
+    settings.last_sync_status = "pending"
+    settings.last_sync_message = "WooCommerce manual sync started."
+
+    root_log = await _create_sync_log(
+        db,
+        sync_type="manual_sync",
+        created_by_id=current_user.id,
+        message="WooCommerce manual sync started.",
+        payload_snapshot={
+            "sync_products": sync_products,
+            "sync_orders": sync_orders,
+            "since_last_sync": since_last_sync,
+            "per_page": per_page,
+            "product_since": settings.last_product_sync_at.isoformat() if since_last_sync and settings.last_product_sync_at else None,
+            "order_since": settings.last_order_sync_at.isoformat() if since_last_sync and settings.last_order_sync_at else None,
+        },
+    )
+
+    if not sync_products and not sync_orders:
+        finished_at = _now()
+        message = "Nothing to sync. Enable products or orders before running manual sync."
+        settings.last_sync_finished_at = finished_at
+        settings.last_sync_status = "skipped"
+        settings.last_sync_message = message
+        root_log.status = "skipped"
+        root_log.message = message
+        root_log.finished_at = finished_at
+        return {
+            "status": "skipped",
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "product_result": None,
+            "order_result": None,
+            "message": message,
+        }
+
+    product_result: dict[str, Any] | None = None
+    order_result: dict[str, Any] | None = None
+    messages: list[str] = []
+    failed_sections = 0
+
+    try:
+        if sync_products:
+            product_since = settings.last_product_sync_at if since_last_sync else None
+            product_preview = await fetch_products_preview(
+                db,
+                page=1,
+                per_page=per_page,
+                search=None,
+                modified_after=product_since,
+                current_user=current_user,
+            )
+            product_external_ids = [item["external_id"] for item in product_preview["items"]]
+            if product_external_ids:
+                product_result = await import_products(db, product_external_ids, current_user)
+            else:
+                product_result = {"imported_count": 0, "skipped_count": 0, "failed_count": 0, "rows": []}
+            product_message = _summarize_import_result("Product", product_result)
+            if since_last_sync and product_since is not None and not product_preview["items"]:
+                product_message += " No WooCommerce products matched the last-sync filter."
+            messages.append(product_message)
+            await _create_sync_log(
+                db,
+                sync_type="product_scheduled_import",
+                status_value="failed" if product_result["failed_count"] else "success",
+                message=product_message,
+                payload_snapshot={
+                    "since_last_sync": since_last_sync,
+                    "modified_after": product_since.isoformat() if product_since else None,
+                    "per_page": per_page,
+                    "row_count": len(product_result["rows"]),
+                },
+                created_by_id=current_user.id,
+            )
+            if product_result["failed_count"] == 0:
+                settings.last_product_sync_at = _now()
+            else:
+                failed_sections += 1
+
+        if sync_orders:
+            order_since = settings.last_order_sync_at if since_last_sync else None
+            order_preview = await fetch_orders_preview(
+                db,
+                page=1,
+                per_page=per_page,
+                status_value=None,
+                after=order_since,
+                current_user=current_user,
+            )
+            order_external_ids = [item["external_id"] for item in order_preview["items"]]
+            if order_external_ids:
+                order_result = await import_orders(db, order_external_ids, current_user)
+            else:
+                order_result = {"imported_count": 0, "skipped_count": 0, "failed_count": 0, "rows": []}
+            order_message = _summarize_import_result("Order", order_result)
+            if since_last_sync and order_since is not None and not order_preview["items"]:
+                order_message += " No WooCommerce orders matched the last-sync filter."
+            messages.append(order_message)
+            await _create_sync_log(
+                db,
+                sync_type="order_scheduled_import",
+                status_value="failed" if order_result["failed_count"] else "success",
+                message=order_message,
+                payload_snapshot={
+                    "since_last_sync": since_last_sync,
+                    "after": order_since.isoformat() if order_since else None,
+                    "per_page": per_page,
+                    "row_count": len(order_result["rows"]),
+                },
+                created_by_id=current_user.id,
+            )
+            if order_result["failed_count"] == 0:
+                settings.last_order_sync_at = _now()
+            else:
+                failed_sections += 1
+
+        finished_at = _now()
+        overall_status = "success" if failed_sections == 0 else "failed"
+        message = " ".join(messages) if messages else "WooCommerce manual sync finished."
+        settings.last_sync_finished_at = finished_at
+        settings.last_sync_status = overall_status
+        settings.last_sync_message = message
+        root_log.status = overall_status
+        root_log.message = message
+        root_log.finished_at = finished_at
+        return {
+            "status": overall_status,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "product_result": product_result,
+            "order_result": order_result,
+            "message": message,
+        }
+    except HTTPException as exc:
+        finished_at = _now()
+        settings.last_sync_finished_at = finished_at
+        settings.last_sync_status = "failed"
+        settings.last_sync_message = str(exc.detail)
+        root_log.status = "failed"
+        root_log.message = str(exc.detail)
+        root_log.finished_at = finished_at
+        raise
