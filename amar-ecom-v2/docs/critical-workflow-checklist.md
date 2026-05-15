@@ -218,9 +218,11 @@ Expected:
 16. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled.
 17. Import one or more selected orders.
 18. Confirm the import result includes imported, skipped, and failed totals plus row-level messages.
-19. Use `Refresh imported orders` and confirm existing WooCommerce orders refresh safely while changed-but-missing WooCommerce orders import as new rows.
-20. Open one WooCommerce-sourced local order in `/dashboard/orders/{id}` and use `Refresh from WooCommerce`.
-21. Open the `Sync Logs` tab, apply filters, and review at least one `View details` panel.
+19. Use `Refresh imported products` and confirm existing WooCommerce-linked products refresh safely while changed-but-missing WooCommerce products import as new rows.
+20. Open one WooCommerce-sourced local product in `/dashboard/products/{id}` and use `Refresh from WooCommerce`.
+21. Use `Refresh imported orders` and confirm existing WooCommerce orders refresh safely while changed-but-missing WooCommerce orders import as new rows.
+22. Open one WooCommerce-sourced local order in `/dashboard/orders/{id}` and use `Refresh from WooCommerce`.
+23. Open the `Sync Logs` tab, apply filters, and review at least one `View details` panel.
 
 Expected:
 - connection test succeeds or returns a clean error
@@ -229,6 +231,8 @@ Expected:
 - sync schedule fields are stored safely but do not start a background worker by themselves
 - manual run-sync stays import-only and does not push local changes back to WooCommerce
 - product import creates or skips local rows safely by SKU or slug
+- imported WooCommerce products store external reference metadata for later refresh
+- WooCommerce product refresh updates safe lifecycle fields only and keeps Woo stock external-only
 - order import creates or skips local rows safely by `WC-{id}` style order numbers
 - imported WooCommerce orders store external reference metadata for later refresh
 - WooCommerce refresh updates safe lifecycle fields only and logs warnings instead of force-overwriting conflict-prone local changes

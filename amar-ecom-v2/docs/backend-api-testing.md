@@ -105,6 +105,10 @@ Phase 12E WooCommerce order lifecycle sync adds a new migration:
 
 - `6f7a8b9c0d1e_add_order_external_sync_fields`
 
+Phase 12F WooCommerce product lifecycle sync adds a new migration:
+
+- `7a8b9c0d1e2f_add_product_external_sync_fields`
+
 ## Start API
 
 ```powershell
@@ -906,6 +910,7 @@ Expected result:
 - returns schedule fields without exposing secrets
 - returns `ready_to_sync`, `failed_sync_count`, and `readiness_warnings`
 - returns last product/order sync timestamps and overall last sync status/message
+- returns imported Woo product/order counts plus recent product/order refresh failure counts
 - warns clearly when credentials are missing, connection tests have not succeeded, or auto-sync is enabled without a worker
 
 ## Preview WooCommerce Products
@@ -920,7 +925,7 @@ Expected result:
 
 - returns preview rows only
 - includes `external_id`, `name`, `sku`, `price`, `status`, and category summary
-- each row also includes `duplicate_status` and `local_product_id` when matched
+- each row also includes `duplicate_status`, `local_product_id`, and `external_stock_quantity` when available
 - does not create or update local products
 
 ## Import Selected WooCommerce Products
@@ -944,6 +949,52 @@ Expected result:
 - returns row-level `rows[]` entries with `external_id`, `status`, `local_entity_id`, and `message`
 - imports new products into the local catalog only
 - skips duplicates safely by SKU or slug
+- imported WooCommerce products store `source`, `external_id`, `external_slug`, `external_status`, `external_synced_at`, and a sanitized `external_payload_snapshot`
+- Woo stock quantity remains external-only metadata and does not overwrite local inventory
+
+## Refresh One Imported WooCommerce Product
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/woocommerce/products/PUT_LOCAL_PRODUCT_UUID_HERE/refresh" `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body (@{} | ConvertTo-Json)
+```
+
+Expected result:
+
+- only works for local products with `source = woocommerce` or a saved `external_id`
+- refreshes safe metadata such as `external_status`, `external_slug`, `external_synced_at`, and sanitized snapshot payload
+- preserves local description/category/image and avoids destructive price or status overwrites when local edits may exist
+- creates `product_refresh` sync logs with warnings when conflicts are detected
+- does not import Woo stock into local inventory
+
+## Bulk Refresh Imported WooCommerce Products
+
+```powershell
+$wooBulkProductRefreshBody = @{
+  since_last_sync = $true
+  per_page = 20
+  search = "shirt"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/woocommerce/products-refresh `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $wooBulkProductRefreshBody
+```
+
+Expected result:
+
+- returns `refreshed_count`, `imported_count`, `skipped_count`, and `failed_count`
+- refreshes existing WooCommerce-linked products by `source + external_id` when possible
+- falls back to SKU or slug matching without destructive overwrite
+- imports changed WooCommerce products that do not exist locally yet
+- logs `products_bulk_refresh` rows and stores SKU/price/status/category conflicts as warnings
 
 ## Preview WooCommerce Orders
 
@@ -1082,6 +1133,7 @@ Expected result:
 
 - returns `status`, `started_at`, `finished_at`, and `message`
 - returns `product_result` and `order_result` summaries when included
+- refreshes existing imported WooCommerce products and imports new changed WooCommerce products when `sync_products = true`
 - refreshes existing imported WooCommerce orders and imports new changed WooCommerce orders when `sync_orders = true`
 - uses `modified_after` or `after` when `since_last_sync = true`
 - does not deduct stock for imported WooCommerce orders
@@ -1093,6 +1145,7 @@ Expected result:
 - credentials are encrypted at rest when saved through the hardened settings flow
 - auto-sync settings are configuration-only in this phase
 - no production background worker is included yet
+- WooCommerce product refresh updates safe local fields only and keeps Woo stock external-only
 - WooCommerce order refresh only updates safe local fields
 - conflicts are logged as warnings instead of auto-resolved destructive changes
 - no local push-back to WooCommerce

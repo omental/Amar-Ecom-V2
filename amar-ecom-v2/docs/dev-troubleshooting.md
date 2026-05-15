@@ -81,6 +81,7 @@ What to check:
 - `auto_sync_enabled` only stores preference and interval metadata
 - no background worker, cron process, or queue consumer is bundled in this phase
 - manual sync through `POST /api/v1/woocommerce/run-sync` remains the only supported execution path
+- the current manual sync path refreshes existing imported WooCommerce products and orders, then imports new changed rows safely
 
 ## Next.js Workspace Root Warning
 

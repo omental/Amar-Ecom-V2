@@ -9,6 +9,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 
@@ -56,6 +57,11 @@ type Product = {
   cost_price: string | number;
   image_url: string | null;
   status: string;
+  source?: string | null;
+  external_id?: string | null;
+  external_status?: string | null;
+  external_synced_at?: string | null;
+  external_stock_quantity?: number | null;
   created_at: string;
   updated_at: string;
   category?: { id: string; name: string } | null;
@@ -166,6 +172,7 @@ export default function ProductDetailPage() {
   const [variantEditForm, setVariantEditForm] = useState<VariantForm>(initialVariantForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [isRefreshingWooProduct, setIsRefreshingWooProduct] = useState(false);
   const [isSavingVariant, setIsSavingVariant] = useState(false);
   const [deletingVariantId, setDeletingVariantId] = useState<string | null>(null);
   const [pageError, setPageError] = useState("");
@@ -352,6 +359,21 @@ export default function ProductDetailPage() {
     }
   }
 
+  async function handleWooProductRefresh() {
+    setProductError("");
+    setProductSuccess("");
+    setIsRefreshingWooProduct(true);
+    try {
+      await api.post(`/woocommerce/products/${productId}/refresh`, {});
+      await refreshProductContext();
+      setProductSuccess("WooCommerce product refreshed safely. Local inventory was not changed.");
+    } catch (err) {
+      setProductError(err instanceof ApiError ? err.message : "Failed to refresh product from WooCommerce");
+    } finally {
+      setIsRefreshingWooProduct(false);
+    }
+  }
+
   if (isLoading) {
     return <LoadingState label="Loading product detail..." />;
   }
@@ -384,12 +406,33 @@ export default function ProductDetailPage() {
             <PageHeader
               eyebrow="Product Workspace"
               title={product.name}
-              description="Update the main product record, manage its variants, and review where stock currently exists across warehouses."
+              description="Update the main product record, manage its variants, review where stock currently exists across warehouses, and safely refresh WooCommerce-linked metadata when needed."
               meta={`${variants.length} variants`}
             />
+            {product.source === "woocommerce" ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <StatusBadge status="woocommerce" label="WooCommerce" />
+                {product.external_status ? <StatusBadge status={product.external_status} label={`Woo ${product.external_status}`} /> : null}
+                {product.external_synced_at ? (
+                  <span className="text-sm text-slate-500">Last synced {formatDate(product.external_synced_at)}</span>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="flex flex-col gap-3">
+            {product.source === "woocommerce" && product.external_id ? (
+              <button
+                type="button"
+                onClick={() => void handleWooProductRefresh()}
+                disabled={isRefreshingWooProduct}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:opacity-60"
+              >
+                {isRefreshingWooProduct ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh from WooCommerce
+              </button>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500">SKU</p>
               <p className="mt-2 text-sm font-semibold text-slate-950">{product.sku}</p>
@@ -406,9 +449,20 @@ export default function ProductDetailPage() {
                 <StatusBadge status={product.status} />
               </div>
             </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Woo stock</p>
+              <p className="mt-2 text-sm font-semibold text-slate-950">{product.external_stock_quantity ?? "-"}</p>
+            </div>
+            </div>
           </div>
         </div>
       </section>
+
+      {product.source === "woocommerce" ? (
+        <div className="rounded-[28px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-800 shadow-[var(--shadow-soft)]">
+          Refresh updates Woo metadata safely and does not overwrite local inventory.
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-4">

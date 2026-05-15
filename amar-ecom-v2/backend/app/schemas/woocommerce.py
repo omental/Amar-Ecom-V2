@@ -72,6 +72,7 @@ class WooCommerceProductPreviewRead(BaseModel):
     status: str | None = None
     category: str | None = None
     image_url: str | None = None
+    external_stock_quantity: int | None = None
     duplicate_status: str
     local_product_id: UUID | None = None
 
@@ -141,6 +142,31 @@ class WooCommerceOrderRefreshResult(BaseModel):
     rows: list[WooCommerceOrderRefreshResultRow] = Field(default_factory=list)
 
 
+class WooCommerceProductRefreshRequest(BaseModel):
+    search: str | None = None
+
+
+class WooCommerceProductRefreshResultRow(BaseModel):
+    external_id: str
+    status: str
+    local_product_id: UUID | None = None
+    message: str
+
+
+class WooCommerceProductRefreshResult(BaseModel):
+    refreshed_count: int = 0
+    imported_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    rows: list[WooCommerceProductRefreshResultRow] = Field(default_factory=list)
+
+
+class WooCommerceBulkProductRefreshRequest(BaseModel):
+    since_last_sync: bool = True
+    per_page: int = Field(default=20, ge=1, le=100)
+    search: str | None = None
+
+
 class WooCommerceBulkOrderRefreshRequest(BaseModel):
     since_last_sync: bool = True
     per_page: int = Field(default=20, ge=1, le=100)
@@ -184,8 +210,11 @@ class WooCommerceSyncStatusRead(BaseModel):
     settings: WooCommerceSettingRead
     recent_sync_logs: list[WooCommerceSyncLogRead] = Field(default_factory=list)
     failed_sync_count: int
+    recent_product_refresh_failures_count: int
     recent_order_refresh_failures_count: int
+    imported_woocommerce_products_count: int
     imported_woocommerce_orders_count: int
+    last_product_refresh_at: datetime | None = None
     last_order_refresh_at: datetime | None = None
     ready_to_sync: bool
     readiness_warnings: list[str] = Field(default_factory=list)

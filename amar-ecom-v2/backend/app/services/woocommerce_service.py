@@ -131,6 +131,37 @@ def _build_external_snapshot(order_payload: dict[str, Any], warnings: list[str] 
     return _safe_payload_snapshot(payload)
 
 
+def _build_product_external_snapshot(product_payload: dict[str, Any], warnings: list[str] | None = None) -> str:
+    payload: dict[str, Any] = {"woo_product": product_payload}
+    if warnings:
+        payload["sync_warnings"] = warnings
+    return _safe_payload_snapshot(payload)
+
+
+def _map_woo_product_status(status_value: str | None) -> str:
+    return "active" if (status_value or "").lower() in {"publish", "published", "active"} else "inactive"
+
+
+def _extract_external_stock_quantity(product_payload: dict[str, Any]) -> int | None:
+    stock_quantity = product_payload.get("stock_quantity")
+    if stock_quantity in (None, ""):
+        return None
+    try:
+        return int(stock_quantity)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_snapshot_text(snapshot_text: str | None) -> dict[str, Any] | None:
+    if not snapshot_text:
+        return None
+    try:
+        parsed = json.loads(snapshot_text)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _validate_store_url(store_url: str | None) -> str:
     normalized = (store_url or "").strip()
     if not normalized:
@@ -335,6 +366,7 @@ async def _match_products_for_preview(db: AsyncSession, payload: list[dict[str, 
                 "status": item.get("status"),
                 "category": ", ".join(category.get("name", "") for category in item.get("categories", []) if category.get("name")) or None,
                 "image_url": (item.get("images") or [{}])[0].get("src"),
+                "external_stock_quantity": _extract_external_stock_quantity(item),
                 "duplicate_status": duplicate_status,
                 "local_product_id": matched_product.id if matched_product is not None else None,
             }
@@ -498,6 +530,152 @@ async def _find_or_create_category(db: AsyncSession, category_payload: dict[str,
     return category
 
 
+async def _find_existing_woocommerce_product(db: AsyncSession, product_payload: dict[str, Any]):
+    external_id = str(product_payload.get("id"))
+    incoming_sku = (product_payload.get("sku") or "").strip() or None
+    incoming_slug = _safe_slug(
+        product_payload.get("slug") or product_payload.get("name") or f"woo-product-{external_id}",
+        f"woo-product-{external_id}",
+    )
+
+    existing_product = (
+        await db.execute(select(Product).where((Product.source == "woocommerce") & (Product.external_id == external_id)))
+    ).scalar_one_or_none()
+    if existing_product is not None:
+        return existing_product
+
+    if incoming_sku:
+        existing_product = (await db.execute(select(Product).where(Product.sku == incoming_sku))).scalar_one_or_none()
+        if existing_product is not None:
+            return existing_product
+
+    return (await db.execute(select(Product).where(Product.slug == incoming_slug))).scalar_one_or_none()
+
+
+async def _create_local_product_from_woo_payload(
+    db: AsyncSession,
+    *,
+    product_payload: dict[str, Any],
+    current_user: User,
+) -> tuple[Product, list[str]]:
+    external_id = str(product_payload.get("id"))
+    incoming_sku = (product_payload.get("sku") or "").strip() or f"WC-PROD-{external_id}"
+    incoming_slug = _safe_slug(
+        product_payload.get("slug") or product_payload.get("name") or f"woo-product-{external_id}",
+        f"woo-product-{external_id}",
+    )
+    category = await _find_or_create_category(db, (product_payload.get("categories") or [None])[0])
+    warnings: list[str] = []
+    if not (product_payload.get("sku") or "").strip():
+        warnings.append("WooCommerce product is missing a SKU, so a local fallback SKU was used.")
+
+    product = Product(
+        name=product_payload.get("name") or f"Woo Product {external_id}",
+        slug=incoming_slug,
+        sku=incoming_sku,
+        description=product_payload.get("description") or product_payload.get("short_description"),
+        source="woocommerce",
+        external_id=external_id,
+        external_slug=product_payload.get("slug") or incoming_slug,
+        external_status=product_payload.get("status"),
+        external_synced_at=_now(),
+        category_id=category.id if category else None,
+        brand_id=None,
+        price=_to_decimal(product_payload.get("regular_price") or product_payload.get("price")),
+        cost_price=Decimal("0.00"),
+        image_url=(product_payload.get("images") or [{}])[0].get("src"),
+        status=_map_woo_product_status(product_payload.get("status")),
+    )
+    product.external_payload_snapshot = _build_product_external_snapshot(product_payload, warnings)
+    db.add(product)
+    await db.flush()
+    return product, warnings
+
+
+def _build_product_refresh_row(*, external_id: str, status_value: str, local_product_id, message: str) -> dict[str, Any]:
+    return {
+        "external_id": external_id,
+        "status": status_value,
+        "local_product_id": local_product_id,
+        "message": message,
+    }
+
+
+async def _refresh_local_product_from_woo_payload(
+    db: AsyncSession,
+    *,
+    product: Product,
+    product_payload: dict[str, Any],
+    current_user: User,
+) -> tuple[Product, list[str]]:
+    del db, current_user
+    warnings: list[str] = []
+    external_id = str(product_payload.get("id"))
+    incoming_slug = _safe_slug(
+        product_payload.get("slug") or product_payload.get("name") or f"woo-product-{external_id}",
+        f"woo-product-{external_id}",
+    )
+    incoming_sku = (product_payload.get("sku") or "").strip() or None
+    incoming_price = _to_decimal(product_payload.get("regular_price") or product_payload.get("price"))
+    incoming_status = product_payload.get("status")
+    incoming_image = (product_payload.get("images") or [{}])[0].get("src")
+    incoming_name = (product_payload.get("name") or "").strip()
+    incoming_category_name = (product_payload.get("categories") or [{}])[0].get("name") if product_payload.get("categories") else None
+    previous_snapshot = _parse_snapshot_text(product.external_payload_snapshot)
+    previous_woo_product = previous_snapshot.get("woo_product") if previous_snapshot else {}
+    previous_woo_name = (previous_woo_product.get("name") or "").strip() if isinstance(previous_woo_product, dict) else ""
+    previous_woo_price = _to_decimal(previous_woo_product.get("regular_price") or previous_woo_product.get("price")) if isinstance(previous_woo_product, dict) else Decimal("0.00")
+    previous_mapped_status = _map_woo_product_status(previous_woo_product.get("status")) if isinstance(previous_woo_product, dict) else None
+
+    product.source = product.source or "woocommerce"
+    product.external_id = external_id
+    product.external_slug = product_payload.get("slug") or incoming_slug
+    product.external_status = incoming_status
+    product.external_synced_at = _now()
+
+    if not incoming_sku:
+        warnings.append("WooCommerce product is missing a SKU.")
+    elif product.sku != incoming_sku:
+        warnings.append(f"WooCommerce SKU {incoming_sku} differs from local SKU {product.sku}.")
+
+    if incoming_name:
+        if not (product.name or "").strip() or ((product.name or "").strip() == previous_woo_name and previous_woo_name):
+            product.name = incoming_name
+        elif product.name != incoming_name:
+            warnings.append("WooCommerce product name differs from local name. Local name was preserved.")
+
+    if product.price <= 0 or (previous_woo_price > 0 and product.price == previous_woo_price):
+        product.price = incoming_price
+    elif product.price != incoming_price:
+        warnings.append(f"WooCommerce price {incoming_price} differs from local price {product.price}. Local price was preserved.")
+
+    if not (product.image_url or "").strip() and incoming_image:
+        product.image_url = incoming_image
+    elif incoming_image and product.image_url != incoming_image:
+        warnings.append("WooCommerce image differs from the local image. Local image was preserved.")
+
+    mapped_status = _map_woo_product_status(incoming_status)
+    if not (product.status or "").strip() or (previous_mapped_status and product.status == previous_mapped_status):
+        product.status = mapped_status
+    elif product.status != mapped_status:
+        warnings.append(f"WooCommerce status {mapped_status} differs from local status {product.status}. Local status was preserved.")
+
+    if product.description and (product_payload.get("description") or product_payload.get("short_description")) and product.description != (
+        product_payload.get("description") or product_payload.get("short_description")
+    ):
+        warnings.append("WooCommerce description differs from local description. Local description was preserved.")
+
+    if incoming_category_name:
+        if product.category and product.category.name != incoming_category_name:
+            warnings.append(f"WooCommerce category {incoming_category_name} differs from local category {product.category.name}.")
+    elif not incoming_category_name:
+        warnings.append("WooCommerce product is missing category information.")
+
+    product.external_payload_snapshot = _build_product_external_snapshot(product_payload, warnings)
+    await db.flush()
+    return product, warnings
+
+
 async def import_products(db: AsyncSession, external_ids: list[str], current_user: User) -> dict[str, Any]:
     settings = await get_active_woocommerce_settings(db)
     imported = 0
@@ -520,15 +698,38 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
 
             payload = _parse_woocommerce_json(response, "product")
             incoming_sku = (payload.get("sku") or "").strip() or f"WC-PROD-{external_id}"
-            incoming_slug = _safe_slug(payload.get("slug") or payload.get("name") or f"woo-product-{external_id}", f"woo-product-{external_id}")
-            existing_product = (
-                await db.execute(select(Product).where((Product.sku == incoming_sku) | (Product.slug == incoming_slug)))
-            ).scalar_one_or_none()
+            incoming_slug = _safe_slug(
+                payload.get("slug") or payload.get("name") or f"woo-product-{external_id}",
+                f"woo-product-{external_id}",
+            )
+            existing_product = await _find_existing_woocommerce_product(db, payload)
             if existing_product is not None:
                 skipped += 1
-                if existing_product.sku == incoming_sku:
+                if existing_product.source == "woocommerce" and existing_product.external_id == str(payload.get("id")):
+                    existing_product.source = "woocommerce"
+                    existing_product.external_id = str(payload.get("id"))
+                    existing_product.external_slug = payload.get("slug") or incoming_slug
+                    existing_product.external_status = payload.get("status")
+                    existing_product.external_synced_at = _now()
+                    existing_product.external_payload_snapshot = _build_product_external_snapshot(payload)
+                    message = f"Product {external_id} matched the existing WooCommerce-linked local product {existing_product.sku} and external metadata was refreshed."
+                elif existing_product.sku == incoming_sku:
+                    if existing_product.source == "woocommerce" or existing_product.external_id is None:
+                        existing_product.source = existing_product.source or "woocommerce"
+                        existing_product.external_id = existing_product.external_id or str(payload.get("id"))
+                        existing_product.external_slug = payload.get("slug") or incoming_slug
+                        existing_product.external_status = payload.get("status")
+                        existing_product.external_synced_at = _now()
+                        existing_product.external_payload_snapshot = _build_product_external_snapshot(payload, ["Matched by SKU during WooCommerce import."])
                     message = f"Product {external_id} skipped because SKU {incoming_sku} already exists locally."
                 else:
+                    if existing_product.source == "woocommerce" or existing_product.external_id is None:
+                        existing_product.source = existing_product.source or "woocommerce"
+                        existing_product.external_id = existing_product.external_id or str(payload.get("id"))
+                        existing_product.external_slug = payload.get("slug") or incoming_slug
+                        existing_product.external_status = payload.get("status")
+                        existing_product.external_synced_at = _now()
+                        existing_product.external_payload_snapshot = _build_product_external_snapshot(payload, ["Matched by slug during WooCommerce import."])
                     message = f"Product {external_id} skipped because slug {incoming_slug} already exists locally."
                 rows.append(
                     {
@@ -550,23 +751,10 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
                 )
                 continue
 
-            category = await _find_or_create_category(db, (payload.get("categories") or [None])[0])
-            product = Product(
-                name=payload.get("name") or f"Woo Product {external_id}",
-                slug=incoming_slug,
-                sku=incoming_sku,
-                description=payload.get("description") or payload.get("short_description"),
-                category_id=category.id if category else None,
-                brand_id=None,
-                price=_to_decimal(payload.get("regular_price") or payload.get("price")),
-                cost_price=Decimal("0.00"),
-                image_url=(payload.get("images") or [{}])[0].get("src"),
-                status=payload.get("status") or "draft",
-            )
-            db.add(product)
-            await db.flush()
+            product, warnings = await _create_local_product_from_woo_payload(db, product_payload=payload, current_user=current_user)
             imported += 1
-            message = f"Imported WooCommerce product {external_id}."
+            warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+            message = f"Imported WooCommerce product {external_id}.{warning_suffix}"
             rows.append({"external_id": external_id, "status": "imported", "local_entity_id": product.id, "message": message})
             await _create_sync_log(
                 db,
@@ -576,7 +764,7 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
                 local_entity_type="product",
                 local_entity_id=str(product.id),
                 message=message,
-                payload_snapshot={"sku": product.sku, "slug": product.slug},
+                payload_snapshot={"sku": product.sku, "slug": product.slug, "warnings": warnings, "external_stock_quantity": _extract_external_stock_quantity(payload)},
                 created_by_id=current_user.id,
             )
         except Exception as exc:
@@ -586,6 +774,226 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
             await _create_sync_log(db, sync_type="product_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
 
     return {"imported_count": imported, "skipped_count": skipped, "failed_count": failed, "rows": rows}
+
+
+async def refresh_imported_product_from_woocommerce(
+    db: AsyncSession,
+    local_product_id,
+    current_user: User,
+) -> dict[str, Any]:
+    product = (await db.execute(select(Product).options(selectinload(Product.category)).where(Product.id == local_product_id))).scalar_one_or_none()
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Local WooCommerce product not found.")
+    if product.source != "woocommerce" and not product.external_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only WooCommerce-linked products can be refreshed from WooCommerce.")
+    if not product.external_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This WooCommerce product is missing an external reference ID.")
+
+    settings = await get_active_woocommerce_settings(db)
+    external_id = product.external_id
+    try:
+        response = await _request_woo(settings, f"/products/{external_id}")
+        if response.status_code != 200:
+            if response.status_code in {401, 403}:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"WooCommerce credentials were rejected while refreshing product {external_id}.",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"WooCommerce returned status {response.status_code} while refreshing product {external_id}.",
+            )
+
+        payload = _parse_woocommerce_json(response, "product")
+        product, warnings = await _refresh_local_product_from_woo_payload(
+            db,
+            product=product,
+            product_payload=payload,
+            current_user=current_user,
+        )
+        warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+        message = f"Refreshed WooCommerce product {external_id}.{warning_suffix}"
+        await _create_sync_log(
+            db,
+            sync_type="product_refresh",
+            status_value="success",
+            external_id=external_id,
+            local_entity_type="product",
+            local_entity_id=str(product.id),
+            message=message,
+            payload_snapshot={
+                "external_id": external_id,
+                "warnings": warnings,
+                "status": product.external_status,
+                "external_stock_quantity": _extract_external_stock_quantity(payload),
+            },
+            created_by_id=current_user.id,
+        )
+        return {
+            "refreshed_count": 1,
+            "imported_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "rows": [_build_product_refresh_row(external_id=external_id, status_value="refreshed", local_product_id=product.id, message=message)],
+        }
+    except HTTPException as exc:
+        await _create_sync_log(
+            db,
+            sync_type="product_refresh",
+            status_value="failed",
+            external_id=external_id,
+            local_entity_type="product",
+            local_entity_id=str(product.id),
+            message=str(exc.detail),
+            created_by_id=current_user.id,
+        )
+        raise
+
+
+async def refresh_imported_products_since_last_sync(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    per_page: int = 20,
+    since_last_sync: bool = True,
+    search: str | None = None,
+) -> dict[str, Any]:
+    settings = await get_active_woocommerce_settings(db)
+    settings.last_sync_started_at = _now()
+    settings.last_sync_finished_at = None
+    settings.last_sync_status = "pending"
+    settings.last_sync_message = "WooCommerce bulk product refresh started."
+    modified_after = settings.last_product_sync_at if since_last_sync else None
+    root_log = await _create_sync_log(
+        db,
+        sync_type="products_bulk_refresh",
+        created_by_id=current_user.id,
+        message="WooCommerce bulk product refresh started.",
+        payload_snapshot={"since_last_sync": since_last_sync, "modified_after": modified_after.isoformat() if modified_after else None, "search": search, "per_page": per_page},
+    )
+
+    refreshed_count = 0
+    imported_count = 0
+    skipped_count = 0
+    failed_count = 0
+    rows: list[dict[str, Any]] = []
+
+    params = _build_product_preview_params(page=1, per_page=per_page, search=search, modified_after=modified_after)
+    response = await _request_woo(settings, "/products", params=params)
+    if response.status_code != 200:
+        if response.status_code in {401, 403}:
+            detail = "WooCommerce credentials were rejected while loading product refresh changes."
+        else:
+            detail = f"WooCommerce returned status {response.status_code} while loading product refresh changes."
+        settings.last_sync_finished_at = _now()
+        settings.last_sync_status = "failed"
+        settings.last_sync_message = detail
+        root_log.status = "failed"
+        root_log.message = detail
+        root_log.finished_at = _now()
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+    payload = _parse_woocommerce_json(response, "product refresh list")
+    for product_payload in payload:
+        external_id = str(product_payload.get("id"))
+        try:
+            existing_product = await _find_existing_woocommerce_product(db, product_payload)
+            if existing_product is not None:
+                if existing_product.source == "woocommerce" or existing_product.external_id:
+                    refreshed_product, warnings = await _refresh_local_product_from_woo_payload(
+                        db,
+                        product=existing_product,
+                        product_payload=product_payload,
+                        current_user=current_user,
+                    )
+                    refreshed_count += 1
+                    warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+                    message = f"Refreshed WooCommerce product {external_id}.{warning_suffix}"
+                    rows.append(_build_product_refresh_row(external_id=external_id, status_value="refreshed", local_product_id=refreshed_product.id, message=message))
+                    await _create_sync_log(
+                        db,
+                        sync_type="product_refresh",
+                        status_value="success",
+                        external_id=external_id,
+                        local_entity_type="product",
+                        local_entity_id=str(refreshed_product.id),
+                        message=message,
+                        payload_snapshot={
+                            "external_id": external_id,
+                            "warnings": warnings,
+                            "status": refreshed_product.external_status,
+                            "external_stock_quantity": _extract_external_stock_quantity(product_payload),
+                        },
+                        created_by_id=current_user.id,
+                    )
+                else:
+                    skipped_count += 1
+                    message = f"Product {external_id} matched an existing local product by SKU or slug and was not overwritten."
+                    rows.append(_build_product_refresh_row(external_id=external_id, status_value="skipped", local_product_id=existing_product.id, message=message))
+                    await _create_sync_log(
+                        db,
+                        sync_type="products_bulk_refresh",
+                        status_value="skipped",
+                        external_id=external_id,
+                        local_entity_type="product",
+                        local_entity_id=str(existing_product.id),
+                        message=message,
+                        created_by_id=current_user.id,
+                    )
+            else:
+                imported_product, warnings = await _create_local_product_from_woo_payload(db, product_payload=product_payload, current_user=current_user)
+                imported_count += 1
+                warning_suffix = f" Warnings: {'; '.join(warnings)}" if warnings else ""
+                message = f"Imported new WooCommerce product {external_id}.{warning_suffix}"
+                rows.append(_build_product_refresh_row(external_id=external_id, status_value="imported", local_product_id=imported_product.id, message=message))
+                await _create_sync_log(
+                    db,
+                    sync_type="products_bulk_refresh",
+                    status_value="success",
+                    external_id=external_id,
+                    local_entity_type="product",
+                    local_entity_id=str(imported_product.id),
+                    message=message,
+                    payload_snapshot={
+                        "external_id": external_id,
+                        "warnings": warnings,
+                        "status": imported_product.external_status,
+                        "external_stock_quantity": _extract_external_stock_quantity(product_payload),
+                    },
+                    created_by_id=current_user.id,
+                )
+        except Exception as exc:
+            failed_count += 1
+            message = f"Product {external_id} refresh failed: {exc}"
+            rows.append(_build_product_refresh_row(external_id=external_id, status_value="failed", local_product_id=None, message=message))
+            await _create_sync_log(
+                db,
+                sync_type="product_refresh",
+                status_value="failed",
+                external_id=external_id,
+                message=message,
+                created_by_id=current_user.id,
+            )
+
+    finished_at = _now()
+    summary_message = (
+        f"Bulk WooCommerce product refresh complete: {refreshed_count} refreshed, "
+        f"{imported_count} imported, {skipped_count} skipped, {failed_count} failed."
+    )
+    settings.last_product_sync_at = finished_at
+    settings.last_sync_finished_at = finished_at
+    settings.last_sync_status = "success" if failed_count == 0 else "failed"
+    settings.last_sync_message = summary_message
+    root_log.status = "success" if failed_count == 0 else "failed"
+    root_log.message = summary_message
+    root_log.finished_at = finished_at
+    return {
+        "refreshed_count": refreshed_count,
+        "imported_count": imported_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "rows": rows,
+    }
 
 
 async def _find_or_create_customer_from_woo(db: AsyncSession, order_payload: dict[str, Any]) -> Customer | None:
@@ -1143,7 +1551,16 @@ async def get_sync_status_summary(
         .options(selectinload(WooCommerceSyncLog.created_by))
         .where(
             WooCommerceSyncLog.sync_type.in_(
-                ["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "order_refresh", "orders_bulk_refresh"]
+                [
+                    "manual_sync",
+                    "scheduled_sync",
+                    "product_scheduled_import",
+                    "order_scheduled_import",
+                    "product_refresh",
+                    "products_bulk_refresh",
+                    "order_refresh",
+                    "orders_bulk_refresh",
+                ]
             )
         )
         .order_by(WooCommerceSyncLog.created_at.desc())
@@ -1157,9 +1574,26 @@ async def get_sync_status_summary(
             .where(
                 WooCommerceSyncLog.status == "failed",
                 WooCommerceSyncLog.sync_type.in_(
-                    ["manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "order_refresh", "orders_bulk_refresh"]
+                    [
+                        "manual_sync",
+                        "scheduled_sync",
+                        "product_scheduled_import",
+                        "order_scheduled_import",
+                        "product_refresh",
+                        "products_bulk_refresh",
+                        "order_refresh",
+                        "orders_bulk_refresh",
+                    ]
                 ),
             )
+        )
+        or 0
+    )
+    recent_product_refresh_failures_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(WooCommerceSyncLog)
+            .where(WooCommerceSyncLog.status == "failed", WooCommerceSyncLog.sync_type.in_(["product_refresh", "products_bulk_refresh"]))
         )
         or 0
     )
@@ -1173,6 +1607,9 @@ async def get_sync_status_summary(
     )
     imported_woocommerce_orders_count = int(
         await db.scalar(select(func.count()).select_from(Order).where(Order.source == "woocommerce")) or 0
+    )
+    imported_woocommerce_products_count = int(
+        await db.scalar(select(func.count()).select_from(Product).where(Product.source == "woocommerce")) or 0
     )
 
     warnings: list[str] = []
@@ -1201,8 +1638,11 @@ async def get_sync_status_summary(
         "settings": settings,
         "recent_sync_logs": recent_logs,
         "failed_sync_count": failed_sync_count,
+        "recent_product_refresh_failures_count": recent_product_refresh_failures_count,
         "recent_order_refresh_failures_count": recent_order_refresh_failures_count,
+        "imported_woocommerce_products_count": imported_woocommerce_products_count,
         "imported_woocommerce_orders_count": imported_woocommerce_orders_count,
+        "last_product_refresh_at": settings.last_product_sync_at,
         "last_order_refresh_at": settings.last_order_sync_at,
         "ready_to_sync": ready_to_sync,
         "readiness_warnings": warnings,
@@ -1265,40 +1705,46 @@ async def run_manual_sync(
 
     try:
         if sync_products:
-            product_since = settings.last_product_sync_at if since_last_sync else None
-            product_preview = await fetch_products_preview(
+            product_refresh_result = await refresh_imported_products_since_last_sync(
                 db,
-                page=1,
-                per_page=per_page,
-                search=None,
-                modified_after=product_since,
                 current_user=current_user,
+                per_page=per_page,
+                since_last_sync=since_last_sync,
+                search=None,
             )
-            product_external_ids = [item["external_id"] for item in product_preview["items"]]
-            if product_external_ids:
-                product_result = await import_products(db, product_external_ids, current_user)
-            else:
-                product_result = {"imported_count": 0, "skipped_count": 0, "failed_count": 0, "rows": []}
-            product_message = _summarize_import_result("Product", product_result)
-            if since_last_sync and product_since is not None and not product_preview["items"]:
-                product_message += " No WooCommerce products matched the last-sync filter."
+            product_result = {
+                "imported_count": product_refresh_result["imported_count"],
+                "skipped_count": product_refresh_result["skipped_count"],
+                "failed_count": product_refresh_result["failed_count"],
+                "rows": [
+                    {
+                        "external_id": row["external_id"],
+                        "status": "imported" if row["status"] == "imported" else ("failed" if row["status"] == "failed" else "skipped"),
+                        "local_entity_id": row["local_product_id"],
+                        "message": row["message"],
+                    }
+                    for row in product_refresh_result["rows"]
+                ],
+            }
+            product_message = (
+                f"Product sync: {product_refresh_result['refreshed_count']} refreshed, {product_refresh_result['imported_count']} imported, "
+                f"{product_refresh_result['skipped_count']} skipped, {product_refresh_result['failed_count']} failed."
+            )
             messages.append(product_message)
             await _create_sync_log(
                 db,
                 sync_type="product_scheduled_import",
-                status_value="failed" if product_result["failed_count"] else "success",
+                status_value="failed" if product_refresh_result["failed_count"] else "success",
                 message=product_message,
                 payload_snapshot={
                     "since_last_sync": since_last_sync,
-                    "modified_after": product_since.isoformat() if product_since else None,
                     "per_page": per_page,
-                    "row_count": len(product_result["rows"]),
+                    "row_count": len(product_refresh_result["rows"]),
+                    "search": None,
                 },
                 created_by_id=current_user.id,
             )
-            if product_result["failed_count"] == 0:
-                settings.last_product_sync_at = _now()
-            else:
+            if product_refresh_result["failed_count"] != 0:
                 failed_sections += 1
 
         if sync_orders:

@@ -56,6 +56,7 @@ type ProductPreview = {
   status: string | null;
   category: string | null;
   image_url: string | null;
+  external_stock_quantity: number | null;
   duplicate_status: "new" | "existing_by_sku" | "existing_by_slug" | "missing_sku";
   local_product_id: string | null;
 };
@@ -109,6 +110,21 @@ type OrderRefreshResult = {
   rows: OrderRefreshResultRow[];
 };
 
+type ProductRefreshResultRow = {
+  external_id: string;
+  status: "refreshed" | "imported" | "skipped" | "failed";
+  local_product_id: string | null;
+  message: string;
+};
+
+type ProductRefreshResult = {
+  refreshed_count: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  rows: ProductRefreshResultRow[];
+};
+
 type SyncLog = {
   id: string;
   sync_type: string;
@@ -130,8 +146,11 @@ type SyncStatus = {
   settings: WooCommerceSetting;
   recent_sync_logs: SyncLog[];
   failed_sync_count: number;
+  recent_product_refresh_failures_count: number;
   recent_order_refresh_failures_count: number;
+  imported_woocommerce_products_count: number;
   imported_woocommerce_orders_count: number;
+  last_product_refresh_at: string | null;
   last_order_refresh_at: string | null;
   ready_to_sync: boolean;
   readiness_warnings: string[];
@@ -264,6 +283,7 @@ export default function WooCommercePage() {
   const [lastProductImportResult, setLastProductImportResult] = useState<ImportResult | null>(null);
   const [lastOrderImportResult, setLastOrderImportResult] = useState<ImportResult | null>(null);
   const [lastManualSyncResult, setLastManualSyncResult] = useState<RunSyncResult | null>(null);
+  const [lastBulkProductRefreshResult, setLastBulkProductRefreshResult] = useState<ProductRefreshResult | null>(null);
   const [lastBulkOrderRefreshResult, setLastBulkOrderRefreshResult] = useState<OrderRefreshResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -274,6 +294,7 @@ export default function WooCommercePage() {
   const [isImportingProducts, setIsImportingProducts] = useState(false);
   const [isImportingOrders, setIsImportingOrders] = useState(false);
   const [isRunningManualSync, setIsRunningManualSync] = useState(false);
+  const [isRefreshingImportedProducts, setIsRefreshingImportedProducts] = useState(false);
   const [isRefreshingImportedOrders, setIsRefreshingImportedOrders] = useState(false);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
   const [isLoadingLogDetail, setIsLoadingLogDetail] = useState(false);
@@ -281,6 +302,9 @@ export default function WooCommercePage() {
   const [runSyncOrders, setRunSyncOrders] = useState(true);
   const [runSyncSinceLast, setRunSyncSinceLast] = useState(true);
   const [runSyncPerPage, setRunSyncPerPage] = useState(20);
+  const [refreshImportedProductsSinceLast, setRefreshImportedProductsSinceLast] = useState(true);
+  const [refreshImportedProductsPerPage, setRefreshImportedProductsPerPage] = useState(20);
+  const [refreshImportedProductsSearch, setRefreshImportedProductsSearch] = useState("");
   const [refreshImportedOrdersSinceLast, setRefreshImportedOrdersSinceLast] = useState(true);
   const [refreshImportedOrdersPerPage, setRefreshImportedOrdersPerPage] = useState(20);
   const [refreshImportedOrdersStatus, setRefreshImportedOrdersStatus] = useState("");
@@ -578,6 +602,28 @@ export default function WooCommercePage() {
     }
   }
 
+  async function handleRefreshImportedProducts() {
+    setError("");
+    setSuccess("");
+    setIsRefreshingImportedProducts(true);
+    try {
+      const result = await api.post<ProductRefreshResult>("/woocommerce/products-refresh", {
+        since_last_sync: refreshImportedProductsSinceLast,
+        per_page: refreshImportedProductsPerPage,
+        search: refreshImportedProductsSearch.trim() || undefined,
+      });
+      setLastBulkProductRefreshResult(result);
+      setSuccess(
+        `WooCommerce product refresh complete: ${result.refreshed_count} refreshed, ${result.imported_count} imported, ${result.skipped_count} skipped, ${result.failed_count} failed.`,
+      );
+      await Promise.all([refreshSyncStatus(), refreshLogs(), loadProductPreview()]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to refresh imported WooCommerce products");
+    } finally {
+      setIsRefreshingImportedProducts(false);
+    }
+  }
+
   async function handleViewLogDetails(logId: string) {
     setError("");
     setIsLoadingLogDetail(true);
@@ -616,7 +662,7 @@ export default function WooCommercePage() {
         <PageHeader
           eyebrow="Scheduled Sync Foundation"
           title="WooCommerce workspace"
-          description="Configure a safer read-only WooCommerce connection, store sync schedule preferences, run manual sync safely, preview duplicate risk before import, and inspect sync-log details."
+          description="Configure a safer read-only WooCommerce connection, store sync schedule preferences, run manual sync safely, preview duplicate risk before import, refresh imported Woo products and orders, and inspect sync-log details."
           meta="Read-only"
         />
       </section>
@@ -767,7 +813,7 @@ export default function WooCommercePage() {
         <div className="space-y-4">
           <FormCard
             title="Sync schedule"
-            description="Store schedule preferences, inspect sync readiness, and trigger a safe manual sync run. Manual sync now refreshes existing WooCommerce orders and imports new ones without pushing anything back. Auto-sync settings are saved here, but no production background worker is running unless you deploy one separately."
+            description="Store schedule preferences, inspect sync readiness, and trigger a safe manual sync run. Manual sync now refreshes existing WooCommerce products and orders, then imports new changed rows without pushing anything back. Auto-sync settings are saved here, but no production background worker is running unless you deploy one separately."
             action={
               <button
                 type="button"
@@ -809,10 +855,19 @@ export default function WooCommercePage() {
                 Interval: <span className="font-semibold text-slate-950">{settingsForm.sync_interval_minutes} minutes</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Imported Woo products: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_products_count ?? 0}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Imported Woo orders: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_orders_count ?? 0}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Last product refresh: <span className="font-semibold text-slate-950">{syncStatus?.last_product_refresh_at ? formatDateTime(syncStatus.last_product_refresh_at) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Last order refresh: <span className="font-semibold text-slate-950">{syncStatus?.last_order_refresh_at ? formatDateTime(syncStatus.last_order_refresh_at) : "Never"}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Product refresh failures: <span className="font-semibold text-slate-950">{syncStatus?.recent_product_refresh_failures_count ?? 0}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Order refresh failures: <span className="font-semibold text-slate-950">{syncStatus?.recent_order_refresh_failures_count ?? 0}</span>
@@ -1043,7 +1098,7 @@ export default function WooCommercePage() {
 
       {activeTab === "products" ? (
         <div className="space-y-4">
-          <FormCard title="Product preview and import" description="Preview WooCommerce products, inspect duplicate status, and import only the rows you intentionally allow.">
+          <FormCard title="Product preview and import" description="Preview WooCommerce products, inspect duplicate status, and import only the rows you intentionally allow. External stock is shown for visibility only and never overwrites local inventory.">
             <div className="grid gap-4 md:grid-cols-[1.2fr_160px_160px_auto]">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Search</span>
@@ -1122,6 +1177,7 @@ export default function WooCommercePage() {
                         <th className="px-4 py-3">Duplicate status</th>
                         <th className="px-4 py-3">Local product</th>
                         <th className="px-4 py-3">Price</th>
+                        <th className="px-4 py-3">Woo stock</th>
                         <th className="px-4 py-3">Status</th>
                       </tr>
                     </thead>
@@ -1150,6 +1206,7 @@ export default function WooCommercePage() {
                             <td className="px-4 py-3"><StatusBadge status={item.duplicate_status} label={duplicateStatusLabel(item.duplicate_status)} /></td>
                             <td className="px-4 py-3"><LocalEntityLink type="product" id={item.local_product_id} /></td>
                             <td className="px-4 py-3 text-slate-700">{formatCurrency(item.price)}</td>
+                            <td className="px-4 py-3 text-slate-500">{item.external_stock_quantity ?? "-"}</td>
                             <td className="px-4 py-3 text-slate-500">{formatLabel(item.status || "unknown")}</td>
                           </tr>
                         );
@@ -1167,6 +1224,74 @@ export default function WooCommercePage() {
                 />
               </div>
             )}
+          </FormCard>
+
+          <FormCard title="Refresh imported products" description="Refresh lifecycle changes for existing WooCommerce products and import new changed products when needed. This updates Woo metadata safely and never overwrites local inventory.">
+            <div className="grid gap-4 md:grid-cols-[160px_140px_1fr_auto]">
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={refreshImportedProductsSinceLast}
+                  onChange={(event) => setRefreshImportedProductsSinceLast(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Since last sync
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Per page</span>
+                <select value={refreshImportedProductsPerPage} onChange={(event) => setRefreshImportedProductsPerPage(Number(event.target.value))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
+                  {[10, 20, 50, 100].map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Search</span>
+                <input
+                  value={refreshImportedProductsSearch}
+                  onChange={(event) => setRefreshImportedProductsSearch(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                  placeholder="Search Woo product name or SKU"
+                />
+              </label>
+              <div className="flex items-end">
+                <button type="button" onClick={() => void handleRefreshImportedProducts()} disabled={isRefreshingImportedProducts} className="inline-flex items-center gap-2 rounded-full bg-sky-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:opacity-60">
+                  {isRefreshingImportedProducts ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Refresh imported products
+                </button>
+              </div>
+            </div>
+
+            {lastBulkProductRefreshResult ? (
+              <div className="mt-5 space-y-4">
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4"><p className="text-sm text-sky-700">Refreshed</p><p className="mt-2 text-2xl font-semibold text-sky-900">{lastBulkProductRefreshResult.refreshed_count}</p></div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4"><p className="text-sm text-emerald-700">Imported</p><p className="mt-2 text-2xl font-semibold text-emerald-900">{lastBulkProductRefreshResult.imported_count}</p></div>
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4"><p className="text-sm text-amber-700">Skipped</p><p className="mt-2 text-2xl font-semibold text-amber-900">{lastBulkProductRefreshResult.skipped_count}</p></div>
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4"><p className="text-sm text-rose-700">Failed</p><p className="mt-2 text-2xl font-semibold text-rose-900">{lastBulkProductRefreshResult.failed_count}</p></div>
+                </div>
+                <div className="overflow-x-auto rounded-3xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3">External ID</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Local product</th>
+                        <th className="px-4 py-3">Message</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {lastBulkProductRefreshResult.rows.map((row) => (
+                        <tr key={`${row.external_id}-${row.status}-${row.local_product_id || "none"}`}>
+                          <td className="px-4 py-3 font-medium text-slate-950">{row.external_id}</td>
+                          <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
+                          <td className="px-4 py-3"><LocalEntityLink type="product" id={row.local_product_id} /></td>
+                          <td className="px-4 py-3 text-slate-500">{row.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </FormCard>
 
           {lastProductImportResult ? (
@@ -1445,7 +1570,7 @@ export default function WooCommercePage() {
                 <span className="mb-2 block text-sm font-medium text-slate-700">Sync type</span>
                 <select value={logFilters.sync_type} onChange={(event) => setLogFilters((current) => ({ ...current, sync_type: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
                   <option value="">All types</option>
-                  {["connection_test", "manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "order_refresh", "orders_bulk_refresh", "product_preview", "product_import", "order_preview", "order_import"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
+                  {["connection_test", "manual_sync", "scheduled_sync", "product_scheduled_import", "order_scheduled_import", "product_refresh", "products_bulk_refresh", "order_refresh", "orders_bulk_refresh", "product_preview", "product_import", "order_preview", "order_import"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
                 </select>
               </label>
               <label className="block">

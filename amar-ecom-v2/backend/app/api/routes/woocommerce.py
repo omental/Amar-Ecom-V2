@@ -17,6 +17,7 @@ from app.core.crypto import (
 from app.models.user import User
 from app.models.woocommerce import WooCommerceSetting, WooCommerceSyncLog
 from app.schemas.woocommerce import (
+    WooCommerceBulkProductRefreshRequest,
     WooCommerceBulkOrderRefreshRequest,
     WooCommerceConnectionTestRead,
     WooCommerceImportRequest,
@@ -25,6 +26,8 @@ from app.schemas.woocommerce import (
     WooCommerceOrderRefreshResult,
     WooCommerceOrderRefreshRequest,
     WooCommerceProductPreviewListRead,
+    WooCommerceProductRefreshResult,
+    WooCommerceProductRefreshRequest,
     WooCommerceRunSyncRequest,
     WooCommerceRunSyncResult,
     WooCommerceSettingRead,
@@ -39,6 +42,8 @@ from app.services.woocommerce_service import (
     get_sync_status_summary,
     import_orders,
     import_products,
+    refresh_imported_product_from_woocommerce,
+    refresh_imported_products_since_last_sync,
     refresh_imported_order_from_woocommerce,
     refresh_imported_orders_since_last_sync,
     run_manual_sync,
@@ -305,6 +310,64 @@ async def import_selected_products(
     return WooCommerceImportResult(**result)
 
 
+@router.post("/products/{local_product_id}/refresh", response_model=WooCommerceProductRefreshResult)
+async def refresh_single_imported_product(
+    local_product_id: UUID,
+    refresh_in: WooCommerceProductRefreshRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceProductRefreshResult:
+    _ensure_admin(current_user)
+    del refresh_in
+    result = await refresh_imported_product_from_woocommerce(db, local_product_id, current_user)
+    row = result["rows"][0] if result["rows"] else None
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_product_refreshed",
+        module="woocommerce",
+        entity_type="product",
+        entity_id=row["local_product_id"] if row else None,
+        message=row["message"] if row else "Refreshed WooCommerce product.",
+        request=request,
+    )
+    await commit_or_409(db, "Could not refresh WooCommerce product")
+    return WooCommerceProductRefreshResult(**result)
+
+
+@router.post("/products-refresh", response_model=WooCommerceProductRefreshResult)
+async def refresh_products_bulk(
+    refresh_in: WooCommerceBulkProductRefreshRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> WooCommerceProductRefreshResult:
+    _ensure_admin(current_user)
+    result = await refresh_imported_products_since_last_sync(
+        db,
+        current_user,
+        per_page=refresh_in.per_page,
+        since_last_sync=refresh_in.since_last_sync,
+        search=refresh_in.search,
+    )
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="woocommerce_products_bulk_refreshed",
+        module="woocommerce",
+        entity_type="product",
+        entity_id=None,
+        message=(
+            f"WooCommerce bulk product refresh: {result['refreshed_count']} refreshed, "
+            f"{result['imported_count']} imported, {result['skipped_count']} skipped, {result['failed_count']} failed."
+        ),
+        request=request,
+    )
+    await commit_or_409(db, "Could not complete WooCommerce bulk product refresh")
+    return WooCommerceProductRefreshResult(**result)
+
+
 @router.get("/orders-preview", response_model=WooCommerceOrderPreviewListRead)
 async def get_orders_preview(
     db: DBSession,
@@ -483,8 +546,11 @@ async def get_sync_status(
         settings=_settings_to_read(summary["settings"]),
         recent_sync_logs=[_sync_log_to_read(log) for log in summary["recent_sync_logs"]],
         failed_sync_count=summary["failed_sync_count"],
+        recent_product_refresh_failures_count=summary["recent_product_refresh_failures_count"],
         recent_order_refresh_failures_count=summary["recent_order_refresh_failures_count"],
+        imported_woocommerce_products_count=summary["imported_woocommerce_products_count"],
         imported_woocommerce_orders_count=summary["imported_woocommerce_orders_count"],
+        last_product_refresh_at=summary["last_product_refresh_at"],
         last_order_refresh_at=summary["last_order_refresh_at"],
         ready_to_sync=summary["ready_to_sync"],
         readiness_warnings=summary["readiness_warnings"],

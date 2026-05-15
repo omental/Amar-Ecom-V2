@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -17,6 +18,12 @@ class Product(Base):
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     sku: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    external_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    external_slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    external_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    external_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    external_payload_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("categories.id", ondelete="SET NULL"),
@@ -44,6 +51,27 @@ class Product(Base):
     variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
     inventory_items = relationship("InventoryItem", back_populates="product")
     stock_movements = relationship("StockMovement", back_populates="product")
+
+    @property
+    def external_stock_quantity(self) -> int | None:
+        if not self.external_payload_snapshot:
+            return None
+        try:
+            snapshot = json.loads(self.external_payload_snapshot)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(snapshot, dict):
+            return None
+        woo_product = snapshot.get("woo_product")
+        if not isinstance(woo_product, dict):
+            return None
+        stock_quantity = woo_product.get("stock_quantity")
+        if stock_quantity in (None, ""):
+            return None
+        try:
+            return int(stock_quantity)
+        except (TypeError, ValueError):
+            return None
 
 
 class ProductVariant(Base):

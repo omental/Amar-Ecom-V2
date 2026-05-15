@@ -67,6 +67,13 @@ class ProductRead(ORMBaseSchema):
     slug: str
     sku: str
     description: str | None
+    source: str | None = None
+    external_id: str | None = None
+    external_slug: str | None = None
+    external_status: str | None = None
+    external_synced_at: datetime | None = None
+    external_payload_snapshot: str | None = None
+    external_stock_quantity: int | None = None
     category_id: UUID | None
     brand_id: UUID | None
     price: Decimal

@@ -31,6 +31,11 @@ type Product = {
   cost_price: string | number;
   image_url: string | null;
   status: string;
+  source?: string | null;
+  external_id?: string | null;
+  external_status?: string | null;
+  external_synced_at?: string | null;
+  external_stock_quantity?: number | null;
   category?: { id: string; name: string } | null;
   brand?: { id: string; name: string } | null;
   variants?: Array<{ id: string }>;
@@ -705,6 +710,12 @@ export default function ProductsPage() {
                       <p className="mt-1 text-xs text-slate-500">
                         {product.variants?.length || 0} variants
                       </p>
+                      {product.source === "woocommerce" ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                          <StatusBadge status="woocommerce" label="WooCommerce" />
+                          {product.external_status ? <StatusBadge status={product.external_status} label={`Woo ${product.external_status}`} /> : null}
+                        </div>
+                      ) : null}
                     </div>
                     <span>{product.sku}</span>
                     <span>{product.category?.name || "Unassigned"}</span>
