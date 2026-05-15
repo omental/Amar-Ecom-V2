@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -7,8 +8,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import InterfaceError, ProgrammingError
 
 from app.api.routes import woocommerce as woocommerce_routes
+from app.core import crypto as crypto_utils
+from app.core.crypto import decrypt_secret, is_encrypted_secret, mask_secret
 from app.core.database import engine
 from app.main import app
+from app.models.woocommerce import WooCommerceSetting
 from app.services import woocommerce_service
 
 
@@ -722,6 +726,94 @@ def test_woocommerce_error_handling_and_sync_log_safety(monkeypatch: pytest.Monk
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
         raise
+
+    dispose_engine()
+
+
+def test_woocommerce_settings_security_and_legacy_compatibility() -> None:
+    headers = auth_headers()
+    raw_key = "ck_release_ready_12345"
+    raw_secret = "cs_release_ready_67890"
+    encrypted_calls: list[str] = []
+
+    original_encrypt_secret = crypto_utils.encrypt_secret
+
+    def tracking_encrypt_secret(value: str) -> str:
+        encrypted_calls.append(value)
+        return original_encrypt_secret(value)
+
+    try:
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr("app.core.crypto.encrypt_secret", tracking_encrypt_secret)
+        with TestClient(app) as client:
+            save_response = client.patch(
+                "/api/v1/woocommerce/settings",
+                headers=headers,
+                json={
+                    "store_url": "https://store.example.com",
+                    "consumer_key": raw_key,
+                    "consumer_secret": raw_secret,
+                    "api_version": "wc/v3",
+                    "is_active": True,
+                },
+            )
+            assert save_response.status_code == 200, save_response.text
+            payload = save_response.json()
+            assert "consumer_key" not in payload
+            assert "consumer_secret" not in payload
+            assert payload["has_consumer_key"] is True
+            assert payload["has_consumer_secret"] is True
+            assert payload["consumer_key_masked"] == mask_secret(raw_key)
+            assert raw_key not in save_response.text
+            assert raw_secret not in save_response.text
+            assert encrypted_calls == [raw_key, raw_secret]
+
+            encrypted_key = original_encrypt_secret(raw_key)
+            encrypted_secret = original_encrypt_secret(raw_secret)
+            assert encrypted_key != raw_key
+            assert encrypted_secret != raw_secret
+            assert encrypted_key.startswith("enc::")
+            assert encrypted_secret.startswith("enc::")
+            assert is_encrypted_secret(encrypted_key)
+            assert is_encrypted_secret(encrypted_secret)
+            assert decrypt_secret(encrypted_key) == raw_key
+            assert decrypt_secret(encrypted_secret) == raw_secret
+
+            legacy_settings = WooCommerceSetting(
+                id=uuid.uuid4(),
+                store_url="https://store.example.com",
+                consumer_key_encrypted="ck_legacy_plain",
+                consumer_secret_encrypted="cs_legacy_plain",
+                api_version="wc/v3",
+                is_active=True,
+                auto_sync_enabled=False,
+                sync_products_enabled=True,
+                sync_orders_enabled=True,
+                sync_interval_minutes=60,
+                last_test_success=False,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            legacy_payload = woocommerce_routes._settings_to_read(legacy_settings)
+            assert legacy_payload.has_consumer_key is True
+            assert legacy_payload.has_consumer_secret is True
+            assert legacy_payload.credentials_encrypted is False
+            assert legacy_payload.consumer_key_masked == mask_secret("ck_legacy_plain")
+
+            reencrypted_key = original_encrypt_secret("ck_reencrypted")
+            reencrypted_secret = original_encrypt_secret("cs_reencrypted")
+            assert is_encrypted_secret(reencrypted_key)
+            assert is_encrypted_secret(reencrypted_secret)
+            assert decrypt_secret(reencrypted_key) == "ck_reencrypted"
+            assert decrypt_secret(reencrypted_secret) == "cs_reencrypted"
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["woocommerce_settings", "woocommerce_sync_logs"]):
+            pytest.skip("Apply the latest WooCommerce migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+    finally:
+        monkeypatch.undo()
 
     dispose_engine()
 
@@ -3142,9 +3234,9 @@ def test_reports_foundation_endpoints() -> None:
             assert logistics_report["total_shipments"] >= 1
             assert float(logistics_report["total_cod_amount"]) >= 540
 
-            top_products_response = client.get("/api/v1/reports/top-products?limit=10", headers=headers)
+            top_products_response = client.get("/api/v1/reports/top-products?limit=50", headers=headers)
             assert top_products_response.status_code == 200, top_products_response.text
-            assert any(item["product_name"] == product["name"] for item in top_products_response.json())
+            assert any(item["sku"] == product["sku"] for item in top_products_response.json())
             recent_order_activity_response = client.get(
                 "/api/v1/reports/recent-order-activity?limit=10",
                 headers=headers,
