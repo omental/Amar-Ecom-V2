@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException, status
@@ -15,6 +16,17 @@ from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product
 from app.models.user import User
 from app.models.woocommerce import WooCommerceSetting, WooCommerceSyncLog
+
+
+_REDACTED = "[redacted]"
+_SENSITIVE_SNAPSHOT_KEYS = {
+    "consumer_key",
+    "consumer_secret",
+    "authorization",
+    "authorization_header",
+    "basic_auth",
+    "basic_authorization",
+}
 
 
 def _now() -> datetime:
@@ -36,11 +48,33 @@ def _build_api_base(settings: WooCommerceSetting) -> str:
     return f"{_normalize_store_url(settings.store_url or '')}/wp-json/{settings.api_version.strip('/')}"
 
 
+def _sanitize_payload_snapshot(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        sanitized: dict[str, Any] = {}
+        for key, value in payload.items():
+            normalized_key = str(key).lower().replace("-", "_")
+            if normalized_key in _SENSITIVE_SNAPSHOT_KEYS:
+                sanitized[key] = _REDACTED
+            else:
+                sanitized[key] = _sanitize_payload_snapshot(value)
+        return sanitized
+    if isinstance(payload, list):
+        return [_sanitize_payload_snapshot(item) for item in payload]
+    if isinstance(payload, tuple):
+        return [_sanitize_payload_snapshot(item) for item in payload]
+    if isinstance(payload, str):
+        lowered = payload.lower()
+        if lowered.startswith("basic ") or "authorization:" in lowered:
+            return _REDACTED
+    return payload
+
+
 def _safe_payload_snapshot(payload: Any) -> str:
+    sanitized_payload = _sanitize_payload_snapshot(payload)
     try:
-        return json.dumps(payload, ensure_ascii=True, default=str)
+        return json.dumps(sanitized_payload, ensure_ascii=True, default=str)
     except TypeError:
-        return json.dumps({"payload": str(payload)}, ensure_ascii=True)
+        return json.dumps({"payload": str(sanitized_payload)}, ensure_ascii=True)
 
 
 def _safe_slug(value: str, fallback: str) -> str:
@@ -85,11 +119,27 @@ def _map_payment_status(order_payload: dict[str, Any]) -> str:
     return "unpaid"
 
 
+def _validate_store_url(store_url: str | None) -> str:
+    normalized = (store_url or "").strip()
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce store URL is missing.")
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WooCommerce store URL is invalid. Use a full http:// or https:// URL.",
+        )
+    return normalized
+
+
 def _get_decrypted_credentials(settings: WooCommerceSetting) -> tuple[str, str]:
     raw_key = settings.consumer_key_encrypted or ""
     raw_secret = settings.consumer_secret_encrypted or ""
     if not raw_key or not raw_secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce settings are incomplete")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WooCommerce credentials are missing. Save both consumer key and consumer secret.",
+        )
     try:
         consumer_key = decrypt_secret(raw_key).strip()
         consumer_secret = decrypt_secret(raw_secret).strip()
@@ -99,7 +149,10 @@ def _get_decrypted_credentials(settings: WooCommerceSetting) -> tuple[str, str]:
             detail="WooCommerce credentials could not be decrypted. Re-save the credentials and try again.",
         ) from exc
     if not consumer_key or not consumer_secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce settings are incomplete")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WooCommerce credentials are missing. Save both consumer key and consumer secret.",
+        )
     return consumer_key, consumer_secret
 
 
@@ -142,8 +195,12 @@ async def get_active_woocommerce_settings(db: AsyncSession) -> WooCommerceSettin
         await db.flush()
     if not settings.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce integration is inactive")
-    if not settings.store_url or not settings.consumer_key_encrypted or not settings.consumer_secret_encrypted:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WooCommerce settings are incomplete")
+    _validate_store_url(settings.store_url)
+    if not settings.consumer_key_encrypted or not settings.consumer_secret_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WooCommerce credentials are missing. Save both consumer key and consumer secret.",
+        )
     return settings
 
 
@@ -155,11 +212,37 @@ async def _request_woo(
 ) -> httpx.Response:
     consumer_key, consumer_secret = _get_decrypted_credentials(settings)
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-        return await client.get(
-            f"{_build_api_base(settings)}{path}",
-            params=params,
-            auth=(consumer_key, consumer_secret),
-        )
+        try:
+            return await client.get(
+                f"{_build_api_base(settings)}{path}",
+                params=params,
+                auth=(consumer_key, consumer_secret),
+            )
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="WooCommerce request timed out. Check the store URL, credentials, and network availability.",
+            ) from exc
+        except httpx.InvalidURL as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="WooCommerce store URL is invalid. Use a full http:// or https:// URL.",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="WooCommerce API is unavailable right now. Please try again shortly.",
+            ) from exc
+
+
+def _parse_woocommerce_json(response: httpx.Response, entity_label: str) -> Any:
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"WooCommerce returned an unreadable {entity_label} response.",
+        ) from exc
 
 
 async def _match_products_for_preview(db: AsyncSession, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -259,7 +342,10 @@ async def test_connection(db: AsyncSession, current_user: User) -> dict[str, Any
     try:
         response = await _request_woo(settings, "/products", params={"per_page": 1, "page": 1})
         success = response.status_code == 200
-        message = "WooCommerce connection succeeded." if success else f"WooCommerce returned status {response.status_code}."
+        if response.status_code in {401, 403}:
+            message = "WooCommerce credentials were rejected. Check the consumer key and consumer secret."
+        else:
+            message = "WooCommerce connection succeeded." if success else f"WooCommerce returned status {response.status_code}."
         settings.last_tested_at = _now()
         settings.last_test_success = success
         settings.last_test_message = message
@@ -269,14 +355,14 @@ async def test_connection(db: AsyncSession, current_user: User) -> dict[str, Any
         if not success:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message)
         return {"success": True, "message": message, "tested_at": settings.last_tested_at}
-    except httpx.HTTPError as exc:
+    except HTTPException as exc:
         settings.last_tested_at = _now()
         settings.last_test_success = False
-        settings.last_test_message = f"WooCommerce connection failed: {exc}"
+        settings.last_test_message = str(exc.detail)
         log.status = "failed"
         log.message = settings.last_test_message
         log.finished_at = _now()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=settings.last_test_message) from exc
+        raise
 
 
 async def fetch_products_preview(
@@ -293,8 +379,13 @@ async def fetch_products_preview(
         params["search"] = search
     response = await _request_woo(settings, "/products", params=params)
     if response.status_code != 200:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"WooCommerce returned status {response.status_code}.")
-    payload = response.json()
+        if response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="WooCommerce credentials were rejected while loading product preview.",
+            )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"WooCommerce returned status {response.status_code} while loading product preview.")
+    payload = _parse_woocommerce_json(response, "product preview")
     items = await _match_products_for_preview(db, payload)
     await _create_sync_log(
         db,
@@ -327,8 +418,13 @@ async def fetch_orders_preview(
         params["status"] = status_value
     response = await _request_woo(settings, "/orders", params=params)
     if response.status_code != 200:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"WooCommerce returned status {response.status_code}.")
-    payload = response.json()
+        if response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="WooCommerce credentials were rejected while loading order preview.",
+            )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"WooCommerce returned status {response.status_code} while loading order preview.")
+    payload = _parse_woocommerce_json(response, "order preview")
     items = await _match_orders_for_preview(db, payload)
     await _create_sync_log(
         db,
@@ -374,12 +470,15 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
             response = await _request_woo(settings, f"/products/{external_id}")
             if response.status_code != 200:
                 failed += 1
-                message = f"Product {external_id}: WooCommerce returned status {response.status_code}."
+                if response.status_code in {401, 403}:
+                    message = f"Product {external_id} failed because WooCommerce credentials were rejected."
+                else:
+                    message = f"Product {external_id}: WooCommerce returned status {response.status_code}."
                 rows.append({"external_id": external_id, "status": "failed", "local_entity_id": None, "message": message})
                 await _create_sync_log(db, sync_type="product_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
                 continue
 
-            payload = response.json()
+            payload = _parse_woocommerce_json(response, "product")
             incoming_sku = (payload.get("sku") or "").strip() or f"WC-PROD-{external_id}"
             incoming_slug = _safe_slug(payload.get("slug") or payload.get("name") or f"woo-product-{external_id}", f"woo-product-{external_id}")
             existing_product = (
@@ -387,7 +486,10 @@ async def import_products(db: AsyncSession, external_ids: list[str], current_use
             ).scalar_one_or_none()
             if existing_product is not None:
                 skipped += 1
-                message = f"Product {external_id} skipped because SKU or slug already exists locally."
+                if existing_product.sku == incoming_sku:
+                    message = f"Product {external_id} skipped because SKU {incoming_sku} already exists locally."
+                else:
+                    message = f"Product {external_id} skipped because slug {incoming_slug} already exists locally."
                 rows.append(
                     {
                         "external_id": external_id,
@@ -488,12 +590,15 @@ async def import_orders(db: AsyncSession, external_ids: list[str], current_user:
             response = await _request_woo(settings, f"/orders/{external_id}")
             if response.status_code != 200:
                 failed += 1
-                message = f"Order {external_id}: WooCommerce returned status {response.status_code}."
+                if response.status_code in {401, 403}:
+                    message = f"Order {external_id} failed because WooCommerce credentials were rejected."
+                else:
+                    message = f"Order {external_id}: WooCommerce returned status {response.status_code}."
                 rows.append({"external_id": external_id, "status": "failed", "local_entity_id": None, "message": message})
                 await _create_sync_log(db, sync_type="order_import", status_value="failed", external_id=external_id, message=message, created_by_id=current_user.id)
                 continue
 
-            payload = response.json()
+            payload = _parse_woocommerce_json(response, "order")
             order_number = f"WC-{payload.get('number') or payload.get('id')}"
             existing_order = (await db.execute(select(Order).where(Order.order_number == order_number))).scalar_one_or_none()
             if existing_order is not None:

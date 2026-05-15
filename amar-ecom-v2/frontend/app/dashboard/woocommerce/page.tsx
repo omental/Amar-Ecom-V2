@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, DownloadCloud, Eye, Loader2, PlugZap, RefreshCw, Search, ShoppingBag, ShoppingCart } from "lucide-react";
 
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { EmptyState } from "@/components/ui/empty-state";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -153,6 +154,24 @@ function renderPayloadSnapshot(value: unknown) {
     return value;
   }
   return JSON.stringify(value, null, 2);
+}
+
+function duplicateStatusLabel(status: ProductPreview["duplicate_status"] | OrderPreview["duplicate_status"]) {
+  switch (status) {
+    case "new":
+      return "New";
+    case "existing_by_sku":
+      return "Existing SKU";
+    case "existing_by_slug":
+      return "Existing Slug";
+    case "missing_sku":
+      return "Missing SKU";
+    case "existing_by_order_number":
+    case "existing_by_external_id_if_available":
+      return "Existing Order";
+    default:
+      return formatLabel(status);
+  }
 }
 
 function LocalEntityLink({ type, id }: { type: "product" | "order"; id: string | null }) {
@@ -455,6 +474,9 @@ export default function WooCommercePage() {
       <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-soft)]">
         This phase stays read-only against WooCommerce. There is no automatic background sync, no destructive WooCommerce update, and no push-back of local products or orders.
       </div>
+      <div className="rounded-[28px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-800 shadow-[var(--shadow-soft)]">
+        Manual import only. This will not modify your WooCommerce store.
+      </div>
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? (
@@ -653,6 +675,12 @@ export default function WooCommercePage() {
                     </button>
                   </div>
                 </div>
+                {productPreview.items.length === 0 ? (
+                  <EmptyState
+                    title="No products found"
+                    description="Try a different search term or page setting, then load the preview again."
+                  />
+                ) : (
                 <div className="overflow-x-auto rounded-3xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50 text-left text-slate-600">
@@ -691,7 +719,7 @@ export default function WooCommercePage() {
                             <td className="px-4 py-3 font-medium text-slate-950">{item.external_id}</td>
                             <td className="px-4 py-3 text-slate-700">{item.name}</td>
                             <td className="px-4 py-3 text-slate-500">{item.sku || "No SKU"}</td>
-                            <td className="px-4 py-3"><StatusBadge status={item.duplicate_status} label={formatLabel(item.duplicate_status)} /></td>
+                            <td className="px-4 py-3"><StatusBadge status={item.duplicate_status} label={duplicateStatusLabel(item.duplicate_status)} /></td>
                             <td className="px-4 py-3"><LocalEntityLink type="product" id={item.local_product_id} /></td>
                             <td className="px-4 py-3 text-slate-700">{formatCurrency(item.price)}</td>
                             <td className="px-4 py-3 text-slate-500">{formatLabel(item.status || "unknown")}</td>
@@ -701,8 +729,16 @@ export default function WooCommercePage() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-5">
+                <EmptyState
+                  title="No product preview loaded"
+                  description="Use the filters above, then click Load preview to inspect WooCommerce products before importing."
+                />
+              </div>
+            )}
           </FormCard>
 
           {lastProductImportResult ? (
@@ -796,6 +832,12 @@ export default function WooCommercePage() {
                     </button>
                   </div>
                 </div>
+                {orderPreview.items.length === 0 ? (
+                  <EmptyState
+                    title="No orders found"
+                    description="Try a different status or page setting, then load the preview again."
+                  />
+                ) : (
                 <div className="overflow-x-auto rounded-3xl border border-slate-200">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50 text-left text-slate-600">
@@ -835,7 +877,7 @@ export default function WooCommercePage() {
                             <td className="px-4 py-3 font-medium text-slate-950">{item.external_id}</td>
                             <td className="px-4 py-3 text-slate-700">{item.number}</td>
                             <td className="px-4 py-3 text-slate-500">{item.customer || "Walk-in customer"}</td>
-                            <td className="px-4 py-3"><StatusBadge status={item.duplicate_status} label={formatLabel(item.duplicate_status)} /></td>
+                            <td className="px-4 py-3"><StatusBadge status={item.duplicate_status} label={duplicateStatusLabel(item.duplicate_status)} /></td>
                             <td className="px-4 py-3"><LocalEntityLink type="order" id={item.local_order_id} /></td>
                             <td className="px-4 py-3 text-slate-500">{formatLabel(item.status || "unknown")}</td>
                             <td className="px-4 py-3 text-slate-700">{formatCurrency(item.total)}</td>
@@ -846,8 +888,16 @@ export default function WooCommercePage() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-5">
+                <EmptyState
+                  title="No order preview loaded"
+                  description="Use the filters above, then click Load preview to inspect WooCommerce orders before importing."
+                />
+              </div>
+            )}
           </FormCard>
 
           {lastOrderImportResult ? (
@@ -927,6 +977,14 @@ export default function WooCommercePage() {
                 </button>
               </div>
             </div>
+            {syncLogs.length === 0 ? (
+              <div className="mt-5">
+                <EmptyState
+                  title="No sync logs found"
+                  description="Run a connection test, preview, or import, or relax the filters to see more WooCommerce log entries."
+                />
+              </div>
+            ) : (
             <div className="mt-5 overflow-x-auto rounded-3xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-slate-600">
@@ -962,6 +1020,7 @@ export default function WooCommercePage() {
                 </tbody>
               </table>
             </div>
+            )}
           </FormCard>
 
           {isLoadingLogDetail ? (
@@ -1011,6 +1070,16 @@ export default function WooCommercePage() {
               </div>
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                 <span className="font-semibold text-slate-950">Message:</span> {selectedLog.message || "No message"}
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-semibold text-slate-950">Product link:</span>{" "}
+                  {selectedLog.local_entity_type === "product" ? <LocalEntityLink type="product" id={selectedLog.local_entity_id} /> : "-"}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <span className="font-semibold text-slate-950">Order link:</span>{" "}
+                  {selectedLog.local_entity_type === "order" ? <LocalEntityLink type="order" id={selectedLog.local_entity_id} /> : "-"}
+                </div>
               </div>
               <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-950 p-4 text-xs text-slate-100">
                 <pre className="overflow-x-auto whitespace-pre-wrap">{renderPayloadSnapshot(selectedLog.payload_snapshot)}</pre>

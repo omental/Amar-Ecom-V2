@@ -1154,15 +1154,16 @@ Expected result:
    - status
    - category
 13. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled
-14. Select one or more products and click `Import selected`
-15. Confirm the import summary shows:
+14. If no rows are returned, confirm the page shows a clear empty state instead of a blank table
+15. Select one or more products and click `Import selected`
+16. Confirm the import summary shows:
    - imported
    - skipped
    - failed
    - compact row-level messages
-16. Open `Order Import`
-17. Load a WooCommerce order preview with or without a status filter
-18. Confirm the table shows:
+17. Open `Order Import`
+18. Load a WooCommerce order preview with or without a status filter
+19. Confirm the table shows:
    - select checkbox
    - external id
    - number
@@ -1172,16 +1173,17 @@ Expected result:
    - status
    - total
    - created at
-19. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled
-20. Select one or more orders and click `Import selected`
-21. Confirm the import summary shows:
+20. Confirm existing order matches are disabled by default unless `Include existing matches` is enabled
+21. If no rows are returned, confirm the page shows a clear empty state instead of a blank table
+22. Select one or more orders and click `Import selected`
+23. Confirm the import summary shows:
    - imported
    - skipped
    - failed
    - compact row-level messages
-22. Confirm imported WooCommerce orders are informational imports only and do not deduct local stock automatically in this phase
-23. Open `Sync Logs`
-24. Confirm the log table shows:
+24. Confirm imported WooCommerce orders are informational imports only and do not deduct local stock automatically in this phase
+25. Open `Sync Logs`
+26. Confirm the log table shows:
    - date
    - sync type
    - status
@@ -1190,8 +1192,8 @@ Expected result:
    - message
    - user
    - `View details` button
-25. Apply filters for:
+27. Apply filters for:
    - sync type
    - status
    - external id
-26. Open a log detail view and confirm the safe payload snapshot renders without any WooCommerce key or secret value
+28. Open a log detail view and confirm the safe payload snapshot renders in a preformatted block without any WooCommerce key or secret value

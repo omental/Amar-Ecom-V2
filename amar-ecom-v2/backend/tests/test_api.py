@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import InterfaceError, ProgrammingError
@@ -8,6 +9,7 @@ from sqlalchemy.exc import InterfaceError, ProgrammingError
 from app.api.routes import woocommerce as woocommerce_routes
 from app.core.database import engine
 from app.main import app
+from app.services import woocommerce_service
 
 
 def unique_email() -> str:
@@ -297,6 +299,7 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             )
             assert products_preview_response.status_code == 200, products_preview_response.text
             assert products_preview_response.json()["items"][0]["sku"] == "WOO-101"
+            assert products_preview_response.json()["items"][0]["duplicate_status"] == "new"
 
             products_import_response = client.post(
                 "/api/v1/woocommerce/products-import",
@@ -305,6 +308,8 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             )
             assert products_import_response.status_code == 200, products_import_response.text
             assert products_import_response.json()["imported_count"] == 1
+            assert products_import_response.json()["rows"][0]["status"] == "imported"
+            assert products_import_response.json()["rows"][0]["message"] == "Products imported."
 
             orders_preview_response = client.get(
                 "/api/v1/woocommerce/orders-preview?page=1&per_page=20&status=processing",
@@ -312,6 +317,7 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             )
             assert orders_preview_response.status_code == 200, orders_preview_response.text
             assert orders_preview_response.json()["items"][0]["external_id"] == "501"
+            assert orders_preview_response.json()["items"][0]["duplicate_status"] == "new"
 
             orders_import_response = client.post(
                 "/api/v1/woocommerce/orders-import",
@@ -320,16 +326,147 @@ def test_woocommerce_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
             )
             assert orders_import_response.status_code == 200, orders_import_response.text
             assert orders_import_response.json()["imported_count"] == 1
+            assert orders_import_response.json()["rows"][0]["status"] == "imported"
+            assert orders_import_response.json()["rows"][0]["message"] == "Orders imported."
 
             logs_response = client.get("/api/v1/woocommerce/sync-logs", headers=headers)
             assert logs_response.status_code == 200, logs_response.text
             assert isinstance(logs_response.json(), list)
+            filtered_logs_response = client.get("/api/v1/woocommerce/sync-logs?sync_type=product_preview&status=success&external_id=101", headers=headers)
+            assert filtered_logs_response.status_code == 200, filtered_logs_response.text
+            assert isinstance(filtered_logs_response.json(), list)
             if logs_response.json():
                 detail_response = client.get(f"/api/v1/woocommerce/sync-logs/{logs_response.json()[0]['id']}", headers=headers)
                 assert detail_response.status_code == 200, detail_response.text
-
             forbidden_response = client.get("/api/v1/woocommerce/settings", headers=staff_headers)
             assert forbidden_response.status_code == 403, forbidden_response.text
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["woocommerce_settings", "woocommerce_sync_logs"]):
+            pytest.skip("Apply the latest WooCommerce migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+def test_woocommerce_error_handling_and_sync_log_safety(monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = auth_headers()
+
+    class FakeResponse:
+        def __init__(self, status_code: int = 200, json_payload=None, headers: dict[str, str] | None = None, json_error: bool = False):
+            self.status_code = status_code
+            self._json_payload = json_payload
+            self.headers = headers or {}
+            self._json_error = json_error
+
+        def json(self):
+            if self._json_error:
+                raise ValueError("invalid json")
+            return self._json_payload
+
+    try:
+        with TestClient(app) as client:
+            invalid_url_save = client.patch(
+                "/api/v1/woocommerce/settings",
+                headers=headers,
+                json={
+                    "store_url": "not-a-url",
+                    "consumer_key": "ck_test_invalid",
+                    "consumer_secret": "cs_test_invalid",
+                    "api_version": "wc/v3",
+                    "is_active": True,
+                },
+            )
+            assert invalid_url_save.status_code == 200, invalid_url_save.text
+
+            invalid_url_test = client.post("/api/v1/woocommerce/test-connection", headers=headers)
+            assert invalid_url_test.status_code == 400, invalid_url_test.text
+            assert "store URL is invalid" in invalid_url_test.json()["detail"]
+
+            missing_creds_save = client.patch(
+                "/api/v1/woocommerce/settings",
+                headers=headers,
+                json={
+                    "store_url": "https://store.example.com",
+                    "consumer_key": "",
+                    "consumer_secret": "",
+                    "api_version": "wc/v3",
+                    "is_active": True,
+                },
+            )
+            assert missing_creds_save.status_code == 200, missing_creds_save.text
+
+            missing_creds_test = client.post("/api/v1/woocommerce/test-connection", headers=headers)
+            assert missing_creds_test.status_code == 400, missing_creds_test.text
+            assert "credentials are missing" in missing_creds_test.json()["detail"]
+
+            valid_save = client.patch(
+                "/api/v1/woocommerce/settings",
+                headers=headers,
+                json={
+                    "store_url": "https://store.example.com",
+                    "consumer_key": "ck_timeout",
+                    "consumer_secret": "cs_timeout",
+                    "api_version": "wc/v3",
+                    "is_active": True,
+                },
+            )
+            assert valid_save.status_code == 200, valid_save.text
+
+            async def fake_timeout(self, url, **kwargs):
+                raise httpx.TimeoutException("timeout")
+
+            monkeypatch.setattr(woocommerce_service.httpx.AsyncClient, "get", fake_timeout)
+            timeout_response = client.post("/api/v1/woocommerce/test-connection", headers=headers)
+            assert timeout_response.status_code == 504, timeout_response.text
+            assert "timed out" in timeout_response.json()["detail"]
+
+            async def fake_unauthorized(self, url, **kwargs):
+                return FakeResponse(status_code=401, json_payload={"code": "rest_cannot_view"})
+
+            monkeypatch.setattr(woocommerce_service.httpx.AsyncClient, "get", fake_unauthorized)
+            invalid_creds_response = client.post("/api/v1/woocommerce/test-connection", headers=headers)
+            assert invalid_creds_response.status_code == 502, invalid_creds_response.text
+            assert "credentials were rejected" in invalid_creds_response.json()["detail"]
+
+            async def fake_invalid_json(self, url, **kwargs):
+                return FakeResponse(status_code=200, json_error=True)
+
+            monkeypatch.setattr(woocommerce_service.httpx.AsyncClient, "get", fake_invalid_json)
+            invalid_json_response = client.get("/api/v1/woocommerce/products-preview?page=1&per_page=20", headers=headers)
+            assert invalid_json_response.status_code == 502, invalid_json_response.text
+            assert "unreadable product preview response" in invalid_json_response.json()["detail"]
+
+            async def fake_unavailable(self, url, **kwargs):
+                raise httpx.ConnectError("down", request=httpx.Request("GET", url))
+
+            monkeypatch.setattr(woocommerce_service.httpx.AsyncClient, "get", fake_unavailable)
+            unavailable_response = client.get("/api/v1/woocommerce/orders-preview?page=1&per_page=20", headers=headers)
+            assert unavailable_response.status_code == 502, unavailable_response.text
+            assert "API is unavailable" in unavailable_response.json()["detail"]
+
+            # Confirm sync log detail payload snapshots stay sanitized.
+            async def fake_success(self, url, **kwargs):
+                return FakeResponse(
+                    status_code=200,
+                    json_payload=[{"id": 1, "name": "Preview Product"}],
+                    headers={"X-WP-Total": "1", "X-WP-TotalPages": "1"},
+                )
+
+            monkeypatch.setattr(woocommerce_service.httpx.AsyncClient, "get", fake_success)
+            success_test_response = client.post("/api/v1/woocommerce/test-connection", headers=headers)
+            assert success_test_response.status_code == 200, success_test_response.text
+
+            logs_response = client.get("/api/v1/woocommerce/sync-logs?sync_type=connection_test", headers=headers)
+            assert logs_response.status_code == 200, logs_response.text
+            assert logs_response.json()
+            detail_response = client.get(f"/api/v1/woocommerce/sync-logs/{logs_response.json()[0]['id']}", headers=headers)
+            assert detail_response.status_code == 200, detail_response.text
+            payload_snapshot = detail_response.json().get("payload_snapshot")
+            assert payload_snapshot is None or "consumer_key" not in str(payload_snapshot).lower()
+            assert payload_snapshot is None or "consumer_secret" not in str(payload_snapshot).lower()
+            assert payload_snapshot is None or "authorization" not in str(payload_snapshot).lower()
+            assert payload_snapshot is None or "basic " not in str(payload_snapshot).lower()
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["woocommerce_settings", "woocommerce_sync_logs"]):
             pytest.skip("Apply the latest WooCommerce migration before running this test.")

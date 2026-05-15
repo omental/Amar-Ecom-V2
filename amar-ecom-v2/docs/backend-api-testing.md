@@ -883,6 +883,7 @@ Expected result:
 
 - returns `success`, `message`, and `tested_at`
 - creates a WooCommerce sync log row
+- returns clear user-facing errors for invalid URL, missing credentials, timeout, invalid credentials, unreadable WooCommerce responses, or upstream unavailability
 
 ## Preview WooCommerce Products
 
