@@ -14,9 +14,9 @@ export function FormCard({
   children,
 }: FormCardProps) {
   return (
-    <section className="card-base p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+    <section className="card-base min-w-0 max-w-full p-6">
+      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <p className="ops-micro-label">Workspace Panel</p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
             {title}
@@ -25,10 +25,10 @@ export function FormCard({
             {description}
           </p>
         </div>
-        {action ? action : null}
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
 
-      <div className="mt-6">{children}</div>
+      <div className="mt-6 min-w-0 max-w-full">{children}</div>
     </section>
   );
 }

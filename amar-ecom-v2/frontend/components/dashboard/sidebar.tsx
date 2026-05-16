@@ -131,11 +131,11 @@ export function DashboardSidebar({ onLogout }: SidebarProps) {
 
   return (
     <aside
-      className={`card-base flex w-full shrink-0 flex-col justify-between p-4 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] ${
+      className={`card-base flex w-full min-w-0 shrink-0 flex-col justify-between overflow-hidden p-4 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] ${
         isCollapsed ? "lg:w-24" : "lg:w-[240px]"
       }`}
     >
-      <div>
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className={`mb-6 flex items-center ${isCollapsed ? "justify-center" : "justify-between"} gap-3`}>
           <div
             className={`flex items-center gap-3 rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-txt-pri)] px-4 py-4 text-white ${
@@ -163,7 +163,7 @@ export function DashboardSidebar({ onLogout }: SidebarProps) {
           </button>
         </div>
 
-        <div className="space-y-5 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
           {visibleGroups.map((group) => (
             <section key={group.label}>
               {!isCollapsed ? <p className="ops-micro-label px-3 pb-2">{group.label}</p> : null}
@@ -202,7 +202,7 @@ export function DashboardSidebar({ onLogout }: SidebarProps) {
         </div>
       </div>
 
-      <div className="mt-6 space-y-3">
+      <div className="mt-6 shrink-0 space-y-3">
         {!isCollapsed ? (
           <div className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-xs leading-6 text-[var(--color-txt-sec)]">
             <p className="ops-micro-label">Logged In</p>

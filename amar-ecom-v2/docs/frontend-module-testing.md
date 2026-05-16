@@ -36,6 +36,14 @@ npm run dev
 4. Confirm batch action bars on orders and shipments still render and behave correctly after the shared styling update.
 5. Note separately that a dedicated responsive/layout cleanup is still pending for shell/content horizontal overflow; do not treat that as a regression in this phase unless a route becomes unusable.
 
+## Phase 14J Responsive Checks
+
+1. Open `/dashboard` at `1280px` and `1024px` widths and confirm there is no full-page horizontal scrollbar and no right-side dashboard cards are clipped.
+2. Open `/dashboard/orders` and confirm the page shell does not overflow horizontally while dense order tables still scroll only inside their own table region if needed.
+3. Open `/dashboard/inventory` and confirm the tab strip and stock/ledger areas stay inside the page shell, with any horizontal scrolling limited to the local control or table container.
+4. Open `/dashboard/woocommerce` or `/dashboard/courier-integrations` and confirm the sticky topbar, page header, tab strip, and warning cards stay within the viewport without cutting off the right edge.
+5. Confirm the sidebar remains usable at tablet widths and that the topbar search/actions shrink or wrap instead of forcing shell overflow.
+
 ## Create Product
 
 1. Open `http://localhost:3000/dashboard/products`

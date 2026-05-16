@@ -54,6 +54,12 @@ Status labels:
 - The invoice print page, activity logs, tasks, users, returns, and purchase-order flows are functionally stable but still somewhat lower parity than the highest-priority ops modules.
 - A dedicated responsive/layout cleanup is still pending, especially for shell/content horizontal overflow on narrower widths.
 
+## Phase 14J Responsive Layout Note
+
+- The dashboard shell now uses stricter `min-w-0`, `max-w-full`, and `overflow-x-hidden` containment across the root layout, sidebar, topbar, and main content wrappers.
+- Sidebar width is now treated as a proper non-shrinking column, while the main content column is explicitly allowed to shrink without pushing the page wider than the viewport.
+- Table-heavy pages may still use intentional internal horizontal scrolling inside the table container. This is expected for dense data views and is not considered a shell overflow regression.
+
 ## Present But Outside Requested List
 
 - `/dashboard/warehouses`

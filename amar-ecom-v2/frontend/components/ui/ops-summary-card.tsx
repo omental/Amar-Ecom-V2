@@ -29,12 +29,12 @@ export function OpsSummaryCard({
   tone = "default",
 }: OpsSummaryCardProps) {
   return (
-    <article className="card-base card-interactive p-5">
-      <div className="flex items-start justify-between gap-4">
+    <article className="card-base card-interactive min-w-0 p-5">
+      <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="min-w-0">
           {eyebrow ? <p className="ops-micro-label">{eyebrow}</p> : null}
-          <p className="mt-2 text-sm font-medium text-[var(--color-txt-sec)]">{label}</p>
-          <p className="mt-3 text-3xl font-semibold tracking-tight text-[var(--color-txt-pri)]">{value}</p>
+          <p className="mt-2 break-words text-sm font-medium text-[var(--color-txt-sec)]">{label}</p>
+          <p className="mt-3 break-words text-3xl font-semibold tracking-tight text-[var(--color-txt-pri)]">{value}</p>
           {helper ? <div className="mt-3 text-xs leading-6 text-[var(--color-txt-mut)]">{helper}</div> : null}
         </div>
 

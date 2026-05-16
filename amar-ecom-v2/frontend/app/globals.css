@@ -56,12 +56,16 @@
 
 html {
   background: var(--color-bg);
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   background: var(--color-bg);
   color: var(--color-txt-pri);
   font-family: var(--font-sans-stack);
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 a {
@@ -86,6 +90,9 @@ select {
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 24%),
     radial-gradient(circle at top right, rgba(148, 163, 184, 0.14), transparent 26%),
     linear-gradient(180deg, #f8fafc 0%, #eff4fb 100%);
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .card-base {

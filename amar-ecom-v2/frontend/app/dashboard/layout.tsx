@@ -57,13 +57,15 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="app-shell min-h-screen p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 lg:flex-row">
+    <div className="app-shell min-h-screen w-full overflow-x-hidden p-3 sm:p-5 lg:p-6">
+      <div className="mx-auto flex w-full max-w-[1600px] min-w-0 flex-col gap-4 lg:flex-row">
         <DashboardSidebar onLogout={handleLogout} />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="flex min-w-0 max-w-full flex-1 flex-col gap-4 overflow-x-hidden">
           <DashboardTopbar user={user} title={title} />
-          <main className="min-w-0 pb-6">{children}</main>
+          <main className="min-w-0 w-full max-w-full overflow-x-hidden pb-6">
+            <div className="min-w-0 w-full max-w-full">{children}</div>
+          </main>
         </div>
       </div>
     </div>

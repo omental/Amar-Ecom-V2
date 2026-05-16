@@ -410,6 +410,18 @@ Status:
 - badge language, page headers, loading states, error alerts, empty states, and batch action framing now align more closely with the v1-inspired ops system
 - a dedicated full responsive/layout cleanup is still intentionally pending, especially around shell/content horizontal overflow on narrower widths
 
+### Phase 14J
+
+- full responsive shell containment
+- sidebar/main layout overflow fix
+- topbar shrink/wrap safety
+- shared component min-width and internal scroll cleanup
+
+Status:
+- completed for the dashboard shell, topbar, sidebar, and shared ops/layout primitives
+- main cause of the overflow was flex children without `min-w-0`, sidebar/main shell wrappers that allowed content width to escape, and wide action/header/table wrappers forcing page-level horizontal growth
+- table-heavy routes may still use intentional internal horizontal scrolling inside the table region, but the full page shell should no longer require horizontal scrolling
+
 ## Highest-Priority Screens
 
 1. Global shell, sidebar, and topbar

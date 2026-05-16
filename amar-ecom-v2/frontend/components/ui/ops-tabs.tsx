@@ -13,8 +13,8 @@ export function OpsTabs({
   onChange: (id: string) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <div className="inline-flex min-w-full gap-2 rounded-[24px] border border-[var(--color-brd)] bg-white p-2 shadow-[var(--shadow-subtle)]">
+    <div className="min-w-0 w-full max-w-full overflow-x-auto">
+      <div className="inline-flex w-max min-w-full gap-2 rounded-[24px] border border-[var(--color-brd)] bg-white p-2 shadow-[var(--shadow-subtle)]">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTab;
           return (

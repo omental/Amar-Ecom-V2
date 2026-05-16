@@ -204,3 +204,12 @@ Notes:
 
 - Phase 14B does not add PDF generation or background printing
 - batch printing remains an operator-assist workflow only
+## Dashboard Shell Overflow
+
+- If dashboard pages appear clipped on the right or show a full-page horizontal scrollbar, first confirm the latest Phase `14J` layout changes are present.
+- Expected behavior after `14J`:
+  - the shell itself should not overflow horizontally
+  - sidebar stays contained as a non-shrinking column
+  - main content uses `min-w-0` and `max-w-full`
+  - dense tables may still scroll horizontally inside their own table container
+- If only a single table is wide, treat that as a local table-scroll case rather than a shell-layout regression.
