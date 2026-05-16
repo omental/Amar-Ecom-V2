@@ -132,6 +132,11 @@ async def send_shipment(
             request=request,
         )
     await commit_or_409(db, "Could not complete courier shipment send")
+    if result["status"] != "success":
+        raise HTTPException(
+            status_code=int(result.get("http_status", status.HTTP_400_BAD_REQUEST)),
+            detail=result["message"],
+        )
     return CourierSendShipmentResult(**result)
 
 
@@ -156,6 +161,11 @@ async def sync_shipment_external_status(
             request=request,
         )
     await commit_or_409(db, "Could not sync external courier status")
+    if result["status"] != "success":
+        raise HTTPException(
+            status_code=int(result.get("http_status", status.HTTP_400_BAD_REQUEST)),
+            detail=result["message"],
+        )
     return CourierStatusSyncResult(**result)
 
 

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.exc import InterfaceError, ProgrammingError
@@ -16,6 +17,7 @@ from app.core.database import engine
 from app.main import app
 from app.models.courier_integration import CourierApiLog, CourierProviderSetting
 from app.models.woocommerce import WooCommerceSetting
+from app.services.courier_adapters.steadfast import SteadfastCourierAdapter
 from app.services import woocommerce_service
 
 
@@ -851,6 +853,366 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
             filtered_logs_payload = filtered_logs_response.json()
             assert filtered_logs_payload
             assert all(log["action"] == "status_sync" for log in filtered_logs_payload)
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["courier_provider_settings", "courier_api_logs", "shipments.external_provider"]):
+            pytest.skip("Apply the latest courier integration migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_steadfast_courier_adapter_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = auth_headers()
+
+    def create_shipment(client: TestClient) -> dict:
+        category_response = client.post(
+            "/api/v1/categories",
+            headers=headers,
+            json={
+                "name": f"Steadfast Category {uuid.uuid4().hex[:8]}",
+                "slug": f"steadfast-category-{uuid.uuid4().hex[:8]}",
+                "description": "Steadfast shipment category",
+            },
+        )
+        assert category_response.status_code == 201, category_response.text
+        category_id = category_response.json()["id"]
+
+        brand_response = client.post(
+            "/api/v1/brands",
+            headers=headers,
+            json={
+                "name": f"Steadfast Brand {uuid.uuid4().hex[:8]}",
+                "slug": f"steadfast-brand-{uuid.uuid4().hex[:8]}",
+                "description": "Steadfast shipment brand",
+            },
+        )
+        assert brand_response.status_code == 201, brand_response.text
+        brand_id = brand_response.json()["id"]
+
+        product_response = client.post(
+            "/api/v1/products",
+            headers=headers,
+            json={
+                "name": "Steadfast Payload Product",
+                "slug": f"steadfast-payload-product-{uuid.uuid4().hex[:8]}",
+                "sku": f"STDF-{uuid.uuid4().hex[:8]}",
+                "description": "Shipment payload test product",
+                "category_id": category_id,
+                "brand_id": brand_id,
+                "price": 300.00,
+                "cost_price": 200.00,
+                "image_url": None,
+                "status": "active",
+                "variants": [],
+            },
+        )
+        assert product_response.status_code == 201, product_response.text
+        product = product_response.json()
+
+        customer_response = client.post(
+            "/api/v1/customers",
+            headers=headers,
+            json={
+                "name": "Steadfast Customer",
+                "phone": "01711112222",
+                "email": unique_email(),
+                "address": "Dhaka",
+                "city": "Dhaka",
+                "customer_type": "retail",
+            },
+        )
+        assert customer_response.status_code == 201, customer_response.text
+        customer = customer_response.json()
+
+        warehouse_response = client.post(
+            "/api/v1/warehouses",
+            headers=headers,
+            json={
+                "name": f"Steadfast Warehouse {uuid.uuid4().hex[:8]}",
+                "code": f"STW-{uuid.uuid4().hex[:8]}",
+                "address": "Dhaka",
+                "is_active": True,
+            },
+        )
+        assert warehouse_response.status_code == 201, warehouse_response.text
+        warehouse = warehouse_response.json()
+
+        inventory_response = client.post(
+            "/api/v1/inventory",
+            headers=headers,
+            json={
+                "product_id": product["id"],
+                "variant_id": None,
+                "warehouse_id": warehouse["id"],
+                "quantity": 15,
+                "low_stock_threshold": 2,
+            },
+        )
+        assert inventory_response.status_code == 201, inventory_response.text
+
+        order_response = client.post(
+            "/api/v1/orders",
+            headers=headers,
+            json={
+                "order_number": f"ORD-STDF-{uuid.uuid4().hex[:8]}",
+                "customer_id": customer["id"],
+                "warehouse_id": warehouse["id"],
+                "customer_phone": "01711112222",
+                "shipping_address": "House 10, Road 12, Dhaka",
+                "notes": "Steadfast courier send",
+                "status": "confirmed",
+                "payment_status": "paid",
+                "source": "manual",
+                "subtotal": 300,
+                "discount": 0,
+                "delivery_charge": 60,
+                "total": 360,
+                "items": [
+                    {
+                        "product_id": product["id"],
+                        "variant_id": None,
+                        "product_name": product["name"],
+                        "sku": product["sku"],
+                        "quantity": 1,
+                        "unit_price": 300,
+                        "total_price": 300,
+                    }
+                ],
+            },
+        )
+        assert order_response.status_code == 201, order_response.text
+        order = order_response.json()
+
+        courier_response = client.post(
+            "/api/v1/couriers",
+            headers=headers,
+            json={
+                "name": f"Steadfast Courier {uuid.uuid4().hex[:8]}",
+                "code": f"STDF-{uuid.uuid4().hex[:6]}",
+                "contact_phone": "01700000000",
+                "website": "https://steadfast.example.com",
+                "is_active": True,
+            },
+        )
+        assert courier_response.status_code == 201, courier_response.text
+        courier = courier_response.json()
+
+        shipment_response = client.post(
+            f"/api/v1/orders/{order['id']}/create-shipment",
+            headers=headers,
+            json={
+                "courier_id": courier["id"],
+                "tracking_number": None,
+                "delivery_charge": 60,
+                "courier_charge": 40,
+                "cod_amount": 360,
+                "collected_amount": 0,
+                "notes": "Steadfast outbound shipment",
+                "order_status": "ready_to_ship",
+            },
+        )
+        assert shipment_response.status_code == 201, shipment_response.text
+        return shipment_response.json()
+
+    state = {"post_mode": "success", "get_mode": "success"}
+
+    async def fake_request(self, method: str, path: str, *, json_payload: dict | None = None):
+        request = httpx.Request(method, f"https://steadfast.test{path}")
+        if method == "POST":
+            if state["post_mode"] == "failure":
+                return httpx.Response(401, json={"message": "Invalid credentials"}, request=request)
+            return httpx.Response(
+                200,
+                json={
+                    "consignment": {
+                        "consignment_id": "CONS-200",
+                        "tracking_code": "TRK-200",
+                        "status": "submitted",
+                        "message": "Steadfast consignment created.",
+                    },
+                    "token": "secret-token",
+                    "Authorization": "Basic abc123",
+                    "api_secret": "should-not-leak",
+                },
+                request=request,
+            )
+        if state["get_mode"] == "failure":
+            return httpx.Response(404, json={"message": "Not found"}, request=request)
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "consignment_id": "CONS-200",
+                    "tracking_code": "TRK-200",
+                    "delivery_status": "delivered",
+                    "message": "Shipment delivered.",
+                }
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(SteadfastCourierAdapter, "_request", fake_request)
+
+    try:
+        with TestClient(app) as client:
+            settings_without_credentials_response = client.patch(
+                "/api/v1/courier-integrations/providers/steadfast/settings",
+                headers=headers,
+                json={
+                    "display_name": "Steadfast Production",
+                    "base_url": "https://steadfast.example.com/api/v1",
+                    "api_key": "",
+                    "api_secret": "",
+                    "merchant_id": "",
+                    "is_active": True,
+                    "is_sandbox": True,
+                },
+            )
+            assert settings_without_credentials_response.status_code == 200, settings_without_credentials_response.text
+
+            missing_credentials_test_response = client.post(
+                "/api/v1/courier-integrations/providers/steadfast/test-connection",
+                headers=headers,
+                json={},
+            )
+            assert missing_credentials_test_response.status_code == 200, missing_credentials_test_response.text
+            missing_credentials_payload = missing_credentials_test_response.json()
+            assert missing_credentials_payload["success"] is False
+            assert "credentials are incomplete" in missing_credentials_payload["message"].lower()
+
+            settings_response = client.patch(
+                "/api/v1/courier-integrations/providers/steadfast/settings",
+                headers=headers,
+                json={
+                    "display_name": "Steadfast Production",
+                    "base_url": "https://steadfast.example.com/api/v1",
+                    "api_key": "api-key-live",
+                    "api_secret": "api-secret-live",
+                    "merchant_id": "merchant-live",
+                    "is_active": True,
+                    "is_sandbox": True,
+                },
+            )
+            assert settings_response.status_code == 200, settings_response.text
+            settings_payload = settings_response.json()
+            assert settings_payload["has_api_key"] is True
+            assert settings_payload["has_api_secret"] is True
+            assert settings_payload["api_key_masked"]
+            assert "api-key-live" not in settings_response.text
+            assert "api-secret-live" not in settings_response.text
+
+            configuration_test_response = client.post(
+                "/api/v1/courier-integrations/providers/steadfast/test-connection",
+                headers=headers,
+                json={},
+            )
+            assert configuration_test_response.status_code == 200, configuration_test_response.text
+            configuration_test_payload = configuration_test_response.json()
+            assert configuration_test_payload["success"] is True
+            assert "configuration check passed" in configuration_test_payload["message"].lower()
+
+            shipment = create_shipment(client)
+            clear_order_contact_response = client.patch(
+                f"/api/v1/orders/{shipment['order_id']}",
+                headers=headers,
+                json={
+                    "customer_phone": None,
+                    "shipping_address": None,
+                },
+            )
+            assert clear_order_contact_response.status_code == 200, clear_order_contact_response.text
+            missing_fields_response = client.patch(
+                f"/api/v1/shipments/{shipment['id']}",
+                headers=headers,
+                json={
+                    "recipient_phone": None,
+                    "delivery_address": None,
+                },
+            )
+            assert missing_fields_response.status_code == 200, missing_fields_response.text
+
+            send_missing_fields_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment['id']}/send",
+                headers=headers,
+                json={"provider": "steadfast"},
+            )
+            assert send_missing_fields_response.status_code == 400, send_missing_fields_response.text
+            assert "required steadfast fields" in send_missing_fields_response.json()["detail"].lower()
+
+            restore_shipment_response = client.patch(
+                f"/api/v1/shipments/{shipment['id']}",
+                headers=headers,
+                json={
+                    "recipient_name": "Steadfast Customer",
+                    "recipient_phone": "01711112222",
+                    "delivery_address": "House 10, Road 12, Dhaka",
+                },
+            )
+            assert restore_shipment_response.status_code == 200, restore_shipment_response.text
+            restore_order_contact_response = client.patch(
+                f"/api/v1/orders/{shipment['order_id']}",
+                headers=headers,
+                json={
+                    "customer_phone": "01711112222",
+                    "shipping_address": "House 10, Road 12, Dhaka",
+                },
+            )
+            assert restore_order_contact_response.status_code == 200, restore_order_contact_response.text
+
+            send_success_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment['id']}/send",
+                headers=headers,
+                json={"provider": "steadfast"},
+            )
+            assert send_success_response.status_code == 200, send_success_response.text
+            send_success_payload = send_success_response.json()
+            assert send_success_payload["external_id"] == "CONS-200"
+            assert send_success_payload["external_tracking_number"] == "TRK-200"
+            assert send_success_payload["external_status"] == "submitted"
+
+            shipment_detail_response = client.get(f"/api/v1/shipments/{shipment['id']}", headers=headers)
+            assert shipment_detail_response.status_code == 200, shipment_detail_response.text
+            shipment_detail_payload = shipment_detail_response.json()
+            assert shipment_detail_payload["external_provider"] == "steadfast"
+            assert shipment_detail_payload["external_consignment_id"] == "CONS-200"
+            assert shipment_detail_payload["external_tracking_number"] == "TRK-200"
+            assert shipment_detail_payload["external_status"] == "submitted"
+            assert shipment_detail_payload["sent_to_courier_at"] is not None
+
+            sync_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment['id']}/sync-status",
+                headers=headers,
+                json={},
+            )
+            assert sync_response.status_code == 200, sync_response.text
+            sync_payload = sync_response.json()
+            assert sync_payload["external_status"] == "delivered"
+            assert sync_payload["internal_status"] == "delivered"
+
+            state["post_mode"] = "failure"
+            send_failure_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment['id']}/send",
+                headers=headers,
+                json={"provider": "steadfast"},
+            )
+            assert send_failure_response.status_code == 502, send_failure_response.text
+            assert "credentials were rejected" in send_failure_response.json()["detail"].lower()
+
+            logs_response = client.get(
+                "/api/v1/courier-integrations/logs?provider=steadfast&action=send_shipment",
+                headers=headers,
+            )
+            assert logs_response.status_code == 200, logs_response.text
+            logs_payload = logs_response.json()
+            assert any(log["status"] == "success" for log in logs_payload)
+            assert any(log["status"] == "failed" for log in logs_payload)
+            assert "api-key-live" not in logs_response.text
+            assert "api-secret-live" not in logs_response.text
+            assert "secret-token" not in logs_response.text
+            assert "Basic abc123" not in logs_response.text
+            assert "should-not-leak" not in logs_response.text
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["courier_provider_settings", "courier_api_logs", "shipments.external_provider"]):
             pytest.skip("Apply the latest courier integration migration before running this test.")

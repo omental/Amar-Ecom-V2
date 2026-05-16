@@ -11,7 +11,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
-import { formatCurrency, formatDate, formatLabel } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 
 type OrderOption = {
   id: string;
@@ -532,7 +532,7 @@ export default function ShipmentDetailPage() {
                 External status: <span className="font-semibold text-slate-950">{shipment.external_status ? formatLabel(shipment.external_status) : "Not synced"}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                External synced: <span className="font-semibold text-slate-950">{shipment.external_synced_at ? formatDate(shipment.external_synced_at) : "Never"}</span>
+                External synced: <span className="font-semibold text-slate-950">{shipment.external_synced_at ? formatDateTime(shipment.external_synced_at) : "Never"}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Recipient phone: <span className="font-semibold text-slate-950">{shipment.recipient_phone || "No phone"}</span>

@@ -6,6 +6,12 @@ from fastapi import HTTPException, status
 from app.services.courier_adapters.base import AdapterResult, BaseCourierAdapter
 
 
+# TODO: Confirm the exact production Steadfast endpoint paths before go-live.
+STEADFAST_CREATE_ORDER_PATH = "/create_order"
+STEADFAST_STATUS_BY_CONSIGNMENT_PATH = "/status_by_cid/{lookup_value}"
+STEADFAST_STATUS_BY_TRACKING_PATH = "/status_by_trackingcode/{lookup_value}"
+
+
 class SteadfastCourierAdapter(BaseCourierAdapter):
     def _build_base_url(self) -> str:
         base_url = (self.setting.base_url or "").strip().rstrip("/")
@@ -16,10 +22,31 @@ class SteadfastCourierAdapter(BaseCourierAdapter):
             )
         return base_url
 
-    def _build_headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
+    def _require_credentials(self) -> None:
         api_key = getattr(self.setting, "_decrypted_api_key", None)
         api_secret = getattr(self.setting, "_decrypted_api_secret", None)
+        if api_key and api_secret:
+            return
+
+        username = getattr(self.setting, "_decrypted_username", None)
+        password = getattr(self.setting, "_decrypted_password", None)
+        if username and password:
+            return
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Steadfast credentials are incomplete. Save an API key and API secret, "
+                "or a username and password, before testing or sending shipments."
+            ),
+        )
+
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json"}
+        self._require_credentials()
+        api_key = getattr(self.setting, "_decrypted_api_key", None)
+        api_secret = getattr(self.setting, "_decrypted_api_secret", None)
+        merchant_id = getattr(self.setting, "_decrypted_merchant_id", None)
         username = getattr(self.setting, "_decrypted_username", None)
         password = getattr(self.setting, "_decrypted_password", None)
 
@@ -27,6 +54,8 @@ class SteadfastCourierAdapter(BaseCourierAdapter):
             headers["Api-Key"] = api_key
         if api_secret:
             headers["Secret-Key"] = api_secret
+        if merchant_id:
+            headers["Merchant-Id"] = merchant_id
         if username and password:
             headers["Username"] = username
             headers["Password"] = password
@@ -67,53 +96,217 @@ class SteadfastCourierAdapter(BaseCourierAdapter):
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=fallback_message)
         return payload
 
+    @staticmethod
+    def _extract_payload_container(payload: dict[str, Any]) -> dict[str, Any]:
+        for key in ("data", "result", "order", "consignment"):
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                return nested
+        return payload
+
+    @staticmethod
+    def _normalize_status(value: Any) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @classmethod
+    def _extract_send_result_fields(cls, payload: dict[str, Any]) -> tuple[str | None, str | None, str | None, str | None]:
+        container = cls._extract_payload_container(payload)
+        external_id = (
+            container.get("consignment_id")
+            or container.get("consignmentId")
+            or container.get("id")
+            or payload.get("consignment_id")
+            or payload.get("consignmentId")
+            or payload.get("id")
+        )
+        tracking_number = (
+            container.get("tracking_code")
+            or container.get("tracking_number")
+            or container.get("trackingCode")
+            or payload.get("tracking_code")
+            or payload.get("tracking_number")
+            or payload.get("trackingCode")
+        )
+        external_status = cls._normalize_status(
+            container.get("status")
+            or container.get("delivery_status")
+            or container.get("deliveryStatus")
+            or payload.get("status")
+            or payload.get("delivery_status")
+            or payload.get("deliveryStatus")
+            or "submitted"
+        )
+        message = (
+            container.get("message")
+            or payload.get("message")
+            or payload.get("msg")
+            or payload.get("detail")
+            or "Shipment sent to Steadfast successfully."
+        )
+        return (
+            str(external_id) if external_id else None,
+            str(tracking_number) if tracking_number else None,
+            external_status,
+            str(message),
+        )
+
+    @classmethod
+    def _extract_status_fields(
+        cls,
+        payload: dict[str, Any],
+        *,
+        fallback_tracking_number: str | None,
+        fallback_external_id: str | None,
+    ) -> tuple[str | None, str | None, str | None, str]:
+        container = cls._extract_payload_container(payload)
+        external_id = (
+            container.get("consignment_id")
+            or container.get("consignmentId")
+            or container.get("id")
+            or fallback_external_id
+        )
+        tracking_number = (
+            container.get("tracking_code")
+            or container.get("tracking_number")
+            or container.get("trackingCode")
+            or payload.get("tracking_code")
+            or payload.get("tracking_number")
+            or payload.get("trackingCode")
+            or fallback_tracking_number
+        )
+        external_status = cls._normalize_status(
+            container.get("status")
+            or container.get("delivery_status")
+            or container.get("deliveryStatus")
+            or payload.get("status")
+            or payload.get("delivery_status")
+            or payload.get("deliveryStatus")
+        )
+        message = (
+            container.get("message")
+            or payload.get("message")
+            or payload.get("msg")
+            or "Steadfast status synced successfully."
+        )
+        return (
+            str(external_id) if external_id else None,
+            str(tracking_number) if tracking_number else None,
+            external_status,
+            str(message),
+        )
+
+    def _build_create_payload(self, shipment: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        recipient_name = str(payload.get("recipient_name") or "").strip()
+        recipient_phone = str(payload.get("recipient_phone") or "").strip()
+        delivery_address = str(payload.get("delivery_address") or "").strip()
+        invoice = str(payload.get("order_number") or payload.get("shipment_number") or "").strip()
+
+        missing_fields: list[str] = []
+        if not recipient_name:
+            missing_fields.append("recipient name")
+        if not recipient_phone:
+            missing_fields.append("recipient phone")
+        if not delivery_address:
+            missing_fields.append("delivery address")
+        if not invoice:
+            missing_fields.append("invoice/order number")
+        if missing_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Shipment is missing required Steadfast fields: {', '.join(missing_fields)}.",
+            )
+
+        item_summary = payload.get("item_summary")
+        safe_payload: dict[str, Any] = {
+            "invoice": invoice,
+            "recipient_name": recipient_name,
+            "recipient_phone": recipient_phone,
+            "recipient_address": delivery_address,
+            "cod_amount": str(payload.get("cod_amount") or "0"),
+        }
+
+        if item_summary:
+            safe_payload["product_name"] = str(item_summary)
+        if payload.get("notes"):
+            safe_payload["note"] = str(payload["notes"])
+        if payload.get("delivery_charge") not in {None, ""}:
+            safe_payload["delivery_charge"] = str(payload["delivery_charge"])
+        if payload.get("weight"):
+            safe_payload["weight"] = str(payload["weight"])
+        return safe_payload
+
+    @staticmethod
+    def _status_path(*, external_consignment_id: str | None, tracking_number: str | None) -> tuple[str, str]:
+        if external_consignment_id:
+            return (
+                STEADFAST_STATUS_BY_CONSIGNMENT_PATH.format(lookup_value=external_consignment_id),
+                external_consignment_id,
+            )
+        if tracking_number:
+            return (
+                STEADFAST_STATUS_BY_TRACKING_PATH.format(lookup_value=tracking_number),
+                tracking_number,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Shipment is missing an external consignment ID or tracking number for Steadfast status sync.",
+        )
+
     async def test_connection(self) -> AdapterResult:
-        # TODO: Confirm the production Steadfast health-check endpoint before live deployment.
-        response = await self._request("GET", "/status")
-        if response.status_code in {401, 403}:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Courier provider credentials were rejected. Check the saved API credentials.",
-            )
-        if response.status_code >= 400:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Courier provider returned status {response.status_code} during connection test.",
-            )
-        payload = self._parse_json(response, "Courier provider returned an unreadable connection-test response.")
+        self._build_base_url()
+        self._require_credentials()
         return AdapterResult(
             success=True,
             status="success",
-            message="Courier provider connection succeeded.",
-            request_snapshot={"method": "GET", "path": "/status"},
-            response_snapshot=payload,
+            message=(
+                "Steadfast configuration check passed. Base URL and credentials are present, "
+                "but the production-safe test endpoint still needs confirmation before live deployment."
+            ),
+            request_snapshot={"mode": "configuration_check_only", "provider": "steadfast"},
+            response_snapshot={
+                "base_url_configured": True,
+                "credentials_present": True,
+                "sandbox_mode": bool(self.setting.is_sandbox),
+            },
         )
 
     async def send_shipment(self, shipment: Any, payload: dict[str, Any]) -> AdapterResult:
-        # TODO: Confirm the production Steadfast consignment-create endpoint and response keys before live deployment.
-        response = await self._request("POST", "/orders", json_payload=payload)
+        request_payload = self._build_create_payload(shipment, payload)
+        response = await self._request("POST", STEADFAST_CREATE_ORDER_PATH, json_payload=request_payload)
         if response.status_code in {401, 403}:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Courier provider credentials were rejected while sending the shipment.",
+                detail="Steadfast credentials were rejected while sending the shipment.",
             )
         if response.status_code >= 400:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Courier provider returned status {response.status_code} while sending the shipment.",
+                detail=f"Steadfast returned status {response.status_code} while sending the shipment.",
             )
-        response_payload = self._parse_json(response, "Courier provider returned an unreadable shipment-send response.")
-        external_id = response_payload.get("consignment_id") or response_payload.get("id") or response_payload.get("tracking_code")
-        tracking_number = response_payload.get("tracking_code") or response_payload.get("tracking_number")
-        external_status = response_payload.get("status") or "submitted"
+        response_payload = self._parse_json(response, "Steadfast returned a non-JSON shipment-send response.")
+        external_id, tracking_number, external_status, message = self._extract_send_result_fields(response_payload)
+        if not external_id and not tracking_number:
+            return AdapterResult(
+                success=False,
+                status="failed",
+                message=(
+                    "Steadfast accepted the request but did not return a consignment ID or tracking number. "
+                    "The shipment was not marked as sent locally."
+                ),
+                request_snapshot=request_payload,
+                response_snapshot=response_payload,
+            )
         return AdapterResult(
             success=True,
             status="success",
-            message="Shipment sent to courier provider successfully.",
-            external_id=str(external_id) if external_id else None,
-            tracking_number=str(tracking_number) if tracking_number else None,
-            external_status=str(external_status) if external_status else None,
-            request_snapshot=payload,
+            message=message,
+            external_id=external_id,
+            tracking_number=tracking_number,
+            external_status=external_status,
+            request_snapshot=request_payload,
             response_snapshot=response_payload,
         )
 
@@ -124,40 +317,39 @@ class SteadfastCourierAdapter(BaseCourierAdapter):
         external_consignment_id: str | None,
         tracking_number: str | None,
     ) -> AdapterResult:
-        lookup_value = external_consignment_id or tracking_number
-        if not lookup_value:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Shipment is missing an external consignment ID or tracking number for courier status sync.",
-            )
-
-        # TODO: Confirm the production Steadfast status endpoint and query shape before live deployment.
-        response = await self._request("GET", f"/orders/{lookup_value}")
+        path, lookup_value = self._status_path(
+            external_consignment_id=external_consignment_id,
+            tracking_number=tracking_number,
+        )
+        response = await self._request("GET", path)
         if response.status_code in {401, 403}:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Courier provider credentials were rejected while syncing shipment status.",
+                detail="Steadfast credentials were rejected while syncing shipment status.",
             )
         if response.status_code == 404:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Courier provider could not find that shipment reference.",
+                detail="Steadfast could not find that shipment reference.",
             )
         if response.status_code >= 400:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Courier provider returned status {response.status_code} while syncing shipment status.",
+                detail=f"Steadfast returned status {response.status_code} while syncing shipment status.",
             )
-        response_payload = self._parse_json(response, "Courier provider returned an unreadable status-sync response.")
-        external_status = response_payload.get("status") or response_payload.get("delivery_status")
-        tracking_value = response_payload.get("tracking_code") or response_payload.get("tracking_number") or tracking_number
+        response_payload = self._parse_json(response, "Steadfast returned a non-JSON status-sync response.")
+        external_id, tracking_value, external_status, message = self._extract_status_fields(
+            response_payload,
+            fallback_tracking_number=tracking_number,
+            fallback_external_id=external_consignment_id or lookup_value,
+        )
         return AdapterResult(
             success=True,
             status="success",
-            message="Courier provider status synced successfully.",
-            external_id=str(external_consignment_id or response_payload.get("consignment_id") or lookup_value),
-            tracking_number=str(tracking_value) if tracking_value else None,
-            external_status=str(external_status) if external_status else None,
-            request_snapshot={"lookup_value": lookup_value},
+            message=message,
+            external_id=external_id,
+            tracking_number=tracking_value,
+            external_status=external_status,
+            request_snapshot={"lookup_value": lookup_value, "path": path},
             response_snapshot=response_payload,
         )

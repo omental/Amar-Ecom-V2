@@ -65,6 +65,7 @@ type ShipmentRow = {
   status: string;
   recipient_name: string | null;
   recipient_phone: string | null;
+  delivery_address: string | null;
   tracking_number: string | null;
   external_provider: string | null;
   external_consignment_id: string | null;
@@ -103,6 +104,8 @@ type SendShipmentResult = {
   external_status: string | null;
   sent_at: string | null;
   message: string;
+  request_snapshot?: unknown;
+  response_snapshot?: unknown;
 };
 
 type StatusSyncResult = {
@@ -115,6 +118,8 @@ type StatusSyncResult = {
   internal_status: string | null;
   synced_at: string | null;
   message: string;
+  request_snapshot?: unknown;
+  response_snapshot?: unknown;
 };
 
 type LogFilters = {
@@ -189,6 +194,7 @@ export default function CourierIntegrationsPage() {
     () => providers.find((provider) => provider.provider === selectedProvider) || providerSettings,
     [providerSettings, providers, selectedProvider],
   );
+  const isSteadfastSelected = selectedProvider === "steadfast";
 
   async function loadProviders(nextProvider = selectedProvider) {
     const providerRows = await api.get<CourierProviderSetting[]>("/courier-integrations/providers");
@@ -467,6 +473,12 @@ export default function CourierIntegrationsPage() {
               </label>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                 Credentials are stored server-side and never displayed after saving.
+                {isSteadfastSelected ? (
+                  <>
+                    <p className="mt-2 text-slate-700">Confirm endpoint/base URL with Steadfast before production.</p>
+                    <p className="mt-1 text-slate-700">Sandbox mode only changes labeling unless your base URL points to sandbox.</p>
+                  </>
+                ) : null}
                 {selectedProviderInfo?.encryption_warning ? (
                   <p className="mt-2 text-amber-700">{selectedProviderInfo.encryption_warning}</p>
                 ) : null}
@@ -631,6 +643,12 @@ export default function CourierIntegrationsPage() {
               </label>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
                 This sends shipment data to the selected courier provider. It does not change WooCommerce or local inventory.
+                {isSteadfastSelected ? (
+                  <div className="mt-3 space-y-1 text-xs text-amber-900">
+                    <p>Required before Steadfast send: recipient name, recipient phone, delivery address, and an order or invoice number.</p>
+                    <p>COD amount is included from the shipment. Keep it accurate before sending.</p>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -668,6 +686,7 @@ export default function CourierIntegrationsPage() {
                         <td className="px-4 py-3 text-slate-700">
                           {shipment.recipient_name || "No recipient"}
                           <p className="mt-1 text-xs text-slate-500">{shipment.recipient_phone || "No phone"}</p>
+                          {!shipment.delivery_address ? <p className="mt-1 text-xs text-amber-700">Missing delivery address</p> : null}
                         </td>
                         <td className="px-4 py-3"><StatusBadge status={shipment.status} /></td>
                         <td className="px-4 py-3">
@@ -714,13 +733,43 @@ export default function CourierIntegrationsPage() {
 
           {lastSendResult ? (
             <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm text-slate-700 shadow-[var(--shadow-soft)]">
-              Latest send result: {lastSendResult.message}
+              <p className="font-semibold text-slate-950">Latest send result</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Provider: <span className="font-semibold text-slate-950">{formatLabel(lastSendResult.provider)}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Consignment ID: <span className="font-semibold text-slate-950">{lastSendResult.external_id || "Not returned"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Tracking: <span className="font-semibold text-slate-950">{lastSendResult.external_tracking_number || "Not returned"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  External status: <span className="font-semibold text-slate-950">{lastSendResult.external_status ? formatLabel(lastSendResult.external_status) : "Not returned"}</span>
+                </div>
+              </div>
+              <p className="mt-3 text-slate-700">{lastSendResult.message}</p>
             </div>
           ) : null}
 
           {lastSyncResult ? (
             <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm text-slate-700 shadow-[var(--shadow-soft)]">
-              Latest sync result: {lastSyncResult.message}
+              <p className="font-semibold text-slate-950">Latest sync result</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Provider: <span className="font-semibold text-slate-950">{formatLabel(lastSyncResult.provider)}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  External ID: <span className="font-semibold text-slate-950">{lastSyncResult.external_id || "Not available"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Tracking: <span className="font-semibold text-slate-950">{lastSyncResult.external_tracking_number || "Not available"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  External status: <span className="font-semibold text-slate-950">{lastSyncResult.external_status ? formatLabel(lastSyncResult.external_status) : "Not available"}</span>
+                </div>
+              </div>
+              <p className="mt-3 text-slate-700">{lastSyncResult.message}</p>
             </div>
           ) : null}
         </div>

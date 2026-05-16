@@ -2304,6 +2304,16 @@ Phase 13A adds a safe external courier integration foundation:
 - no background worker is included yet
 - Steadfast adapter structure is conservative and still needs endpoint confirmation before production
 
+Phase 13B completes the Steadfast adapter into a production-shaped manual integration:
+
+- Steadfast uses the saved `base_url` plus fixed endpoint-path constants in the adapter
+- sandbox mode is labeling only unless the configured `base_url` points to a sandbox environment
+- connection test currently performs a configuration check rather than a live remote probe when a safe test endpoint is not confirmed
+- send-shipment validates recipient name, recipient phone, delivery address, and invoice or order number before any API call
+- successful responses must return a consignment id or tracking number before the local shipment is marked as sent
+- status sync uses external consignment id first and falls back to tracking number
+- request and response snapshots are sanitized before storage
+
 Supported provider keys:
 
 - `manual`
@@ -2374,6 +2384,7 @@ Invoke-RestMethod `
 Expected result:
 
 - returns clean `success`, `failed`, or `skipped` messaging
+- for Steadfast, the current response may be a configuration-check message instead of a live remote probe result until the production-safe test endpoint is confirmed
 - writes a `courier_api_logs` row with `action = connection_test`
 
 ### Send Shipment To Provider
@@ -2394,6 +2405,8 @@ Invoke-RestMethod `
 Expected result:
 
 - shipment external metadata updates only on successful provider submission
+- if recipient name, phone, delivery address, or invoice/order number is missing, the API returns a clean validation error before any remote request
+- if Steadfast returns success without a consignment id or tracking number, the local shipment is not marked as sent
 - a shipment event is created
 - a `courier_api_logs` row is created with `action = send_shipment`
 
@@ -2413,6 +2426,8 @@ Expected result:
 - external status and sync time update safely
 - safe status mapping may update local shipment status when the remote state clearly matches
 - no destructive shipment, order, or inventory mutation occurs
+- Steadfast `delivered` can safely map to internal `delivered`
+- cancelled, failed, or returned states remain conservative and do not destructively rewrite unrelated local data
 
 ### Filter Courier API Logs
 

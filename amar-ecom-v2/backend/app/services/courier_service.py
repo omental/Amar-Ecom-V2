@@ -35,10 +35,12 @@ SENSITIVE_KEYS = {
     "api_key",
     "api_secret",
     "merchant_id",
+    "merchant_secret",
     "password",
     "token",
     "authorization",
     "authorization_header",
+    "basic_auth",
     "headers",
     "secret",
 }
@@ -283,26 +285,40 @@ async def test_provider_connection(
     current_user: User,
 ) -> dict[str, Any]:
     setting = await get_provider_setting(db, provider, create_if_missing=True)
-    adapter = _get_adapter(setting)
-    result = await adapter.test_connection()
     tested_at = _now()
     setting.last_tested_at = tested_at
-    setting.last_test_success = result.success
-    setting.last_test_message = result.message
-    await _create_api_log(
-        db,
-        provider=setting.provider,
-        action="connection_test",
-        status_value=result.status,
-        message=result.message,
-        request_snapshot=result.request_snapshot,
-        response_snapshot=result.response_snapshot,
-        created_by_id=current_user.id,
-    )
+    try:
+        adapter = _get_adapter(setting)
+        result = await adapter.test_connection()
+        setting.last_test_success = result.success
+        setting.last_test_message = result.message
+        await _create_api_log(
+            db,
+            provider=setting.provider,
+            action="connection_test",
+            status_value=result.status,
+            message=result.message,
+            request_snapshot=result.request_snapshot,
+            response_snapshot=result.response_snapshot,
+            created_by_id=current_user.id,
+        )
+    except HTTPException as exc:
+        setting.last_test_success = False
+        setting.last_test_message = str(exc.detail)
+        await _create_api_log(
+            db,
+            provider=setting.provider,
+            action="connection_test",
+            status_value="failed",
+            message=str(exc.detail),
+            response_snapshot={"detail": str(exc.detail)},
+            created_by_id=current_user.id,
+        )
+        result = None
     return {
         "provider": setting.provider,
-        "success": result.success,
-        "message": result.message,
+        "success": result.success if result else False,
+        "message": result.message if result else setting.last_test_message,
         "tested_at": tested_at,
     }
 
@@ -312,6 +328,7 @@ async def _get_shipment_for_integration(db: AsyncSession, shipment_id) -> Shipme
         select(Shipment)
         .options(
             selectinload(Shipment.order).selectinload(Order.customer),
+            selectinload(Shipment.order).selectinload(Order.items),
             selectinload(Shipment.courier),
             selectinload(Shipment.events),
         )
@@ -326,6 +343,14 @@ async def _get_shipment_for_integration(db: AsyncSession, shipment_id) -> Shipme
 def _build_send_payload(shipment: Shipment) -> dict[str, Any]:
     order = shipment.order
     customer = order.customer if order else None
+    order_items = list(order.items) if order and order.items else []
+    item_summary = ", ".join(
+        str(item.product_name or item.sku or "Item").strip()
+        for item in order_items[:5]
+        if str(item.product_name or item.sku or "").strip()
+    ) or None
+    if item_summary and len(order_items) > 5:
+        item_summary = f"{item_summary}, +{len(order_items) - 5} more"
     return {
         "shipment_number": shipment.shipment_number,
         "order_number": order.order_number if order else None,
@@ -337,6 +362,9 @@ def _build_send_payload(shipment: Shipment) -> dict[str, Any]:
         "courier_charge": str(shipment.courier_charge),
         "tracking_number": shipment.tracking_number,
         "notes": shipment.notes,
+        "item_summary": item_summary,
+        "item_count": len(order_items),
+        "weight": None,
     }
 
 
@@ -349,10 +377,57 @@ async def send_shipment_to_provider(
     shipment = await _get_shipment_for_integration(db, shipment_id)
     setting = await get_provider_setting(db, provider, create_if_missing=True)
     if not setting.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Courier provider is inactive.")
+        await _create_api_log(
+            db,
+            provider=setting.provider,
+            action="send_shipment",
+            status_value="failed",
+            shipment_id=shipment.id,
+            message="Courier provider is inactive.",
+            created_by_id=current_user.id,
+        )
+        return {
+            "status": "failed",
+            "provider": setting.provider,
+            "shipment_id": shipment.id,
+            "external_id": shipment.external_consignment_id,
+            "external_tracking_number": shipment.external_tracking_number,
+            "external_status": shipment.external_status,
+            "sent_at": shipment.sent_to_courier_at,
+            "message": "Courier provider is inactive.",
+            "request_snapshot": None,
+            "response_snapshot": None,
+            "http_status": status.HTTP_400_BAD_REQUEST,
+        }
     adapter = _get_adapter(setting)
     payload = _build_send_payload(shipment)
-    result = await adapter.send_shipment(shipment, payload)
+    try:
+        result = await adapter.send_shipment(shipment, payload)
+    except HTTPException as exc:
+        await _create_api_log(
+            db,
+            provider=setting.provider,
+            action="send_shipment",
+            status_value="failed",
+            shipment_id=shipment.id,
+            message=str(exc.detail),
+            request_snapshot=payload,
+            response_snapshot={"detail": str(exc.detail)},
+            created_by_id=current_user.id,
+        )
+        return {
+            "status": "failed",
+            "provider": setting.provider,
+            "shipment_id": shipment.id,
+            "external_id": shipment.external_consignment_id,
+            "external_tracking_number": shipment.external_tracking_number,
+            "external_status": shipment.external_status,
+            "sent_at": shipment.sent_to_courier_at,
+            "message": str(exc.detail),
+            "request_snapshot": _sanitize_snapshot(payload),
+            "response_snapshot": {"detail": str(exc.detail)},
+            "http_status": exc.status_code,
+        }
 
     if result.success:
         shipment.external_provider = setting.provider
@@ -374,6 +449,32 @@ async def send_shipment_to_provider(
             message=f"Shipment sent to external courier provider {setting.display_name}.",
             created_by_id=current_user.id,
         )
+    else:
+        await _create_api_log(
+            db,
+            provider=setting.provider,
+            action="send_shipment",
+            status_value="failed",
+            shipment_id=shipment.id,
+            external_id=result.external_id,
+            message=result.message,
+            request_snapshot=result.request_snapshot,
+            response_snapshot=result.response_snapshot,
+            created_by_id=current_user.id,
+        )
+        return {
+            "status": "failed",
+            "provider": setting.provider,
+            "shipment_id": shipment.id,
+            "external_id": result.external_id,
+            "external_tracking_number": result.tracking_number,
+            "external_status": result.external_status,
+            "sent_at": shipment.sent_to_courier_at,
+            "message": result.message,
+            "request_snapshot": _sanitize_snapshot(result.request_snapshot),
+            "response_snapshot": _sanitize_snapshot(result.response_snapshot),
+            "http_status": status.HTTP_502_BAD_GATEWAY,
+        }
 
     await _create_api_log(
         db,
@@ -419,15 +520,70 @@ async def sync_shipment_status(
     provider_name = _validate_provider(provider_candidate)
     setting = await get_provider_setting(db, provider_name, create_if_missing=True)
     if not setting.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Courier provider is inactive.")
+        await _create_api_log(
+            db,
+            provider=provider_name,
+            action="status_sync",
+            status_value="failed",
+            shipment_id=shipment.id,
+            external_id=shipment.external_consignment_id,
+            message="Courier provider is inactive.",
+            created_by_id=current_user.id,
+        )
+        return {
+            "status": "failed",
+            "provider": provider_name,
+            "shipment_id": shipment.id,
+            "external_id": shipment.external_consignment_id,
+            "external_tracking_number": shipment.external_tracking_number,
+            "external_status": shipment.external_status,
+            "internal_status": shipment.status,
+            "synced_at": shipment.external_synced_at,
+            "message": "Courier provider is inactive.",
+            "request_snapshot": None,
+            "response_snapshot": None,
+            "http_status": status.HTTP_400_BAD_REQUEST,
+        }
     if not shipment.external_provider:
         shipment.external_provider = provider_name
     adapter = _get_adapter(setting)
-    result = await adapter.get_status(
-        shipment=shipment,
-        external_consignment_id=shipment.external_consignment_id,
-        tracking_number=shipment.external_tracking_number or shipment.tracking_number,
-    )
+    request_snapshot = {
+        "external_consignment_id": shipment.external_consignment_id,
+        "tracking_number": shipment.external_tracking_number or shipment.tracking_number,
+    }
+    try:
+        result = await adapter.get_status(
+            shipment=shipment,
+            external_consignment_id=shipment.external_consignment_id,
+            tracking_number=shipment.external_tracking_number or shipment.tracking_number,
+        )
+    except HTTPException as exc:
+        await _create_api_log(
+            db,
+            provider=provider_name,
+            action="status_sync",
+            status_value="failed",
+            shipment_id=shipment.id,
+            external_id=shipment.external_consignment_id,
+            message=str(exc.detail),
+            request_snapshot=request_snapshot,
+            response_snapshot={"detail": str(exc.detail)},
+            created_by_id=current_user.id,
+        )
+        return {
+            "status": "failed",
+            "provider": provider_name,
+            "shipment_id": shipment.id,
+            "external_id": shipment.external_consignment_id,
+            "external_tracking_number": shipment.external_tracking_number,
+            "external_status": shipment.external_status,
+            "internal_status": shipment.status,
+            "synced_at": shipment.external_synced_at,
+            "message": str(exc.detail),
+            "request_snapshot": _sanitize_snapshot(request_snapshot),
+            "response_snapshot": {"detail": str(exc.detail)},
+            "http_status": exc.status_code,
+        }
 
     if result.success:
         previous_status = shipment.status
@@ -456,6 +612,33 @@ async def sync_shipment_status(
             ),
             created_by_id=current_user.id,
         )
+    else:
+        await _create_api_log(
+            db,
+            provider=provider_name,
+            action="status_sync",
+            status_value="failed",
+            shipment_id=shipment.id,
+            external_id=result.external_id or shipment.external_consignment_id,
+            message=result.message,
+            request_snapshot=result.request_snapshot,
+            response_snapshot=result.response_snapshot,
+            created_by_id=current_user.id,
+        )
+        return {
+            "status": "failed",
+            "provider": provider_name,
+            "shipment_id": shipment.id,
+            "external_id": shipment.external_consignment_id,
+            "external_tracking_number": shipment.external_tracking_number,
+            "external_status": shipment.external_status,
+            "internal_status": shipment.status,
+            "synced_at": shipment.external_synced_at,
+            "message": result.message,
+            "request_snapshot": _sanitize_snapshot(result.request_snapshot),
+            "response_snapshot": _sanitize_snapshot(result.response_snapshot),
+            "http_status": status.HTTP_502_BAD_GATEWAY,
+        }
 
     await _create_api_log(
         db,

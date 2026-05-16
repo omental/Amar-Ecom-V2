@@ -123,3 +123,29 @@ Note:
 
 - this is separate from the Windows `.next` `EPERM` file-lock issue above
 - Phase 13A courier integration validation still passed backend tests, frontend lint, and frontend type-checking when this network-dependent build step failed
+
+## Steadfast Configuration Check vs Live Connection Test
+
+Symptom:
+
+- `Test connection` for the Steadfast provider succeeds with a configuration-check message instead of proving a live remote API handshake
+
+Why this happens:
+
+- the adapter currently validates:
+  - `base_url`
+  - credential presence
+  - safe request construction
+- but it intentionally avoids pretending a production-safe probe endpoint is confirmed when that endpoint mapping has not been verified yet
+
+What to check:
+
+- confirm the exact Steadfast base URL with the courier team
+- confirm the live create-order and status endpoint paths before production rollout
+- if a safe profile or probe endpoint is confirmed later, the adapter can be upgraded to use that for a stronger connection test
+
+Notes:
+
+- sandbox mode only changes labeling unless the configured `base_url` is actually a sandbox URL
+- shipment send and status sync remain manual only in this phase
+- logs stay sanitized and should not expose raw credentials even when Steadfast returns an error

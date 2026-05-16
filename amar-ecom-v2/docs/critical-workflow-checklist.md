@@ -246,17 +246,23 @@ Expected:
 3. Confirm the UI shows saved credential state without revealing raw values.
 4. Run `Test connection`.
 5. Confirm success, failed, or skipped messaging appears cleanly.
-6. Open `Send Shipments`.
-7. Send a shipment to a selected provider manually.
-8. Confirm the shipment stores external provider, consignment or tracking, external status, payload snapshot, and sent timestamp when the provider returns success.
-9. Open `/dashboard/shipments/{id}` for a linked shipment.
-10. Confirm external provider and status metadata are visible when values exist.
-11. Use `Sync External Status` on a shipment with external linkage.
-12. Confirm external status and synced time update safely.
-13. Open `API Logs`.
-14. Filter by provider, action, and status.
-15. Review at least one log entry or detail panel.
-16. Open `/dashboard/admin-tools` and confirm the maintenance checklist includes courier integration readiness.
+6. For Steadfast, confirm the UI explains:
+   - endpoint or base URL should be confirmed before production
+   - sandbox mode only changes labeling unless the configured base URL is actually sandbox
+7. If credentials are missing, confirm test connection fails cleanly without exposing secrets.
+8. Open `Send Shipments`.
+9. Confirm the page highlights Steadfast send requirements such as recipient name, recipient phone, and delivery address.
+10. Send a shipment to a selected provider manually.
+11. Confirm the shipment stores external provider, consignment or tracking, external status, payload snapshot, and sent timestamp when the provider returns success.
+12. If required shipment fields are missing, confirm the API returns a clean error before any remote send is treated as successful.
+13. Open `/dashboard/shipments/{id}` for a linked shipment.
+14. Confirm external provider and status metadata are visible when values exist.
+15. Use `Sync External Status` on a shipment with external linkage.
+16. Confirm external status and synced time update safely.
+17. Open `API Logs`.
+18. Filter by provider, action, and status.
+19. Review at least one log entry or detail panel.
+20. Open `/dashboard/admin-tools` and confirm the maintenance checklist includes courier integration readiness.
 
 Expected:
 - provider credentials are encrypted server-side and never returned raw
@@ -266,7 +272,7 @@ Expected:
 - local WooCommerce, inventory, and unrelated order fields are not modified by courier API actions
 - request and response snapshots are sanitized and do not expose tokens, passwords, keys, or auth headers
 - no background courier worker is running in this phase
-- provider adapters are foundational only, and Steadfast endpoint mapping still requires production confirmation
+- provider adapters are still manual-only, and Steadfast endpoint mapping plus live base URL should still be confirmed before production rollout
 
 ### Reports Check
 

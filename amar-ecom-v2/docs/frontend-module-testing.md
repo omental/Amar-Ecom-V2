@@ -1276,11 +1276,15 @@ Expected result:
 5. Save settings with display name, base URL, and any needed credentials
 6. Confirm the page shows saved or missing credential state without revealing raw values
 7. Confirm the note says credentials are stored server-side and never displayed after saving
-8. Click `Test connection`
-9. Confirm the page shows status, message, and last-tested timing
-10. Open `Send Shipments`
-11. Confirm recent shipments load without runtime errors
-12. Confirm shipment rows can show:
+8. If `Steadfast` is selected, confirm the page shows:
+   - `Confirm endpoint/base URL with Steadfast before production.`
+   - `Sandbox mode only changes labeling unless your base URL points to sandbox.`
+9. Click `Test connection`
+10. Confirm the page shows status, message, and last-tested timing
+11. For Steadfast, confirm a configuration-check message appears cleanly when live test endpoint verification is still pending
+12. Open `Send Shipments`
+13. Confirm recent shipments load without runtime errors
+14. Confirm shipment rows can show:
    - shipment number
    - order number
    - courier
@@ -1289,23 +1293,33 @@ Expected result:
    - external provider
    - external consignment or tracking
    - external status
-13. Use `Send to provider` on one shipment
-14. Confirm the warning explains this sends shipment data to the selected courier provider and does not change WooCommerce or local inventory
-15. If send succeeds or is skipped safely, confirm the row updates external provider and sync metadata
-16. Use `Sync external status` on a shipment that already has external linkage
-17. Confirm external status and external synced timing update safely
-18. Open `/dashboard/shipments/{id}`
-19. Confirm the detail page shows external provider, consignment, tracking, and status fields when available
-20. Confirm `Sync External Status` only appears when the shipment has usable external linkage
-21. Open `/dashboard/logistics`
-22. Confirm courier-linked shipments show external provider or status context without cluttering rows that have no external data
-23. Open `API Logs`
-24. Filter by:
+15. If `Steadfast` is selected, confirm the page warns about required fields:
+   - recipient name
+   - recipient phone
+   - delivery address
+   - COD amount carried from the shipment
+16. Use `Send to provider` on one shipment
+17. Confirm the warning explains this sends shipment data to the selected courier provider and does not change WooCommerce or local inventory
+18. If send succeeds, confirm the result summary shows:
+   - consignment id
+   - tracking number
+   - external status
+   - message
+19. If send fails because required shipment fields are missing, confirm the UI shows a clean error instead of pretending the send succeeded
+20. Use `Sync external status` on a shipment that already has external linkage
+21. Confirm external status and external synced timing update safely
+22. Open `/dashboard/shipments/{id}`
+23. Confirm the detail page shows external provider, consignment, tracking, and status fields when available
+24. Confirm `Sync External Status` only appears when the shipment has usable external linkage
+25. Open `/dashboard/logistics`
+26. Confirm courier-linked shipments show external provider or status context without cluttering rows that have no external data
+27. Open `API Logs`
+28. Filter by:
    - provider
    - action
    - status
    - shipment or external id search if available
-25. Confirm the table shows:
+29. Confirm the table shows:
    - date
    - provider
    - action
@@ -1313,6 +1327,6 @@ Expected result:
    - shipment
    - external id
    - message
-26. Open a log detail panel if present
-27. Confirm request and response snapshots remain sanitized
-28. Confirm no raw tokens, passwords, secrets, or auth headers appear anywhere in the UI
+30. Open a log detail panel if present
+31. Confirm request and response snapshots remain sanitized
+32. Confirm no raw tokens, passwords, secrets, or auth headers appear anywhere in the UI
