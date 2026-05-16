@@ -405,6 +405,11 @@ Status:
 - mobile behavior checks
 - consistency pass for badges, filters, tabs, empty states, and modal patterns
 
+Status:
+- completed as a consistency-focused pass across shared dashboard primitives and lower-priority routes
+- badge language, page headers, loading states, error alerts, empty states, and batch action framing now align more closely with the v1-inspired ops system
+- a dedicated full responsive/layout cleanup is still intentionally pending, especially around shell/content horizontal overflow on narrower widths
+
 ## Highest-Priority Screens
 
 1. Global shell, sidebar, and topbar

@@ -28,6 +28,14 @@ npm run dev
 4. Open `/dashboard/settings` and `/dashboard/admin-tools` and confirm the richer admin shell renders without changing save, export, health, or maintenance behavior.
 5. Open `/dashboard/woocommerce` and `/dashboard/courier-integrations` and confirm the new shared shell styling appears while all safety warnings and manual-only behavior remain intact.
 
+## Phase 14I Consistency Checks
+
+1. Review `/dashboard`, `/dashboard/orders`, `/dashboard/logistics`, `/dashboard/inventory`, `/dashboard/customers`, and `/dashboard/reports` and confirm headers, KPI cards, tabs, badges, and filter bars still feel visually aligned.
+2. Review `/dashboard/tasks`, `/dashboard/users`, `/dashboard/activity-logs`, `/dashboard/returns`, and `/dashboard/purchase-orders` and confirm the updated shared header, loading, empty, and error states render consistently.
+3. Check common badges across finance, HR, WooCommerce, courier, order, and shipment pages for consistent tones on paid/unpaid, active/inactive, pending/processing, shipped/delivered, cancelled/returned, success/failed, and source badges.
+4. Confirm batch action bars on orders and shipments still render and behave correctly after the shared styling update.
+5. Note separately that a dedicated responsive/layout cleanup is still pending for shell/content horizontal overflow; do not treat that as a regression in this phase unless a route becomes unusable.
+
 ## Create Product
 
 1. Open `http://localhost:3000/dashboard/products`

@@ -6,15 +6,15 @@ type StatusTone = "default" | "success" | "warning" | "danger" | "info";
 function resolveTone(status: string): StatusTone {
   const normalized = status.toLowerCase();
 
-  if (["active", "paid", "delivered", "confirmed", "received", "restocked", "in stock", "completed", "matched", "settled", "success"].includes(normalized)) {
+  if (["active", "paid", "delivered", "confirmed", "received", "restocked", "in stock", "completed", "matched", "settled", "success", "approved", "published"].includes(normalized)) {
     return "success";
   }
 
-  if (["new"].includes(normalized)) {
+  if (["new", "vip", "wholesale"].includes(normalized)) {
     return "success";
   }
 
-  if (["pending", "processing", "partial", "partially_received", "ordered", "low stock", "partial_delivered", "draft", "skipped"].includes(normalized)) {
+  if (["pending", "processing", "partial", "partially_received", "ordered", "low stock", "partial_delivered", "draft", "skipped", "review", "due", "unpaid"].includes(normalized)) {
     return "warning";
   }
 
@@ -22,11 +22,11 @@ function resolveTone(status: string): StatusTone {
     return "warning";
   }
 
-  if (["cancelled", "refunded", "inactive", "out of stock", "returned", "failed", "mismatch"].includes(normalized)) {
+  if (["cancelled", "canceled", "refunded", "inactive", "out of stock", "returned", "failed", "mismatch", "rejected", "overdue"].includes(normalized)) {
     return "danger";
   }
 
-  if (["shipped", "ready_to_ship", "in_transit", "manual", "website", "facebook", "woocommerce", "unpaid", "submitted"].includes(normalized)) {
+  if (["shipped", "ready_to_ship", "in_transit", "manual", "website", "facebook", "woocommerce", "submitted", "assigned", "lead", "regular"].includes(normalized)) {
     return "info";
   }
 

@@ -48,6 +48,12 @@ Status labels:
 - This phase is visual polish only; backend behavior, sync safety rules, and existing data-fetching patterns were not changed.
 - Remaining frontend parity work is primarily `14I` regression QA and any optional exact-v1 recreation passes.
 
+## Phase 14I Consistency Note
+
+- Shared primitives now give lower-priority routes more consistent page-header, badge, loading, empty, error, and batch-action treatment.
+- The invoice print page, activity logs, tasks, users, returns, and purchase-order flows are functionally stable but still somewhat lower parity than the highest-priority ops modules.
+- A dedicated responsive/layout cleanup is still pending, especially for shell/content horizontal overflow on narrower widths.
+
 ## Present But Outside Requested List
 
 - `/dashboard/warehouses`
