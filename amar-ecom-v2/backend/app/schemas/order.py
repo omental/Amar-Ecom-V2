@@ -145,6 +145,30 @@ class OrderOperationsSummaryRead(BaseModel):
     orders_unprinted_count: int
 
 
+class OrderBatchActionOptions(BaseModel):
+    status: str | None = None
+
+
+class OrderBatchActionRequest(BaseModel):
+    action: str
+    order_ids: list[UUID]
+    options: OrderBatchActionOptions | None = None
+
+
+class OrderBatchActionRowRead(BaseModel):
+    order_id: UUID
+    status: str
+    message: str
+
+
+class OrderBatchActionResultRead(BaseModel):
+    action: str
+    success_count: int
+    skipped_count: int
+    failed_count: int
+    rows: list[OrderBatchActionRowRead]
+
+
 class InvoiceMetadataRead(BaseModel):
     invoice_number: str
     invoice_title: str

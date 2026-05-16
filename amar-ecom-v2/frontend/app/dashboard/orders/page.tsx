@@ -124,6 +124,18 @@ type OrderFilters = {
   printed: string;
 };
 
+type OrderBatchActionResult = {
+  action: string;
+  success_count: number;
+  skipped_count: number;
+  failed_count: number;
+  rows: Array<{
+    order_id: string;
+    status: string;
+    message: string;
+  }>;
+};
+
 type OrderDuplicate = {
   id: string;
   order_number: string;
@@ -237,6 +249,30 @@ function parseTags(tags: string | null | undefined) {
     .filter(Boolean);
 }
 
+function downloadCsv(filename: string, columns: string[], rows: Array<Array<string | number | null | undefined>>) {
+  const csvLines = [
+    columns.join(","),
+    ...rows.map((row) =>
+      row
+        .map((value) => {
+          const safe = String(value ?? "").replace(/"/g, '""');
+          return `"${safe}"`;
+        })
+        .join(","),
+    ),
+  ];
+
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [shipments, setShipments] = useState<ShipmentSummary[]>([]);
@@ -254,6 +290,9 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshingWooOrderId, setIsRefreshingWooOrderId] = useState<string | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [batchStatusTarget, setBatchStatusTarget] = useState("ready_to_ship");
+  const [isBatchActionRunning, setIsBatchActionRunning] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -386,6 +425,23 @@ export default function OrdersPage() {
       window.clearTimeout(refreshTimer);
     };
   }, [isLoading, loadOrders, ordersQuery]);
+
+  const selectedOrders = useMemo(
+    () => filteredOrders.filter((order) => selectedOrderIds.includes(order.id)),
+    [filteredOrders, selectedOrderIds],
+  );
+
+  const selectedAllVisible =
+    filteredOrders.length > 0 && filteredOrders.every((order) => selectedOrderIds.includes(order.id));
+
+  const dispatchReadyOrders = useMemo(
+    () =>
+      filteredOrders.filter((order) => {
+        const hasShipment = (shipmentOrderMap.get(order.id) || []).length > 0;
+        return ["confirmed", "processing", "ready_to_ship"].includes(order.status) && !hasShipment;
+      }),
+    [filteredOrders, shipmentOrderMap],
+  );
 
   function updateItem(rowId: string, updater: (item: OrderItemForm) => OrderItemForm) {
     setForm((current) => ({
@@ -528,6 +584,160 @@ export default function OrdersPage() {
     } finally {
       setIsRefreshingWooOrderId(null);
     }
+  }
+
+  function toggleOrderSelection(orderId: string) {
+    setSelectedOrderIds((current) =>
+      current.includes(orderId) ? current.filter((id) => id !== orderId) : [...current, orderId],
+    );
+  }
+
+  function toggleSelectAllVisible() {
+    setSelectedOrderIds((current) => {
+      if (selectedAllVisible) {
+        return current.filter((id) => !filteredOrders.some((order) => order.id === id));
+      }
+      const nextIds = new Set(current);
+      filteredOrders.forEach((order) => nextIds.add(order.id));
+      return Array.from(nextIds);
+    });
+  }
+
+  function exportOrdersCsv(filename: string, exportOrders: Order[]) {
+    downloadCsv(
+      filename,
+      [
+        "order_number",
+        "customer",
+        "phone",
+        "warehouse",
+        "status",
+        "payment_status",
+        "source",
+        "has_shipment",
+        "stock_deducted",
+        "printed_count",
+        "shipping_address",
+        "notes",
+        "tags",
+        "total",
+        "created_at",
+      ],
+      exportOrders.map((order) => [
+        order.order_number,
+        order.customer_name || order.customer?.name || "",
+        order.customer_phone || order.customer?.phone || "",
+        order.warehouse?.name || (order.warehouse_id ? warehouseMap.get(order.warehouse_id)?.name || "" : ""),
+        order.status,
+        order.payment_status,
+        order.source,
+        (shipmentOrderMap.get(order.id) || []).length > 0 ? "yes" : "no",
+        order.stock_deducted ? "yes" : "no",
+        order.printed_count,
+        order.shipping_address || "",
+        order.notes || "",
+        order.tags || "",
+        order.total,
+        order.created_at,
+      ]),
+    );
+  }
+
+  async function handleBatchMarkPrinted() {
+    if (selectedOrderIds.length === 0) {
+      return;
+    }
+    setIsBatchActionRunning(true);
+    setError("");
+    setSuccess("");
+    try {
+      const result = await api.post<OrderBatchActionResult>("/orders/batch-actions", {
+        action: "mark_printed",
+        order_ids: selectedOrderIds,
+      });
+      await loadOrders();
+      setSuccess(
+        `Marked ${result.success_count} orders as printed. ${result.skipped_count} skipped, ${result.failed_count} failed.`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to mark selected orders as printed");
+    } finally {
+      setIsBatchActionRunning(false);
+    }
+  }
+
+  async function handleBatchUpdateStatus() {
+    if (selectedOrderIds.length === 0) {
+      return;
+    }
+    setIsBatchActionRunning(true);
+    setError("");
+    setSuccess("");
+    try {
+      const result = await api.post<OrderBatchActionResult>("/orders/batch-actions", {
+        action: "update_status",
+        order_ids: selectedOrderIds,
+        options: { status: batchStatusTarget },
+      });
+      await loadOrders();
+      setSuccess(
+        `Updated ${result.success_count} orders to ${formatLabel(batchStatusTarget)}. ${result.skipped_count} skipped, ${result.failed_count} failed.`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update selected order statuses");
+    } finally {
+      setIsBatchActionRunning(false);
+    }
+  }
+
+  function handlePrintSelected() {
+    if (selectedOrders.length === 0) {
+      return;
+    }
+    selectedOrders.forEach((order) => {
+      window.open(`/dashboard/orders/${order.id}/invoice`, "_blank", "noopener,noreferrer");
+    });
+    setSuccess("Opened print tabs for the selected orders. Your browser may block multiple tabs.");
+  }
+
+  async function handleCopyPrintLinks() {
+    if (selectedOrders.length === 0) {
+      return;
+    }
+    const links = selectedOrders
+      .map((order) => `${window.location.origin}/dashboard/orders/${order.id}/invoice`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(links);
+      setSuccess("Copied selected invoice print links to the clipboard.");
+    } catch {
+      setError("Could not copy print links from this browser session.");
+    }
+  }
+
+  function applyQuickFilter(filter: "ready" | "needs-shipment" | "unprinted" | "woo" | "stock-not-deducted") {
+    if (filter === "ready") {
+      setActiveStatusTab("ready_to_ship");
+      setOrderFilters((current) => ({ ...current, has_shipment: "", printed: "" }));
+      return;
+    }
+    if (filter === "needs-shipment") {
+      setActiveStatusTab("all");
+      setOrderFilters((current) => ({ ...current, has_shipment: "false" }));
+      return;
+    }
+    if (filter === "unprinted") {
+      setActiveStatusTab("all");
+      setOrderFilters((current) => ({ ...current, printed: "false" }));
+      return;
+    }
+    if (filter === "woo") {
+      setActiveStatusTab("all");
+      setOrderFilters((current) => ({ ...current, source: "woocommerce" }));
+      return;
+    }
+    setActiveStatusTab("all");
+    setOrderFilters((current) => ({ ...current, stock_deducted: "false" }));
   }
 
   return (
@@ -1087,6 +1297,44 @@ export default function OrdersPage() {
           />
 
           <div className="mt-6 space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => applyQuickFilter("ready")}
+                className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100"
+              >
+                Ready to ship
+              </button>
+              <button
+                type="button"
+                onClick={() => applyQuickFilter("needs-shipment")}
+                className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+              >
+                Needs shipment
+              </button>
+              <button
+                type="button"
+                onClick={() => applyQuickFilter("unprinted")}
+                className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800 transition hover:bg-rose-100"
+              >
+                Unprinted
+              </button>
+              <button
+                type="button"
+                onClick={() => applyQuickFilter("woo")}
+                className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-800 transition hover:bg-violet-100"
+              >
+                Woo orders
+              </button>
+              <button
+                type="button"
+                onClick={() => applyQuickFilter("stock-not-deducted")}
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                Stock not deducted
+              </button>
+            </div>
+
             <div className="relative">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -1184,6 +1432,86 @@ export default function OrdersPage() {
               })}
             </div>
 
+            <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => exportOrdersCsv("orders-filtered.csv", filteredOrders)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                Export filtered CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => exportOrdersCsv("dispatch-ready-orders.csv", dispatchReadyOrders)}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                Export dispatch-ready CSV
+              </button>
+              <p className="text-xs text-slate-500">
+                Create Shipment stays manual and opens Logistics for the selected ready order.
+              </p>
+            </div>
+
+            {selectedOrderIds.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <p className="text-sm font-medium text-slate-700">{selectedOrderIds.length} selected</p>
+                <button
+                  type="button"
+                  onClick={handlePrintSelected}
+                  disabled={isBatchActionRunning}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                >
+                  Print selected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyPrintLinks()}
+                  disabled={isBatchActionRunning}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                >
+                  Copy print links
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleBatchMarkPrinted()}
+                  disabled={isBatchActionRunning}
+                  className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
+                >
+                  Mark selected printed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportOrdersCsv("orders-selected.csv", selectedOrders)}
+                  disabled={isBatchActionRunning}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
+                >
+                  Export selected CSV
+                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={batchStatusTarget}
+                    onChange={(event) => setBatchStatusTarget(event.target.value)}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-400"
+                  >
+                    {orderStatusOptions.map((statusValue) => (
+                      <option key={statusValue} value={statusValue}>
+                        {formatLabel(statusValue)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void handleBatchUpdateStatus()}
+                    disabled={isBatchActionRunning}
+                    className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
+                  >
+                    Update selected status
+                  </button>
+                </div>
+                {isBatchActionRunning ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
+              </div>
+            ) : null}
+
             {isLoading ? (
               <LoadingState label="Loading orders..." />
             ) : filteredOrders.length === 0 ? (
@@ -1194,6 +1522,7 @@ export default function OrdersPage() {
             ) : (
               <DataTable
                 columns={[
+                  "Select",
                   "Order #",
                   "Customer",
                   "Status",
@@ -1217,8 +1546,16 @@ export default function OrdersPage() {
                   return (
                     <div
                       key={order.id}
-                      className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 xl:grid-cols-9 xl:gap-4"
+                      className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 xl:grid-cols-10 xl:gap-4"
                     >
+                      <div className="flex items-start">
+                        <input
+                          type="checkbox"
+                          checked={selectedOrderIds.includes(order.id)}
+                          onChange={() => toggleOrderSelection(order.id)}
+                          className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                        />
+                      </div>
                       <div>
                         <Link
                           href={`/dashboard/orders/${order.id}`}
@@ -1363,7 +1700,7 @@ export default function OrdersPage() {
                             className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
                           >
                             <PackagePlus className="h-3.5 w-3.5" />
-                            Create Shipment
+                            Create Shipment in Logistics
                           </Link>
                         ) : ["confirmed", "processing", "ready_to_ship"].includes(order.status) ? (
                           <Link
@@ -1385,6 +1722,17 @@ export default function OrdersPage() {
                 })}
               </DataTable>
             )}
+            {!isLoading && filteredOrders.length > 0 ? (
+              <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
+                <input
+                  type="checkbox"
+                  checked={selectedAllVisible}
+                  onChange={toggleSelectAllVisible}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                />
+                <span>Select all visible orders</span>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>

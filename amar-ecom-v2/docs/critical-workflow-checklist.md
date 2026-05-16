@@ -317,6 +317,49 @@ Expected:
 - no background worker is implied by the UI
 - no destructive external update path is introduced
 
+### Order Batch Print And Dispatch Workflow
+
+1. Open `/dashboard/orders`.
+2. Filter to a manageable set of dispatch-ready or unprinted orders.
+3. Select one or more rows.
+4. Use:
+   - `Print selected`
+   - `Copy print links`
+   - `Mark selected printed`
+   - `Export selected CSV`
+5. If needed, choose a safe target status and run `Update selected status`.
+6. Confirm dispatch-ready rows still use a manual `Create Shipment in Logistics` handoff rather than automation.
+
+Expected:
+
+- print workflow stays browser-based only
+- browser may block multiple print tabs, but the UI explains that clearly
+- mark-printed updates print counts safely
+- safe batch status changes preserve stock-deduction rules
+- no background printing, PDF generation, or automated shipment creation is introduced
+
+### Shipment And Reconciliation Operator Finish
+
+1. Open `/dashboard/shipments`.
+2. Use quick filters for:
+   - missing tracking
+   - needs sync
+   - delivered
+   - reconciliation pending
+3. Select one or more visible rows and run a safe internal batch status update.
+4. Export filtered or selected shipment CSV.
+5. Open `/dashboard/logistics`, then the `Reconciliation` tab.
+6. Filter by courier, reconciliation status, external status, and date range.
+7. Confirm filtered totals for COD, collected, courier charge, and pending amount.
+8. Export current and unsettled reconciliation CSV files.
+
+Expected:
+
+- shipment batch updates remain internal-only
+- no courier API call is triggered by shipment batch status update
+- reconciliation remains manual and visible
+- no destructive courier-driven shipment or order mutation is introduced
+
 ### Admin Tools Check
 
 1. Open `/dashboard/admin-tools`.

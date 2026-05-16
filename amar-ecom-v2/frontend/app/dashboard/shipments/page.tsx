@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Rows3, Truck } from "lucide-react";
+import { Download, Loader2, Plus, Rows3, Truck } from "lucide-react";
 
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -37,6 +37,10 @@ type Shipment = {
   external_tracking_number: string | null;
   external_status: string | null;
   external_synced_at: string | null;
+  sent_to_courier_at?: string | null;
+  reconciliation_status?: string | null;
+  courier_charge?: number | string;
+  collected_amount?: number | string;
   status: string;
   delivery_charge: number | string;
   cod_amount: number | string;
@@ -86,6 +90,30 @@ function toNumber(value: string | number | null | undefined) {
   return Number.isFinite(numericValue) ? numericValue : 0;
 }
 
+function downloadCsv(filename: string, columns: string[], rows: Array<Array<string | number | null | undefined>>) {
+  const csvLines = [
+    columns.join(","),
+    ...rows.map((row) =>
+      row
+        .map((value) => {
+          const safe = String(value ?? "").replace(/"/g, '""');
+          return `"${safe}"`;
+        })
+        .join(","),
+    ),
+  ];
+
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function ShipmentsPage() {
   const searchParams = useSearchParams();
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -94,12 +122,48 @@ export default function ShipmentsPage() {
   const [form, setForm] = useState<ShipmentForm>(initialForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedShipmentIds, setSelectedShipmentIds] = useState<string[]>([]);
+  const [quickFilter, setQuickFilter] = useState("all");
+  const [batchShipmentStatus, setBatchShipmentStatus] = useState("shipped");
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const orderMap = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
   const courierMap = useMemo(() => new Map(couriers.map((courier) => [courier.id, courier])), [couriers]);
   const requestedOrderId = searchParams.get("order_id") || "";
+  const filteredShipments = useMemo(() => {
+    if (quickFilter === "missing-tracking") {
+      return shipments.filter((shipment) => !shipment.tracking_number && !shipment.external_tracking_number);
+    }
+    if (quickFilter === "needs-sync") {
+      return shipments.filter(
+        (shipment) =>
+          !!shipment.external_provider &&
+          !!shipment.sent_to_courier_at &&
+          (!shipment.external_synced_at ||
+            !shipment.external_status ||
+            ["submitted", "pending", "processing", "assigned", "picked_up", "in_transit"].includes(
+              shipment.external_status,
+            )),
+      );
+    }
+    if (quickFilter === "delivered") {
+      return shipments.filter((shipment) => shipment.status === "delivered");
+    }
+    if (quickFilter === "reconciliation-pending") {
+      return shipments.filter(
+        (shipment) => !["settled", "cancelled"].includes(shipment.reconciliation_status || "pending"),
+      );
+    }
+    return shipments;
+  }, [quickFilter, shipments]);
+  const selectedAllVisible =
+    filteredShipments.length > 0 && filteredShipments.every((shipment) => selectedShipmentIds.includes(shipment.id));
+  const selectedShipments = useMemo(
+    () => filteredShipments.filter((shipment) => selectedShipmentIds.includes(shipment.id)),
+    [filteredShipments, selectedShipmentIds],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -142,6 +206,86 @@ export default function ShipmentsPage() {
       setShipments(data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load shipments");
+    }
+  }
+
+  function toggleShipmentSelection(shipmentId: string) {
+    setSelectedShipmentIds((current) =>
+      current.includes(shipmentId) ? current.filter((id) => id !== shipmentId) : [...current, shipmentId],
+    );
+  }
+
+  function toggleSelectAllVisible() {
+    setSelectedShipmentIds((current) => {
+      if (selectedAllVisible) {
+        return current.filter((id) => !filteredShipments.some((shipment) => shipment.id === id));
+      }
+      const nextIds = new Set(current);
+      filteredShipments.forEach((shipment) => nextIds.add(shipment.id));
+      return Array.from(nextIds);
+    });
+  }
+
+  function exportShipmentsCsv(filename: string, rows: Shipment[]) {
+    downloadCsv(
+      filename,
+      [
+        "shipment_number",
+        "order_number",
+        "courier",
+        "tracking_number",
+        "external_provider",
+        "external_status",
+        "status",
+        "delivery_charge",
+        "cod_amount",
+        "courier_charge",
+        "collected_amount",
+        "reconciliation_status",
+        "created_at",
+      ],
+      rows.map((shipment) => [
+        shipment.shipment_number,
+        shipment.order?.order_number || orderMap.get(shipment.order_id)?.order_number || "",
+        shipment.courier?.name || (shipment.courier_id ? courierMap.get(shipment.courier_id)?.name || "" : ""),
+        shipment.tracking_number || shipment.external_tracking_number || shipment.external_consignment_id || "",
+        shipment.external_provider || "",
+        shipment.external_status || "",
+        shipment.status,
+        shipment.delivery_charge,
+        shipment.cod_amount,
+        shipment.courier_charge || "",
+        shipment.collected_amount || "",
+        shipment.reconciliation_status || "",
+        shipment.created_at,
+      ]),
+    );
+  }
+
+  async function handleBatchShipmentStatusUpdate() {
+    if (selectedShipmentIds.length === 0) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setIsBatchUpdating(true);
+    try {
+      const result = await api.post<{
+        success_count: number;
+        skipped_count: number;
+        failed_count: number;
+      }>("/shipments/batch-status-update", {
+        shipment_ids: selectedShipmentIds,
+        status: batchShipmentStatus,
+      });
+      await loadShipments();
+      setSuccess(
+        `Updated ${result.success_count} shipments to ${formatLabel(batchShipmentStatus)}. ${result.skipped_count} skipped, ${result.failed_count} failed.`,
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update selected shipments");
+    } finally {
+      setIsBatchUpdating(false);
     }
   }
 
@@ -344,17 +488,91 @@ export default function ShipmentsPage() {
           />
 
           <div className="mt-6">
+            <div className="mb-4 flex flex-wrap gap-2">
+              {[
+                ["all", "All"],
+                ["missing-tracking", "Missing tracking"],
+                ["needs-sync", "Needs sync"],
+                ["delivered", "Delivered"],
+                ["reconciliation-pending", "Reconciliation pending"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setQuickFilter(value)}
+                  className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                    quickFilter === value
+                      ? "border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => exportShipmentsCsv("shipments-filtered.csv", filteredShipments)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export filtered CSV
+              </button>
+              {selectedShipmentIds.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => exportShipmentsCsv("shipments-selected.csv", selectedShipments)}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export selected CSV
+                  </button>
+                  <select
+                    value={batchShipmentStatus}
+                    onChange={(event) => setBatchShipmentStatus(event.target.value)}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-400"
+                  >
+                    {statusOptions.map((statusValue) => (
+                      <option key={statusValue} value={statusValue}>
+                        {formatLabel(statusValue)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void handleBatchShipmentStatusUpdate()}
+                    disabled={isBatchUpdating}
+                    className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
+                  >
+                    Update selected status
+                  </button>
+                  {isBatchUpdating ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
+                </>
+              ) : null}
+            </div>
+
             {isLoading ? (
               <LoadingState label="Loading shipments..." />
-            ) : shipments.length === 0 ? (
+            ) : filteredShipments.length === 0 ? (
               <EmptyState
-                title="No shipments yet"
-                description="Create the first shipment after an order is ready to move into logistics."
+                title="No shipments match this view"
+                description="Try another quick filter or create the first shipment after an order is ready to move into logistics."
               />
             ) : (
-              <DataTable columns={["Shipment #", "Order", "Courier", "Tracking", "External", "Status", "Delivery", "COD", "Created"]}>
-                {shipments.map((shipment) => (
-                  <div key={shipment.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-9 2xl:gap-4">
+              <DataTable columns={["Select", "Shipment #", "Order", "Courier", "Tracking", "External", "Status", "Delivery", "COD", "Created"]}>
+                {filteredShipments.map((shipment) => (
+                  <div key={shipment.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-10 2xl:gap-4">
+                    <div className="flex items-start">
+                      <input
+                        type="checkbox"
+                        checked={selectedShipmentIds.includes(shipment.id)}
+                        onChange={() => toggleShipmentSelection(shipment.id)}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                      />
+                    </div>
                     <div>
                       <Link
                         href={`/dashboard/shipments/${shipment.id}`}
@@ -413,6 +631,17 @@ export default function ShipmentsPage() {
                 ))}
               </DataTable>
             )}
+            {!isLoading && filteredShipments.length > 0 ? (
+              <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
+                <input
+                  type="checkbox"
+                  checked={selectedAllVisible}
+                  onChange={toggleSelectAllVisible}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                />
+                <span>Select all visible shipments</span>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>

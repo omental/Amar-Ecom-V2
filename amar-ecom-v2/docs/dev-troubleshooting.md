@@ -170,3 +170,24 @@ When testing external courier status sync:
 - if a remote shipment returns `delivered` while the local shipment was never in a shipped-ready state, the sync may record a warning and keep the local shipment status unchanged
 - returned, cancelled, and failed remote states stay warning-first and do not auto-apply destructively by default
 - use the bulk status sync endpoint or UI only for manual operator-driven reconciliation; no background worker exists yet
+
+## Browser Print Batch Behavior
+
+Symptom:
+
+- opening print views for multiple selected orders may only open one tab, or the browser may block the rest
+
+Cause:
+
+- this workflow intentionally uses browser tabs and the normal print dialog
+- browsers often block repeated popups from a single action
+
+What to do:
+
+- allow popups temporarily for the local frontend origin, or
+- use `Copy print links` and open the invoice links manually in smaller batches
+
+Notes:
+
+- Phase 14B does not add PDF generation or background printing
+- batch printing remains an operator-assist workflow only

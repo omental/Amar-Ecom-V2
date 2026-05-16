@@ -1,6 +1,9 @@
+import csv
+from io import StringIO
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -12,6 +15,18 @@ from app.schemas.courier import LogisticsOperationsSummaryRead, PendingDispatchO
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def _csv_response(filename: str, headers: list[str], rows: list[list[object]]) -> Response:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/pending-dispatch", response_model=list[PendingDispatchOrderRead])
@@ -95,4 +110,68 @@ async def get_logistics_operations_summary(db: DBSession) -> LogisticsOperations
         shipments_waiting_status_sync_count=row[5] or 0,
         delivered_shipments=row[6] or 0,
         failed_shipments=row[7] or 0,
+    )
+
+
+@router.get("/reconciliation-export")
+async def export_reconciliation_rows(
+    db: DBSession,
+    courier_id: UUID | None = None,
+    reconciliation_status: str | None = None,
+    external_status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> Response:
+    stmt = (
+        select(Shipment)
+        .options(
+            selectinload(Shipment.order).selectinload(Order.customer),
+            selectinload(Shipment.order).selectinload(Order.warehouse),
+            selectinload(Shipment.courier),
+        )
+        .order_by(Shipment.created_at.desc())
+    )
+    if courier_id is not None:
+        stmt = stmt.where(Shipment.courier_id == courier_id)
+    if reconciliation_status:
+        stmt = stmt.where(Shipment.reconciliation_status == reconciliation_status)
+    if external_status:
+        stmt = stmt.where(Shipment.external_status == external_status)
+    if date_from is not None:
+        stmt = stmt.where(Shipment.created_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Shipment.created_at <= date_to)
+
+    shipments = list((await db.execute(stmt)).scalars().unique().all())
+    return _csv_response(
+        "reconciliation-shipments.csv",
+        [
+            "Shipment Number",
+            "Order Number",
+            "Courier",
+            "Tracking",
+            "External Tracking",
+            "External Status",
+            "COD Amount",
+            "Collected Amount",
+            "Courier Charge",
+            "Reconciliation Status",
+            "Created At",
+        ],
+        [
+            [
+                shipment.shipment_number,
+                shipment.order.order_number if shipment.order else "",
+                shipment.courier.name if shipment.courier else "",
+                shipment.tracking_number or "",
+                shipment.external_tracking_number or shipment.external_consignment_id or "",
+                shipment.external_status or "",
+                shipment.cod_amount,
+                shipment.collected_amount,
+                shipment.courier_charge,
+                shipment.reconciliation_status,
+                shipment.created_at.isoformat(),
+            ]
+            for shipment in shipments
+        ],
     )

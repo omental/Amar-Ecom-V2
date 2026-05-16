@@ -1383,6 +1383,16 @@ Expected result:
    - `Create Shipment` when dispatch-ready
    - `Refresh Woo` only for WooCommerce-linked rows with `external_id`
    - `Open Logistics`
+8. Select one or more visible rows
+9. Confirm a batch action bar appears
+10. Test:
+   - `Print selected`
+   - `Copy print links`
+   - `Mark selected printed`
+   - `Export selected CSV`
+   - `Update selected status`
+11. Confirm browser print may open multiple tabs and the warning text is clear
+12. Confirm `Export filtered CSV` and `Export dispatch-ready CSV` both download browser-generated files
 
 ## Logistics Operations Cockpit Checks
 
@@ -1402,6 +1412,34 @@ Expected result:
    - external status
    - tracking or consignment context
    - reconciliation status
+4. Open the `Reconciliation` tab
+5. Confirm filters now support:
+   - courier
+   - reconciliation status
+   - external status
+   - date range
+6. Confirm the filtered totals show:
+   - COD
+   - collected
+   - courier charge
+   - pending amount
+7. Confirm `Export current CSV` and `Export unsettled CSV` both download browser-generated files
+
+## Shipments Workspace Batch Checks
+
+1. Open `http://localhost:3000/dashboard/shipments`
+2. Confirm quick filters exist for:
+   - `All`
+   - `Missing tracking`
+   - `Needs sync`
+   - `Delivered`
+   - `Reconciliation pending`
+3. Select one or more visible shipments
+4. Confirm the page allows:
+   - `Export filtered CSV`
+   - `Export selected CSV`
+   - batch status update for selected shipments
+5. Confirm the batch status update stays internal-only and does not trigger courier API calls
 
 ## Reports Integration Health Checks
 

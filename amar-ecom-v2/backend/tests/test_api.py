@@ -4522,3 +4522,259 @@ def test_operations_summary_and_integration_report_endpoints() -> None:
         raise
 
     dispose_engine()
+
+
+def test_order_and_shipment_batch_operator_endpoints() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Batch Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"batch-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Batch ops category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Batch Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"batch-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Batch ops brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Batch Product",
+                    "slug": f"batch-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"BATCH-{uuid.uuid4().hex[:8]}",
+                    "description": "Batch product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 650.00,
+                    "cost_price": 400.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            customer_response = client.post(
+                "/api/v1/customers",
+                headers=headers,
+                json={
+                    "name": "Batch Customer",
+                    "phone": "01788889999",
+                    "email": unique_email(),
+                    "address": "Dhaka",
+                    "city": "Dhaka",
+                    "customer_type": "retail",
+                },
+            )
+            assert customer_response.status_code == 201, customer_response.text
+            customer = customer_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Batch Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"BW-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 25,
+                    "low_stock_threshold": 3,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            order_one_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-BATCH-{uuid.uuid4().hex[:8]}",
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": customer["phone"],
+                    "shipping_address": "Batch shipping one",
+                    "notes": "Dispatch this first",
+                    "tags": "dispatch,priority",
+                    "status": "ready_to_ship",
+                    "payment_status": "paid",
+                    "source": "manual",
+                    "subtotal": 650,
+                    "discount": 0,
+                    "delivery_charge": 60,
+                    "total": 710,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 650,
+                            "total_price": 650,
+                        }
+                    ],
+                },
+            )
+            assert order_one_response.status_code == 201, order_one_response.text
+            order_one = order_one_response.json()
+
+            order_two_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-BATCH2-{uuid.uuid4().hex[:8]}",
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": customer["phone"],
+                    "shipping_address": "Batch shipping two",
+                    "notes": "Print and ship",
+                    "tags": "dispatch",
+                    "status": "confirmed",
+                    "payment_status": "unpaid",
+                    "source": "manual",
+                    "subtotal": 650,
+                    "discount": 0,
+                    "delivery_charge": 60,
+                    "total": 710,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 650,
+                            "total_price": 650,
+                        }
+                    ],
+                },
+            )
+            assert order_two_response.status_code == 201, order_two_response.text
+            order_two = order_two_response.json()
+
+            batch_print_response = client.post(
+                "/api/v1/orders/batch-actions",
+                headers=headers,
+                json={
+                    "action": "mark_printed",
+                    "order_ids": [order_one["id"], order_two["id"]],
+                },
+            )
+            assert batch_print_response.status_code == 200, batch_print_response.text
+            batch_print_result = batch_print_response.json()
+            assert batch_print_result["success_count"] == 2
+
+            batch_status_response = client.post(
+                "/api/v1/orders/batch-actions",
+                headers=headers,
+                json={
+                    "action": "update_status",
+                    "order_ids": [order_two["id"]],
+                    "options": {"status": "shipped"},
+                },
+            )
+            assert batch_status_response.status_code == 200, batch_status_response.text
+            batch_status_result = batch_status_response.json()
+            assert batch_status_result["success_count"] == 1
+
+            courier_response = client.post(
+                "/api/v1/couriers",
+                headers=headers,
+                json={
+                    "name": f"Batch Courier {uuid.uuid4().hex[:8]}",
+                    "code": f"BC-{uuid.uuid4().hex[:8]}",
+                    "contact_phone": "01711112222",
+                    "website": "https://courier.example.com",
+                    "is_active": True,
+                },
+            )
+            assert courier_response.status_code == 201, courier_response.text
+            courier = courier_response.json()
+
+            shipment_response = client.post(
+                "/api/v1/shipments",
+                headers=headers,
+                json={
+                    "shipment_number": f"SHP-BATCH-{uuid.uuid4().hex[:8]}",
+                    "order_id": order_one["id"],
+                    "courier_id": courier["id"],
+                    "tracking_number": "TRK-BATCH-001",
+                    "status": "pending",
+                    "delivery_charge": 60,
+                    "courier_charge": 45,
+                    "cod_amount": 710,
+                    "collected_amount": 0,
+                    "reconciliation_status": "pending",
+                    "notes": "Batch shipment",
+                },
+            )
+            assert shipment_response.status_code == 201, shipment_response.text
+            shipment = shipment_response.json()
+
+            shipment_batch_status_response = client.post(
+                "/api/v1/shipments/batch-status-update",
+                headers=headers,
+                json={
+                    "shipment_ids": [shipment["id"]],
+                    "status": "shipped",
+                },
+            )
+            assert shipment_batch_status_response.status_code == 200, shipment_batch_status_response.text
+            shipment_batch_status_result = shipment_batch_status_response.json()
+            assert shipment_batch_status_result["success_count"] == 1
+
+            dispatch_export_response = client.get(
+                "/api/v1/orders/dispatch-export?status=ready_to_ship&has_shipment=false",
+                headers=headers,
+            )
+            assert dispatch_export_response.status_code == 200, dispatch_export_response.text
+            assert dispatch_export_response.headers["content-type"].startswith("text/csv")
+            assert "dispatch-orders.csv" in dispatch_export_response.headers["content-disposition"]
+            assert "Order Number,Customer,Phone" in dispatch_export_response.text
+
+            reconciliation_export_response = client.get(
+                "/api/v1/logistics/reconciliation-export?reconciliation_status=pending",
+                headers=headers,
+            )
+            assert reconciliation_export_response.status_code == 200, reconciliation_export_response.text
+            assert reconciliation_export_response.headers["content-type"].startswith("text/csv")
+            assert "reconciliation-shipments.csv" in reconciliation_export_response.headers["content-disposition"]
+            assert "Shipment Number,Order Number,Courier" in reconciliation_export_response.text
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events"]):
+            pytest.skip("Apply the latest migrations before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()

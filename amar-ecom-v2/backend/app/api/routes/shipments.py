@@ -1,8 +1,10 @@
+import csv
+from io import StringIO
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -11,11 +13,31 @@ from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normal
 from app.models.courier import Courier, Shipment, ShipmentEvent
 from app.models.order import Order
 from app.models.user import User
-from app.schemas.courier import ShipmentCreate, ShipmentListRead, ShipmentRead, ShipmentUpdate
+from app.schemas.courier import (
+    ShipmentBatchStatusUpdateRequest,
+    ShipmentBatchStatusUpdateResultRead,
+    ShipmentBatchStatusUpdateRowRead,
+    ShipmentCreate,
+    ShipmentListRead,
+    ShipmentRead,
+    ShipmentUpdate,
+)
 from app.services.activity_log_service import log_activity
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def _csv_response(filename: str, headers: list[str], rows: list[list[object]]) -> Response:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def _shipment_query():
@@ -39,6 +61,24 @@ def _sync_shipment_timestamps(shipment: Shipment, previous_status: str | None = 
             shipment.delivered_at = current_time
         if (shipment.collected_amount or Decimal("0")) <= 0 and (shipment.cod_amount or Decimal("0")) > 0:
             shipment.collected_amount = shipment.cod_amount
+
+
+def _is_safe_shipment_status_transition(previous_status: str, next_status: str) -> bool:
+    if previous_status == next_status:
+        return True
+    if previous_status == "delivered":
+        return False
+    if previous_status == "cancelled":
+        return next_status == "cancelled"
+    if previous_status == "returned":
+        return next_status == "returned"
+    if previous_status == "failed":
+        return next_status in {"failed", "returned"}
+    if previous_status == "shipped" and next_status in {"pending", "ready_to_ship"}:
+        return False
+    if previous_status == "in_transit" and next_status == "pending":
+        return False
+    return True
 
 
 def _sync_reconciliation_fields(
@@ -99,6 +139,97 @@ async def list_shipments(
     return list(result.scalars().unique().all())
 
 
+@router.post("/batch-status-update", response_model=ShipmentBatchStatusUpdateResultRead)
+async def batch_update_shipment_statuses(
+    payload: ShipmentBatchStatusUpdateRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> ShipmentBatchStatusUpdateResultRead:
+    if not payload.shipment_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Select at least one shipment.")
+
+    result = await db.execute(_shipment_query().where(Shipment.id.in_(payload.shipment_ids)))
+    shipments = {shipment.id: shipment for shipment in result.scalars().unique().all()}
+
+    rows: list[ShipmentBatchStatusUpdateRowRead] = []
+    success_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for shipment_id in payload.shipment_ids:
+        shipment = shipments.get(shipment_id)
+        if shipment is None:
+            failed_count += 1
+            rows.append(
+                ShipmentBatchStatusUpdateRowRead(
+                    shipment_id=shipment_id,
+                    status="failed",
+                    message="Shipment not found.",
+                )
+            )
+            continue
+
+        previous_status = shipment.status
+        if previous_status == payload.status:
+            skipped_count += 1
+            rows.append(
+                ShipmentBatchStatusUpdateRowRead(
+                    shipment_id=shipment.id,
+                    status="skipped",
+                    message="Shipment already has that status.",
+                )
+            )
+            continue
+
+        if not _is_safe_shipment_status_transition(previous_status, payload.status):
+            skipped_count += 1
+            rows.append(
+                ShipmentBatchStatusUpdateRowRead(
+                    shipment_id=shipment.id,
+                    status="skipped",
+                    message=f"Skipped unsafe transition from {previous_status} to {payload.status}.",
+                )
+            )
+            continue
+
+        shipment.status = payload.status
+        _sync_shipment_timestamps(shipment, previous_status)
+        _log_shipment_event(
+            shipment,
+            event_type="status_changed",
+            message=f"Status changed from {previous_status} to {shipment.status}.",
+            created_by_id=current_user.id,
+        )
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="shipment_status_changed",
+            module="shipments",
+            entity_type="shipment",
+            entity_id=shipment.id,
+            message=f"Changed shipment {shipment.shipment_number} from {previous_status} to {shipment.status} via batch update.",
+            request=request,
+        )
+        success_count += 1
+        rows.append(
+            ShipmentBatchStatusUpdateRowRead(
+                shipment_id=shipment.id,
+                status="success",
+                message=f"Updated to {shipment.status}.",
+            )
+        )
+
+    await commit_or_409(db, "Could not complete shipment batch status update")
+    return ShipmentBatchStatusUpdateResultRead(
+        status=payload.status,
+        success_count=success_count,
+        skipped_count=skipped_count,
+        failed_count=failed_count,
+        rows=rows,
+    )
+
+
 @router.get("/{shipment_id}", response_model=ShipmentRead)
 async def get_shipment(shipment_id: UUID, db: DBSession) -> Shipment:
     return await fetch_one_or_404(db, _shipment_query().where(Shipment.id == shipment_id), "Shipment not found")
@@ -122,11 +253,11 @@ async def create_shipment(
 
     payload = shipment_in.model_dump()
     recipient_defaults = _prefill_recipient_fields(order)
+    payload["recipient_name"] = payload.get("recipient_name") or recipient_defaults["recipient_name"]
+    payload["recipient_phone"] = payload.get("recipient_phone") or recipient_defaults["recipient_phone"]
+    payload["delivery_address"] = payload.get("delivery_address") or recipient_defaults["delivery_address"]
     shipment = Shipment(
         **payload,
-        recipient_name=payload.get("recipient_name") or recipient_defaults["recipient_name"],
-        recipient_phone=payload.get("recipient_phone") or recipient_defaults["recipient_phone"],
-        delivery_address=payload.get("delivery_address") or recipient_defaults["delivery_address"],
     )
     _sync_shipment_timestamps(shipment)
     _sync_reconciliation_fields(shipment)

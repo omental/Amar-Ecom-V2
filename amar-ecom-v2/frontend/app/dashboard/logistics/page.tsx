@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  Download,
   Loader2,
   PackageCheck,
   Rows3,
@@ -127,6 +128,11 @@ type LogisticsOperationsSummary = {
   failed_shipments: number;
 };
 
+type DateRangeFilter = {
+  date_from: string;
+  date_to: string;
+};
+
 const tabs = [
   { id: "pending-dispatch", label: "Pending Dispatch" },
   { id: "shipments", label: "Shipments" },
@@ -155,9 +161,38 @@ const initialReconciliationForm: ReconciliationForm = {
   reconciliation_status: "pending",
 };
 
+const initialReconciliationDates: DateRangeFilter = {
+  date_from: "",
+  date_to: "",
+};
+
 function toNumber(value: string | number | null | undefined) {
   const numericValue = Number(value ?? 0);
   return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function downloadCsv(filename: string, columns: string[], rows: Array<Array<string | number | null | undefined>>) {
+  const csvLines = [
+    columns.join(","),
+    ...rows.map((row) =>
+      row
+        .map((value) => {
+          const safe = String(value ?? "").replace(/"/g, '""');
+          return `"${safe}"`;
+        })
+        .join(","),
+    ),
+  ];
+
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 export default function LogisticsPage() {
@@ -173,6 +208,8 @@ export default function LogisticsPage() {
   const [pendingWarehouseFilter, setPendingWarehouseFilter] = useState("all");
   const [reconciliationStatusFilter, setReconciliationStatusFilter] = useState("all");
   const [reconciliationCourierFilter, setReconciliationCourierFilter] = useState("all");
+  const [reconciliationExternalStatusFilter, setReconciliationExternalStatusFilter] = useState("all");
+  const [reconciliationDates, setReconciliationDates] = useState<DateRangeFilter>(initialReconciliationDates);
   const [createShipmentForm, setCreateShipmentForm] = useState<CreateShipmentForm>(initialCreateShipmentForm);
   const [reconciliationForm, setReconciliationForm] = useState<ReconciliationForm>(initialReconciliationForm);
   const [isLoading, setIsLoading] = useState(true);
@@ -242,9 +279,42 @@ export default function LogisticsPage() {
       ) {
         return false;
       }
+      if (
+        reconciliationExternalStatusFilter !== "all" &&
+        (shipment.external_status || "none") !== reconciliationExternalStatusFilter
+      ) {
+        return false;
+      }
+      if (reconciliationDates.date_from && shipment.created_at < reconciliationDates.date_from) {
+        return false;
+      }
+      if (reconciliationDates.date_to && shipment.created_at > `${reconciliationDates.date_to}T23:59:59`) {
+        return false;
+      }
       return true;
     });
-  }, [shipments, reconciliationStatusFilter, reconciliationCourierFilter]);
+  }, [
+    shipments,
+    reconciliationStatusFilter,
+    reconciliationCourierFilter,
+    reconciliationExternalStatusFilter,
+    reconciliationDates,
+  ]);
+  const reconciliationTotals = useMemo(() => {
+    return filteredReconciliationShipments.reduce(
+      (totals, shipment) => {
+        const codAmount = toNumber(shipment.cod_amount);
+        const collectedAmount = toNumber(shipment.collected_amount);
+        const courierCharge = toNumber(shipment.courier_charge);
+        totals.cod += codAmount;
+        totals.collected += collectedAmount;
+        totals.courierCharge += courierCharge;
+        totals.pending += Math.max(0, codAmount - collectedAmount);
+        return totals;
+      },
+      { cod: 0, collected: 0, courierCharge: 0, pending: 0 },
+    );
+  }, [filteredReconciliationShipments]);
   const selectedOrderIdFromQuery = searchParams.get("order_id");
   const selectedOrderForForm =
     selectedOrder ||
@@ -369,6 +439,38 @@ export default function LogisticsPage() {
     } finally {
       setIsUpdatingReconciliation(false);
     }
+  }
+
+  function exportReconciliationCsv(filename: string, rows: Shipment[]) {
+    downloadCsv(
+      filename,
+      [
+        "shipment_number",
+        "order_number",
+        "courier",
+        "tracking",
+        "external_tracking",
+        "external_status",
+        "cod_amount",
+        "collected_amount",
+        "courier_charge",
+        "reconciliation_status",
+        "created_at",
+      ],
+      rows.map((shipment) => [
+        shipment.shipment_number,
+        shipment.order?.order_number || "",
+        shipment.courier?.name || "",
+        shipment.tracking_number || "",
+        shipment.external_tracking_number || shipment.external_consignment_id || "",
+        shipment.external_status || "",
+        shipment.cod_amount,
+        shipment.collected_amount,
+        shipment.courier_charge,
+        shipment.reconciliation_status,
+        shipment.created_at,
+      ]),
+    );
   }
 
   return (
@@ -861,7 +963,7 @@ export default function LogisticsPage() {
             />
 
             <div className="mt-6">
-              <div className="mb-4 grid gap-3 xl:grid-cols-2">
+              <div className="mb-4 grid gap-3 xl:grid-cols-4">
                 <select
                   value={reconciliationStatusFilter}
                   onChange={(event) => setReconciliationStatusFilter(event.target.value)}
@@ -884,8 +986,70 @@ export default function LogisticsPage() {
                     <option key={courier.id} value={courier.id}>
                       {courier.name}
                     </option>
-                  ))}
+                    ))}
                 </select>
+                <select
+                  value={reconciliationExternalStatusFilter}
+                  onChange={(event) => setReconciliationExternalStatusFilter(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="all">All external statuses</option>
+                  <option value="none">No external status</option>
+                  <option value="delivered">Delivered</option>
+                  <option value="failed">Failed</option>
+                  <option value="returned">Returned</option>
+                  <option value="pending">Pending</option>
+                  <option value="processing">Processing</option>
+                  <option value="in_transit">In transit</option>
+                </select>
+                <input
+                  type="date"
+                  value={reconciliationDates.date_from}
+                  onChange={(event) =>
+                    setReconciliationDates((current) => ({ ...current, date_from: event.target.value }))
+                  }
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                />
+                <input
+                  type="date"
+                  value={reconciliationDates.date_to}
+                  onChange={(event) =>
+                    setReconciliationDates((current) => ({ ...current, date_to: event.target.value }))
+                  }
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                />
+              </div>
+
+              <div className="mb-4 flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <button
+                  type="button"
+                  onClick={() => exportReconciliationCsv("reconciliation-current.csv", filteredReconciliationShipments)}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export current CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    exportReconciliationCsv(
+                      "reconciliation-unsettled.csv",
+                      filteredReconciliationShipments.filter(
+                        (shipment) => !["settled", "cancelled"].includes(shipment.reconciliation_status),
+                      ),
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export unsettled CSV
+                </button>
+                <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+                  <span>COD: <strong className="text-slate-950">{formatCurrency(reconciliationTotals.cod)}</strong></span>
+                  <span>Collected: <strong className="text-slate-950">{formatCurrency(reconciliationTotals.collected)}</strong></span>
+                  <span>Courier charge: <strong className="text-slate-950">{formatCurrency(reconciliationTotals.courierCharge)}</strong></span>
+                  <span>Pending: <strong className="text-slate-950">{formatCurrency(reconciliationTotals.pending)}</strong></span>
+                </div>
               </div>
 
               {filteredReconciliationShipments.length === 0 ? (

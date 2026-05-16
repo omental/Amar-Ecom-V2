@@ -161,3 +161,22 @@ class LogisticsOperationsSummaryRead(BaseModel):
     shipments_waiting_status_sync_count: int
     delivered_shipments: int
     failed_shipments: int
+
+
+class ShipmentBatchStatusUpdateRequest(BaseModel):
+    shipment_ids: list[UUID]
+    status: str
+
+
+class ShipmentBatchStatusUpdateRowRead(BaseModel):
+    shipment_id: UUID
+    status: str
+    message: str
+
+
+class ShipmentBatchStatusUpdateResultRead(BaseModel):
+    status: str
+    success_count: int
+    skipped_count: int
+    failed_count: int
+    rows: list[ShipmentBatchStatusUpdateRowRead]

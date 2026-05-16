@@ -1,7 +1,9 @@
+import csv
+from io import StringIO
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +21,9 @@ from app.schemas.courier import ShipmentCreateFromOrder, ShipmentRead
 from app.schemas.order import (
     InvoiceDataRead,
     InvoiceMetadataRead,
+    OrderBatchActionRequest,
+    OrderBatchActionResultRead,
+    OrderBatchActionRowRead,
     OrderCreate,
     OrderDuplicateRead,
     OrderListRead,
@@ -37,11 +42,24 @@ from app.services.inventory_service import (
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+def _csv_response(filename: str, headers: list[str], rows: list[list[object]]) -> Response:
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def _order_query():
     return select(Order).options(
         selectinload(Order.items),
         selectinload(Order.customer),
         selectinload(Order.warehouse),
+        selectinload(Order.shipments),
         selectinload(Order.events).selectinload(OrderEvent.created_by),
         selectinload(Order.stock_movements),
     )
@@ -63,6 +81,20 @@ def _should_deduct_stock(previous_status: str, next_status: str, stock_deducted:
         and next_status in fulfillment_statuses
         and not stock_deducted
     )
+
+
+def _is_safe_order_status_transition(previous_status: str, next_status: str) -> bool:
+    if previous_status == next_status:
+        return True
+    if previous_status == "delivered":
+        return False
+    if previous_status == "cancelled":
+        return next_status == "cancelled"
+    if previous_status == "returned":
+        return next_status == "returned"
+    if previous_status == "shipped" and next_status in {"pending", "confirmed", "processing", "ready_to_ship"}:
+        return False
+    return True
 
 
 def _log_order_event(
@@ -280,6 +312,236 @@ async def duplicate_check_orders(
         .limit(limit)
     )
     return list(result.scalars().unique().all())
+
+
+@router.post("/batch-actions", response_model=OrderBatchActionResultRead)
+async def batch_order_actions(
+    payload: OrderBatchActionRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> OrderBatchActionResultRead:
+    if not payload.order_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Select at least one order.")
+
+    supported_actions = {"mark_printed", "update_status"}
+    if payload.action not in supported_actions:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported batch action.")
+
+    result = await db.execute(
+        _order_query().where(Order.id.in_(payload.order_ids))
+    )
+    orders = {order.id: order for order in result.scalars().unique().all()}
+
+    rows: list[OrderBatchActionRowRead] = []
+    success_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    next_status = payload.options.status if payload.options else None
+    if payload.action == "update_status" and not next_status:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A target status is required.")
+
+    for order_id in payload.order_ids:
+        order = orders.get(order_id)
+        if order is None:
+            failed_count += 1
+            rows.append(
+                OrderBatchActionRowRead(order_id=order_id, status="failed", message="Order not found.")
+            )
+            continue
+
+        if payload.action == "mark_printed":
+            order.printed_count = (order.printed_count or 0) + 1
+            order.last_printed_at = datetime.now(timezone.utc)
+            _log_order_event(
+                order,
+                event_type="order_printed",
+                message=f"Invoice marked as printed ({order.printed_count} total prints).",
+                created_by_id=current_user.id,
+            )
+            await log_activity(
+                db,
+                user_id=current_user.id,
+                action="order_printed",
+                module="orders",
+                entity_type="order",
+                entity_id=order.id,
+                message=f"Marked order {order.order_number} as printed via batch action.",
+                request=request,
+            )
+            success_count += 1
+            rows.append(
+                OrderBatchActionRowRead(order_id=order.id, status="success", message="Marked as printed.")
+            )
+            continue
+
+        assert next_status is not None
+        if not _is_safe_order_status_transition(order.status, next_status):
+            skipped_count += 1
+            rows.append(
+                OrderBatchActionRowRead(
+                    order_id=order.id,
+                    status="skipped",
+                    message=f"Skipped unsafe transition from {order.status} to {next_status}.",
+                )
+            )
+            continue
+
+        previous_status = order.status
+        if previous_status == next_status:
+            skipped_count += 1
+            rows.append(
+                OrderBatchActionRowRead(order_id=order.id, status="skipped", message="Order already has that status.")
+            )
+            continue
+
+        order.status = next_status
+        if _should_deduct_stock(previous_status, order.status, order.stock_deducted):
+            for item in order.items:
+                if order.warehouse_id is not None:
+                    inventory_item = await get_inventory_item_for_fulfillment(
+                        db,
+                        product_id=item.product_id,
+                        variant_id=item.variant_id,
+                        warehouse_id=order.warehouse_id,
+                        required_quantity=item.quantity,
+                    )
+                else:
+                    inventory_item = await get_fulfillment_inventory_item(
+                        db,
+                        product_id=item.product_id,
+                        variant_id=item.variant_id,
+                        required_quantity=item.quantity,
+                    )
+                await decrease_stock(
+                    db,
+                    inventory_item=inventory_item,
+                    quantity=item.quantity,
+                    movement_type="order_fulfilled",
+                    order_id=order.id,
+                    note=f"Stock deducted for order {order.order_number}",
+                )
+            order.stock_deducted = True
+
+        _log_order_event(
+            order,
+            event_type="status_changed",
+            message=f"Status changed from {previous_status} to {order.status}.",
+            created_by_id=current_user.id,
+        )
+        await log_activity(
+            db,
+            user_id=current_user.id,
+            action="order_status_changed",
+            module="orders",
+            entity_type="order",
+            entity_id=order.id,
+            message=f"Changed order {order.order_number} from {previous_status} to {order.status} via batch action.",
+            request=request,
+        )
+        success_count += 1
+        rows.append(
+            OrderBatchActionRowRead(order_id=order.id, status="success", message=f"Updated to {order.status}.")
+        )
+
+    await commit_or_409(db, "Could not complete order batch action")
+    return OrderBatchActionResultRead(
+        action=payload.action,
+        success_count=success_count,
+        skipped_count=skipped_count,
+        failed_count=failed_count,
+        rows=rows,
+    )
+
+
+@router.get("/dispatch-export")
+async def export_dispatch_orders(
+    db: DBSession,
+    source: str | None = Query(default=None),
+    warehouse_id: UUID | None = Query(default=None),
+    stock_deducted: bool | None = Query(default=None),
+    has_shipment: bool | None = Query(default=None),
+    printed: bool | None = Query(default=None),
+    external_status: str | None = Query(default=None),
+    payment_status: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None),
+) -> Response:
+    stmt = _order_query().order_by(Order.created_at.desc())
+    if source:
+        stmt = stmt.where(Order.source == source)
+    if warehouse_id is not None:
+        stmt = stmt.where(Order.warehouse_id == warehouse_id)
+    if stock_deducted is not None:
+        stmt = stmt.where(Order.stock_deducted.is_(stock_deducted))
+    if has_shipment is not None:
+        active_shipment_clause = Order.shipments.any(Shipment.status.not_in(["cancelled", "returned"]))
+        stmt = stmt.where(active_shipment_clause if has_shipment else not_(active_shipment_clause))
+    if printed is not None:
+        stmt = stmt.where(Order.printed_count > 0 if printed else Order.printed_count <= 0)
+    if external_status:
+        stmt = stmt.where(Order.external_status == external_status)
+    if payment_status:
+        stmt = stmt.where(Order.payment_status == payment_status)
+    if status_value:
+        stmt = stmt.where(Order.status == status_value)
+    if search and search.strip():
+        query = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Order.order_number.ilike(query),
+                Order.customer_name.ilike(query),
+                Order.customer_phone.ilike(query),
+                Order.shipping_address.ilike(query),
+                Order.notes.ilike(query),
+                Order.tags.ilike(query),
+                Order.external_id.ilike(query),
+                Order.external_number.ilike(query),
+            )
+        )
+
+    orders = list((await db.execute(stmt)).scalars().unique().all())
+    return _csv_response(
+        "dispatch-orders.csv",
+        [
+            "Order Number",
+            "Customer",
+            "Phone",
+            "Warehouse",
+            "Status",
+            "Payment Status",
+            "Source",
+            "Has Shipment",
+            "Stock Deducted",
+            "Printed Count",
+            "Shipping Address",
+            "Notes",
+            "Tags",
+            "Total",
+            "Created At",
+        ],
+        [
+            [
+                order.order_number,
+                order.customer_name or (order.customer.name if order.customer else ""),
+                order.customer_phone or "",
+                order.warehouse.name if order.warehouse else "",
+                order.status,
+                order.payment_status,
+                order.source,
+                "Yes" if any(shipment.status not in {"cancelled", "returned"} for shipment in getattr(order, "shipments", [])) else "No",
+                "Yes" if order.stock_deducted else "No",
+                order.printed_count,
+                order.shipping_address or "",
+                order.notes or "",
+                order.tags or "",
+                order.total,
+                order.created_at.isoformat(),
+            ]
+            for order in orders
+        ],
+    )
 
 
 @router.get("/{order_id}/invoice-data", response_model=InvoiceDataRead)

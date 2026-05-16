@@ -2554,6 +2554,53 @@ Expected result:
 - filter combinations remain non-destructive and read-only
 - WooCommerce-linked rows can be isolated without exposing secrets
 
+### Batch Order Actions
+
+```powershell
+$batchOrderBody = @{
+  action = "mark_printed"
+  order_ids = @("{orderId1}", "{orderId2}")
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/orders/batch-actions `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $batchOrderBody
+```
+
+Expected result:
+
+- supported safe actions currently include:
+  - `mark_printed`
+  - `update_status`
+- response includes row-level results with:
+  - `order_id`
+  - `status`
+  - `message`
+- stock deduction still follows the existing fulfillment rules when a safe batch status change reaches a deducting status
+- no background worker or automation is introduced
+
+### Dispatch Export
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/orders/dispatch-export?status=ready_to_ship&has_shipment=false" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns a CSV response
+- includes dispatch-ready operational fields such as:
+  - order number
+  - customer phone
+  - warehouse
+  - payment status
+  - source
+  - notes or tags
+
 ### Logistics Operations Summary
 
 ```powershell
@@ -2574,6 +2621,50 @@ Expected result:
   - `shipments_waiting_status_sync_count`
   - `delivered_shipments`
   - `failed_shipments`
+
+### Shipment Batch Status Update
+
+```powershell
+$batchShipmentBody = @{
+  shipment_ids = @("{shipmentId1}", "{shipmentId2}")
+  status = "shipped"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/shipments/batch-status-update `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $batchShipmentBody
+```
+
+Expected result:
+
+- response includes row-level success, skipped, and failed results
+- existing timestamp behavior for shipped or delivered rows is preserved
+- no courier API call is made from this endpoint
+- no external sync is triggered here
+
+### Reconciliation Export
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/logistics/reconciliation-export?reconciliation_status=pending" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns a CSV response
+- includes:
+  - courier
+  - order
+  - tracking
+  - COD amount
+  - collected amount
+  - courier charge
+  - reconciliation status
+  - external status
 
 ### Reports Integration Summary
 
