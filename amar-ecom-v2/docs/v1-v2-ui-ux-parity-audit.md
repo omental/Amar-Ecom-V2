@@ -367,6 +367,11 @@ Status:
 - CRM split-pane redesign
 - Returns, suppliers, and procurement visual alignment
 
+Status:
+- inventory, products, product detail, categories, brands, and warehouses now have the first-pass v1-style shell treatment
+- the shared ops language now covers inventory and product admin surfaces in addition to orders and logistics
+- CRM, returns, suppliers, and procurement visual adjacency still remain for the next parity pass
+
 ### Phase 14G
 
 - Dashboard + Reports visual parity

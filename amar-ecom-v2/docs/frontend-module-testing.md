@@ -1423,6 +1423,93 @@ Release-candidate audit result on 2026-05-16:
    - event timeline
 4. For WooCommerce-sourced orders, confirm the refresh warning and action remain visible and unchanged functionally
 
+## Inventory Hub UI Checks
+
+1. Open `http://localhost:3000/dashboard/inventory`
+2. Confirm the page now uses the denser Phase `14F` inventory shell with:
+   - richer inventory header
+   - KPI strip
+   - stronger tabbed hub framing
+3. Confirm the KPI strip shows:
+   - total inventory items
+   - low stock
+   - out of stock
+   - recent movements
+   - transfers
+   - wastage
+4. Confirm the tabs still work for:
+   - `Stock Overview`
+   - `Adjustments`
+   - `Transfers`
+   - `Wastage`
+   - `Movement Ledger`
+5. In `Stock Overview`, confirm each row now makes these easier to scan:
+   - product name
+   - SKU
+   - warehouse and code
+   - quantity
+   - low stock threshold
+   - status badge
+   - adjust action
+6. Confirm adjustment, transfer, wastage, and ledger workflows still behave the same as before
+
+## Products Admin UI Checks
+
+1. Open `http://localhost:3000/dashboard/products`
+2. Confirm the page now uses the denser Phase `14F` product-admin shell with:
+   - richer header
+   - KPI strip
+   - grouped local filter bar
+3. Confirm the KPI strip shows:
+   - total products
+   - active products
+   - Woo products
+   - variant rows
+4. Use the local search and status filter
+5. Confirm the visible product table narrows without runtime errors
+6. Confirm rows now make these easier to scan:
+   - product name
+   - SKU
+   - category
+   - brand
+   - price
+   - source or Woo badge
+   - external status when present
+   - synced hint when present
+   - variants count
+7. Confirm actions still work for:
+   - `Edit`
+   - `Manage Variants`
+   - `Refresh Woo` when applicable
+
+## Product Detail UI Checks
+
+1. Open `http://localhost:3000/dashboard/products/{id}`
+2. Confirm the header now shows a denser summary cluster for:
+   - SKU
+   - price
+   - active status
+   - Woo stock when available
+3. For WooCommerce-sourced products, confirm the refresh button and safety note still appear
+4. Confirm the page still shows:
+   - edit product form
+   - variants section
+   - inventory summary
+   - category and brand detail
+5. Confirm no inventory values are changed by the UI pass itself
+
+## Categories / Brands / Warehouses UI Checks
+
+1. Open:
+   - `http://localhost:3000/dashboard/categories`
+   - `http://localhost:3000/dashboard/brands`
+   - `http://localhost:3000/dashboard/warehouses`
+2. Confirm each page now inherits the new shell language with:
+   - stronger header framing
+   - improved card language
+   - denser list presentation
+3. Confirm create flows still work exactly as before
+
 ## Logistics Operations Cockpit Checks
 
 1. Open `http://localhost:3000/dashboard/logistics`

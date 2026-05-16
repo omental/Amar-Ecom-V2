@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { PageHeader } from "@/components/ui/page-header";
 import { api, ApiError } from "@/lib/api";
 
@@ -101,12 +102,12 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
           eyebrow="Catalog Structure"
           title="Categories"
           description="Organize your product catalog with clear category groups that can be reused across products and reporting."
-          meta={`${categories.length} items`}
+          meta={<span className="text-sm font-semibold text-[var(--color-txt-pri)]">{categories.length} items</span>}
         />
       </section>
 
@@ -197,7 +198,7 @@ export default function CategoriesPage() {
           </form>
         </FormCard>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+        <section className="card-base p-6">
           <PageHeader
             eyebrow="Saved Records"
             title="Existing categories"

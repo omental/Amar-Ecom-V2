@@ -17,6 +17,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
@@ -517,50 +521,41 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <PageHeader
-            eyebrow="Inventory Operations"
-            title="Inventory Hub"
-            description="Run stock overview, manual adjustments, warehouse transfers, wastage, and movement review from one operational workspace."
-            meta={`${inventoryItems.length} inventory rows`}
-          />
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Low stock</p>
-              <p className="mt-2 text-xl font-semibold text-slate-950">{lowStockCount}</p>
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Inventory Operations"
+          title="Inventory Hub"
+          description="Work stock overview, adjustments, transfers, wastage, and movement review from one denser inventory workspace that feels closer to the original v1 operations hub."
+          meta={
+            <div className="space-y-1">
+              <p className="ops-micro-label !text-[10px]">Inventory Rows</p>
+              <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{inventoryItems.length} rows</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Out of stock</p>
-              <p className="mt-2 text-xl font-semibold text-slate-950">{outOfStockCount}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Movements</p>
-              <p className="mt-2 text-xl font-semibold text-slate-950">{movements.length}</p>
-            </div>
-          </div>
+          }
+        />
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <OpsSummaryCard eyebrow="Stock" label="Inventory Items" value={inventoryItems.length} icon={Boxes} />
+          <OpsSummaryCard eyebrow="Attention" label="Low Stock" value={lowStockCount} icon={AlertTriangle} tone="warning" />
+          <OpsSummaryCard eyebrow="Urgent" label="Out of Stock" value={outOfStockCount} icon={PackageMinus} tone="danger" />
+          <OpsSummaryCard eyebrow="Ledger" label="Recent Movements" value={movements.length} icon={PencilLine} tone="info" />
+          <OpsSummaryCard eyebrow="Routing" label="Transfers" value={transfers.length} icon={ArrowRightLeft} />
+          <OpsSummaryCard eyebrow="Losses" label="Wastage" value={wastageLogs.length} icon={PackageMinus} tone="warning" />
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[var(--shadow-soft)] sm:p-6">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  isActive
-                    ? "border-slate-950 bg-slate-950 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+      <section className="card-base p-4 sm:p-6">
+        <div className="space-y-3">
+          <div>
+            <p className="ops-micro-label">Inventory Views</p>
+            <p className="mt-2 text-sm text-[var(--color-txt-sec)]">
+              Switch between the stock floor, adjustments, transfers, wastage, and movement ledger without leaving the hub.
+            </p>
+          </div>
+          <OpsTabs
+            tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))}
+            activeTab={activeTab}
+            onChange={(value) => setActiveTab(value as (typeof tabs)[number]["id"])}
+          />
         </div>
       </section>
 
@@ -690,14 +685,37 @@ export default function InventoryPage() {
             </form>
           </FormCard>
 
-          <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-            <PageHeader
+          <section className="card-base p-6">
+            <OpsPageHeader
               eyebrow="Stock Overview"
               title="Inventory levels"
-              description="Review by product and warehouse, then jump straight into a stock adjustment."
+              description="Review stock by product and warehouse, then jump directly into an adjustment workflow from the same dense overview table."
             />
 
-            <div className="mt-6">
+            <div className="mt-6 space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLedgerFilters((current) => ({ ...current, movement_type: "adjustment" }))}
+                  className="ops-filter-chip border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                >
+                  Recent adjustments
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("ledger")}
+                  className="ops-filter-chip border-slate-200 bg-slate-100 text-slate-700 hover:bg-white"
+                >
+                  Open movement ledger
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("transfers")}
+                  className="ops-filter-chip border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                >
+                  Review transfers
+                </button>
+              </div>
               {inventoryItems.length === 0 ? (
                 <EmptyState
                   title="No inventory yet"
@@ -710,12 +728,20 @@ export default function InventoryPage() {
                     return (
                       <div
                         key={item.id}
-                        className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 xl:grid-cols-6 xl:gap-4"
+                        className="grid grid-cols-1 gap-4 px-5 py-5 text-sm text-[var(--color-txt-sec)] xl:grid-cols-6 xl:gap-5"
                       >
-                        <span className="font-medium text-slate-950">
-                          {item.product_id ? productMap.get(item.product_id)?.name || "Unknown product" : "No product"}
-                        </span>
-                        <span>{warehouseMap.get(item.warehouse_id)?.name || "Unknown warehouse"}</span>
+                        <div className="space-y-1">
+                          <span className="font-medium text-[var(--color-txt-pri)]">
+                            {item.product_id ? productMap.get(item.product_id)?.name || "Unknown product" : "No product"}
+                          </span>
+                          <p className="text-xs text-[var(--color-txt-mut)]">
+                            SKU {item.product_id ? productMap.get(item.product_id)?.sku || "No SKU" : "None"}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <span>{warehouseMap.get(item.warehouse_id)?.name || "Unknown warehouse"}</span>
+                          <p className="text-xs text-[var(--color-txt-mut)]">{warehouseMap.get(item.warehouse_id)?.code || item.warehouse_id}</p>
+                        </div>
                         <span className="font-semibold text-slate-950">{item.quantity}</span>
                         <span>{item.low_stock_threshold}</span>
                         <span>
@@ -1323,7 +1349,7 @@ export default function InventoryPage() {
       ) : null}
 
       {!isLoading && activeTab === "ledger" ? (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+        <section className="card-base p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <PageHeader
               eyebrow="Movement Ledger"
@@ -1339,51 +1365,56 @@ export default function InventoryPage() {
             </Link>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <select
-              value={ledgerFilters.product_id}
-              onChange={(event) =>
-                setLedgerFilters((current) => ({ ...current, product_id: event.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+          <div className="mt-6">
+            <OpsFilterBar
+              title="Ledger Filters"
+              description="Narrow movement records by product, warehouse, or movement type without leaving the inventory hub."
             >
-              <option value="">All products</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.id}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
+              <select
+                value={ledgerFilters.product_id}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, product_id: event.target.value }))
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white md:max-w-[240px]"
+              >
+                <option value="">All products</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
 
-            <select
-              value={ledgerFilters.warehouse_id}
-              onChange={(event) =>
-                setLedgerFilters((current) => ({ ...current, warehouse_id: event.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-            >
-              <option value="">All warehouses</option>
-              {warehouses.map((warehouse) => (
-                <option key={warehouse.id} value={warehouse.id}>
-                  {warehouse.name}
-                </option>
-              ))}
-            </select>
+              <select
+                value={ledgerFilters.warehouse_id}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, warehouse_id: event.target.value }))
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white md:max-w-[240px]"
+              >
+                <option value="">All warehouses</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </option>
+                ))}
+              </select>
 
-            <select
-              value={ledgerFilters.movement_type}
-              onChange={(event) =>
-                setLedgerFilters((current) => ({ ...current, movement_type: event.target.value }))
-              }
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-            >
-              <option value="">All movement types</option>
-              {["stock_in", "adjustment", "order_fulfilled", "transfer_out", "transfer_in", "wastage", "return_restocked", "purchase_received"].map((movementType) => (
-                <option key={movementType} value={movementType}>
-                  {formatLabel(movementType)}
-                </option>
-              ))}
-            </select>
+              <select
+                value={ledgerFilters.movement_type}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, movement_type: event.target.value }))
+                }
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white md:max-w-[260px]"
+              >
+                <option value="">All movement types</option>
+                {["stock_in", "adjustment", "order_fulfilled", "transfer_out", "transfer_in", "wastage", "return_restocked", "purchase_received"].map((movementType) => (
+                  <option key={movementType} value={movementType}>
+                    {formatLabel(movementType)}
+                  </option>
+                ))}
+              </select>
+            </OpsFilterBar>
           </div>
 
           <div className="mt-6">

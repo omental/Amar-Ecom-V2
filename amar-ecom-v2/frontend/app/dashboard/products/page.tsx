@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Boxes, Loader2, Pencil, Plus, Rows3 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Boxes, Loader2, Pencil, Plus, Rows3, Search, RefreshCw, Tag } from "lucide-react";
 
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -89,11 +91,30 @@ export default function ProductsPage() {
   const [form, setForm] = useState<ProductForm>(initialForm);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState<ProductForm>(initialForm);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const filteredProducts = useMemo(() => {
+    const search = searchTerm.trim().toLowerCase();
+    return products.filter((product) => {
+      if (statusFilter && product.status !== statusFilter) {
+        return false;
+      }
+      if (!search) {
+        return true;
+      }
+      return [product.name, product.sku, product.category?.name, product.brand?.name, product.source]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    });
+  }, [products, searchTerm, statusFilter]);
 
   useEffect(() => {
     let isMounted = true;
@@ -207,13 +228,24 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-          <PageHeader
+      <section className="card-base p-6 sm:p-8">
+          <OpsPageHeader
             eyebrow="Catalog Core"
             title="Products"
-            description="Create products, update core details, and jump into the dedicated management page for variants and product-level inventory context."
-            meta={`${products.length} items`}
+            description="Manage the product catalog with denser v1-style admin framing, then jump into the dedicated product workspace for variants, inventory, and WooCommerce-linked metadata."
+            meta={
+              <div className="space-y-1">
+                <p className="ops-micro-label !text-[10px]">Catalog Size</p>
+                <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{products.length} items</p>
+              </div>
+            }
           />
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <OpsSummaryCard eyebrow="Catalog" label="Total Products" value={products.length} icon={Boxes} />
+            <OpsSummaryCard eyebrow="Status" label="Active Products" value={products.filter((product) => product.status === "active").length} icon={Tag} tone="success" />
+            <OpsSummaryCard eyebrow="Channel" label="Woo Products" value={products.filter((product) => product.source === "woocommerce").length} icon={RefreshCw} tone="info" />
+            <OpsSummaryCard eyebrow="Variants" label="Variant Rows" value={products.reduce((sum, product) => sum + (product.variants?.length || 0), 0)} icon={Rows3} />
+          </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -671,21 +703,44 @@ export default function ProductsPage() {
           ) : null}
         </div>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <PageHeader
+        <section className="card-base p-6">
+          <OpsPageHeader
             eyebrow="Saved Records"
             title="Existing products"
-            description="Review the current catalog, make quick edits, or open a product detail workspace for variants and stock visibility."
+            description="Review the catalog with denser row metadata, local filtering, Woo markers, and direct actions into product detail or variant management."
           />
 
-          <div className="mt-6">
+          <div className="mt-6 space-y-4">
+            <OpsFilterBar
+              title="Catalog Filters"
+              description="Filter the loaded product set by text or status without changing the underlying product API behavior."
+            >
+              <div className="relative min-w-[260px] flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-txt-mut)]" />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] py-3 pl-11 pr-4 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
+                  placeholder="Search by name, SKU, category, brand, or source"
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </OpsFilterBar>
             {error ? <ErrorAlert message={error} /> : null}
             {isLoading ? (
               <LoadingState label="Loading products..." />
-            ) : products.length === 0 ? (
+            ) : filteredProducts.length === 0 ? (
               <EmptyState
-                title="No products yet"
-                description="Create the first product to unlock editing, variant management, and inventory-linked review."
+                title="No products match this view"
+                description="Try another search or status filter, or create a new product from the left-side form."
               />
             ) : (
               <DataTable
@@ -700,14 +755,14 @@ export default function ProductsPage() {
                   "Actions",
                 ]}
               >
-                {products.map((product) => (
+                {filteredProducts.map((product) => (
                   <div
                     key={product.id}
-                    className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-8 2xl:gap-4"
+                    className="grid grid-cols-1 gap-4 px-5 py-5 text-sm text-[var(--color-txt-sec)] 2xl:grid-cols-8 2xl:gap-5"
                   >
                     <div>
-                      <span className="font-medium text-slate-950">{product.name}</span>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <span className="font-medium text-[var(--color-txt-pri)]">{product.name}</span>
+                      <p className="mt-1 text-xs text-[var(--color-txt-mut)]">
                         {product.variants?.length || 0} variants
                       </p>
                       {product.source === "woocommerce" ? (
@@ -716,8 +771,11 @@ export default function ProductsPage() {
                           {product.external_status ? <StatusBadge status={product.external_status} label={`Woo ${product.external_status}`} /> : null}
                         </div>
                       ) : null}
+                      {product.external_synced_at ? (
+                        <p className="mt-1 text-xs text-[var(--color-txt-mut)]">Synced {product.external_synced_at}</p>
+                      ) : null}
                     </div>
-                    <span>{product.sku}</span>
+                    <span className="font-medium text-[var(--color-txt-pri)]">{product.sku}</span>
                     <span>{product.category?.name || "Unassigned"}</span>
                     <span>{product.brand?.name || "Unassigned"}</span>
                     <span>{formatCurrency(product.price)}</span>
@@ -741,6 +799,15 @@ export default function ProductsPage() {
                         <Rows3 className="h-3.5 w-3.5" />
                         Manage Variants
                       </Link>
+                      {product.source === "woocommerce" && product.external_id ? (
+                        <Link
+                          href={`/dashboard/products/${product.id}`}
+                          className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Refresh Woo
+                        </Link>
+                      ) : null}
                     </div>
                   </div>
                 ))}

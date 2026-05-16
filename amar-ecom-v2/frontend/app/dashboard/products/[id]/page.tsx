@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
@@ -393,21 +394,26 @@ export default function ProductDetailPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
+      <section className="card-base p-6 sm:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
             <Link
               href="/dashboard/products"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2 text-sm font-medium text-[var(--color-txt-sec)] transition hover:bg-white"
             >
               <ArrowLeft className="h-4 w-4" />
               Back to products
             </Link>
-            <PageHeader
+            <OpsPageHeader
               eyebrow="Product Workspace"
               title={product.name}
-              description="Update the main product record, manage its variants, review where stock currently exists across warehouses, and safely refresh WooCommerce-linked metadata when needed."
-              meta={`${variants.length} variants`}
+              description="Update the base product record, manage variants, review warehouse stock, and safely inspect WooCommerce-linked metadata from one denser admin workspace."
+              meta={
+                <div className="space-y-1">
+                  <p className="ops-micro-label !text-[10px]">Variant Count</p>
+                  <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{variants.length} variants</p>
+                </div>
+              }
             />
             {product.source === "woocommerce" ? (
               <div className="flex flex-wrap items-center gap-3">
@@ -432,26 +438,26 @@ export default function ProductDetailPage() {
                 Refresh from WooCommerce
               </button>
             ) : null}
-            <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">SKU</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">{product.sku}</p>
+            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">SKU</p>
+              <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">{product.sku}</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Price</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">Price</p>
+              <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">
                 {formatCurrency(product.price)}
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Status</p>
-              <div className="mt-2">
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">Status</p>
+              <div className="mt-3">
                 <StatusBadge status={product.status} />
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Woo stock</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">{product.external_stock_quantity ?? "-"}</p>
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">Woo Stock</p>
+              <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">{product.external_stock_quantity ?? "-"}</p>
             </div>
             </div>
           </div>

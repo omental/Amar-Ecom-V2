@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { PageHeader } from "@/components/ui/page-header";
 import { api, ApiError } from "@/lib/api";
 
@@ -97,12 +98,12 @@ export default function BrandsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
           eyebrow="Catalog Identity"
           title="Brands"
           description="Manage brand records used by your product catalog and customer-facing merchandising."
-          meta={`${brands.length} items`}
+          meta={<span className="text-sm font-semibold text-[var(--color-txt-pri)]">{brands.length} items</span>}
         />
       </section>
 
@@ -192,7 +193,7 @@ export default function BrandsPage() {
           </form>
         </FormCard>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+        <section className="card-base p-6">
           <PageHeader
             eyebrow="Saved Records"
             title="Existing brands"
