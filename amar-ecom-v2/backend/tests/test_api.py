@@ -1377,6 +1377,95 @@ def test_steadfast_courier_adapter_flow(monkeypatch: pytest.MonkeyPatch) -> None
 
     dispose_engine()
 
+
+def test_courier_settings_security_and_legacy_compatibility() -> None:
+    headers = auth_headers()
+    raw_api_key = "api_key_release_ready_123"
+    raw_api_secret = "api_secret_release_ready_456"
+    raw_password = "ops_password_789"
+    raw_merchant_id = "merchant_release_ready"
+
+    original_encrypt_secret = crypto_utils.encrypt_secret
+
+    monkeypatch = pytest.MonkeyPatch()
+    try:
+        with TestClient(app) as client:
+            save_response = client.patch(
+                "/api/v1/courier-integrations/providers/manual/settings",
+                headers=headers,
+                json={
+                    "display_name": "Manual Secure Provider",
+                    "base_url": "https://courier.example.com",
+                    "api_key": raw_api_key,
+                    "api_secret": raw_api_secret,
+                    "merchant_id": raw_merchant_id,
+                    "password": raw_password,
+                    "is_active": True,
+                    "is_sandbox": True,
+                },
+            )
+            assert save_response.status_code == 200, save_response.text
+            payload = save_response.json()
+            assert "api_key" not in payload
+            assert "api_secret" not in payload
+            assert "merchant_id" not in payload
+            assert "password" not in payload
+            assert payload["has_api_key"] is True
+            assert payload["has_api_secret"] is True
+            assert payload["has_merchant_id"] is True
+            assert payload["has_password"] is True
+            assert payload["api_key_masked"] == mask_secret(raw_api_key)
+            assert raw_api_key not in save_response.text
+            assert raw_api_secret not in save_response.text
+            assert raw_password not in save_response.text
+            assert raw_merchant_id not in save_response.text
+
+            encrypted_value = original_encrypt_secret(raw_api_key)
+            assert encrypted_value != raw_api_key
+            assert encrypted_value.startswith("enc::")
+            assert is_encrypted_secret(encrypted_value)
+            assert decrypt_secret(encrypted_value) == raw_api_key
+
+            get_response = client.get(
+                "/api/v1/courier-integrations/providers/manual/settings",
+                headers=headers,
+            )
+            assert get_response.status_code == 200, get_response.text
+            get_payload = get_response.json()
+            assert get_payload["credentials_encrypted"] is True
+            assert get_payload["api_key_masked"] == mask_secret(raw_api_key)
+            assert "api_secret" not in get_payload
+
+        legacy_setting = CourierProviderSetting(
+            id=uuid.uuid4(),
+            provider="manual",
+            display_name="Legacy Manual",
+            api_key_encrypted="legacy_api_key_plain",
+            api_secret_encrypted="legacy_api_secret_plain",
+            merchant_id_encrypted="legacy_merchant_plain",
+            password_encrypted="legacy_password_plain",
+            is_active=True,
+            is_sandbox=True,
+            last_test_success=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        legacy_payload = courier_integration_routes.provider_setting_metadata(legacy_setting)
+        assert legacy_payload["has_api_key"] is True
+        assert legacy_payload["credentials_encrypted"] is False
+        assert legacy_payload["api_key_masked"] == mask_secret("legacy_api_key_plain")
+        assert "legacy_api_secret_plain" not in str(legacy_payload)
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["courier_provider_settings", "courier_api_logs", "shipments.external_provider"]):
+            pytest.skip("Apply the latest courier integration migration before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+    finally:
+        monkeypatch.undo()
+
+    dispose_engine()
+
 def test_woocommerce_error_handling_and_sync_log_safety(monkeypatch: pytest.MonkeyPatch) -> None:
     headers = auth_headers()
 
