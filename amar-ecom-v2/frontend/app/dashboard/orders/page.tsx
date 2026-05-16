@@ -13,15 +13,21 @@ import {
   StickyNote,
   Tag,
   Truck,
+  Warehouse,
   Plus,
 } from "lucide-react";
 
+import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsActionButton } from "@/components/ui/ops-action-button";
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
@@ -742,34 +748,92 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
           eyebrow="Sales Flow"
-          title="Orders"
-          description="Create manual orders, scan for duplicate phone activity, print invoices, and move orders toward logistics with clearer operational controls."
-          meta={`${orders.length} loaded`}
+          title="Orders Operations Console"
+          description="Work the full order queue from one denser operations surface: scan duplicate phone activity, print invoices, hand orders into logistics, and keep WooCommerce-linked rows visible without leaving the cockpit."
+          meta={
+            <div className="space-y-1">
+              <p className="ops-micro-label !text-[10px]">Queue State</p>
+              <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{orders.length} loaded</p>
+            </div>
+          }
+          actions={
+            <>
+              <Link
+                href="/dashboard/logistics"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
+              >
+                <Truck className="h-4 w-4" />
+                Open Logistics Hub
+              </Link>
+              <a
+                href="#create-order"
+                className="btn-primary inline-flex items-center justify-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Create Manual Order
+              </a>
+            </>
+          }
         />
       </section>
 
       {operationsSummary ? (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-          {[
-            { label: "Open Orders", value: operationsSummary.total_open_orders, tone: "border-slate-200 bg-slate-50 text-slate-950" },
-            { label: "Ready to Ship", value: operationsSummary.ready_to_ship_orders, tone: "border-sky-200 bg-sky-50 text-sky-900" },
-            { label: "Need Shipment", value: operationsSummary.orders_without_shipments_ready_to_ship, tone: "border-amber-200 bg-amber-50 text-amber-900" },
-            { label: "Woo Orders", value: operationsSummary.orders_with_woo_source, tone: "border-violet-200 bg-violet-50 text-violet-900" },
-            { label: "Need Woo Refresh", value: operationsSummary.orders_needing_woo_refresh, tone: "border-orange-200 bg-orange-50 text-orange-900" },
-            { label: "Unprinted", value: operationsSummary.orders_unprinted_count, tone: "border-rose-200 bg-rose-50 text-rose-900" },
-          ].map((card) => (
-            <article key={card.label} className={`rounded-[28px] border p-5 shadow-[var(--shadow-soft)] ${card.tone}`}>
-              <p className="text-sm opacity-80">{card.label}</p>
-              <p className="mt-3 text-3xl font-semibold tracking-tight">{card.value}</p>
-            </article>
-          ))}
+          <OpsSummaryCard
+            eyebrow="Queue"
+            label="Open Orders"
+            value={operationsSummary.total_open_orders}
+            icon={ShoppingCart}
+            helper="Working orders still in flight across confirmation, packing, or dispatch."
+          />
+          <OpsSummaryCard
+            eyebrow="Dispatch"
+            label="Ready to Ship"
+            value={operationsSummary.ready_to_ship_orders}
+            icon={Truck}
+            tone="info"
+            helper="Orders already close to logistics handoff."
+          />
+          <OpsSummaryCard
+            eyebrow="Gap"
+            label="Need Shipment"
+            value={operationsSummary.orders_without_shipments_ready_to_ship}
+            icon={PackagePlus}
+            tone="warning"
+            helper="Ready rows that still need a shipment created."
+          />
+          <OpsSummaryCard
+            eyebrow="Channel"
+            label="Woo Orders"
+            value={operationsSummary.orders_with_woo_source}
+            icon={RefreshCw}
+            tone="info"
+            helper="Imported or linked orders coming from WooCommerce."
+          />
+          <OpsSummaryCard
+            eyebrow="Attention"
+            label="Need Woo Refresh"
+            value={operationsSummary.orders_needing_woo_refresh}
+            icon={RefreshCw}
+            tone="warning"
+            helper="Woo-linked orders with stale external sync state."
+          />
+          <OpsSummaryCard
+            eyebrow="Print Desk"
+            label="Unprinted"
+            value={operationsSummary.orders_unprinted_count}
+            icon={Printer}
+            tone="danger"
+            helper="Orders that still need invoice or print handling."
+          />
         </section>
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
+        <div id="create-order">
         <FormCard
           title="Create order"
           description="Build a manual order with customer, contact, shipping, operational notes, and line items."
@@ -1287,13 +1351,19 @@ export default function OrdersPage() {
             </button>
           </form>
         </FormCard>
+        </div>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <PageHeader
+        <section className="card-base p-6">
+          <OpsPageHeader
             eyebrow="Saved Records"
             title="Recent orders"
-            description="Search, filter by operational status, and jump into print or shipment workflows."
-            meta={`${filteredOrders.length} showing`}
+            description="Use stacked filters, quick slices, and dense row metadata to keep dispatch, print, warehouse, and WooCommerce handoff visible without leaving the list."
+            meta={
+              <div className="space-y-1">
+                <p className="ops-micro-label !text-[10px]">Visible Rows</p>
+                <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{filteredOrders.length} showing</p>
+              </div>
+            }
           />
 
           <div className="mt-6 space-y-4">
@@ -1301,55 +1371,57 @@ export default function OrdersPage() {
               <button
                 type="button"
                 onClick={() => applyQuickFilter("ready")}
-                className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100"
+                className="ops-filter-chip border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100"
               >
                 Ready to ship
               </button>
               <button
                 type="button"
                 onClick={() => applyQuickFilter("needs-shipment")}
-                className="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100"
+                className="ops-filter-chip border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
               >
                 Needs shipment
               </button>
               <button
                 type="button"
                 onClick={() => applyQuickFilter("unprinted")}
-                className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-800 transition hover:bg-rose-100"
+                className="ops-filter-chip border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
               >
                 Unprinted
               </button>
               <button
                 type="button"
                 onClick={() => applyQuickFilter("woo")}
-                className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-800 transition hover:bg-violet-100"
+                className="ops-filter-chip border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
               >
                 Woo orders
               </button>
               <button
                 type="button"
                 onClick={() => applyQuickFilter("stock-not-deducted")}
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
+                className="ops-filter-chip border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
               >
                 Stock not deducted
               </button>
             </div>
 
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                placeholder="Search by order, customer, phone, tags, notes, or address"
-              />
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <OpsFilterBar
+              title="Queue Filters"
+              description="Slice the order queue by operational readiness, print state, shipment state, and source without changing any existing backend behavior."
+            >
+              <div className="relative min-w-[260px] flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-txt-mut)]" />
+                <input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] py-3 pl-11 pr-4 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
+                  placeholder="Search by order, customer, phone, tags, notes, or address"
+                />
+              </div>
               <select
                 value={orderFilters.payment_status}
                 onChange={(event) => setOrderFilters((current) => ({ ...current, payment_status: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="">All payment statuses</option>
                 {paymentStatusOptions.map((statusValue) => (
@@ -1361,7 +1433,7 @@ export default function OrdersPage() {
               <select
                 value={orderFilters.source}
                 onChange={(event) => setOrderFilters((current) => ({ ...current, source: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="">All sources</option>
                 {sourceOptions.map((sourceValue) => (
@@ -1373,7 +1445,7 @@ export default function OrdersPage() {
               <select
                 value={orderFilters.warehouse_id}
                 onChange={(event) => setOrderFilters((current) => ({ ...current, warehouse_id: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="">All warehouses</option>
                 {warehouses.map((warehouse) => (
@@ -1385,7 +1457,7 @@ export default function OrdersPage() {
               <select
                 value={orderFilters.stock_deducted}
                 onChange={(event) => setOrderFilters((current) => ({ ...current, stock_deducted: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="">All stock states</option>
                 <option value="true">Stock deducted</option>
@@ -1394,7 +1466,7 @@ export default function OrdersPage() {
               <select
                 value={orderFilters.has_shipment}
                 onChange={(event) => setOrderFilters((current) => ({ ...current, has_shipment: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="">All shipment states</option>
                 <option value="true">Has shipment</option>
@@ -1403,95 +1475,92 @@ export default function OrdersPage() {
               <select
                 value={orderFilters.printed}
                 onChange={(event) => setOrderFilters((current) => ({ ...current, printed: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="">All print states</option>
                 <option value="true">Printed</option>
                 <option value="false">Unprinted</option>
               </select>
-            </div>
+            </OpsFilterBar>
 
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {statusTabs.map((tab) => {
-                const isActive = activeStatusTab === tab;
-                const label = tab === "all" ? "All" : formatLabel(tab);
-                return (
-                  <button
-                    key={tab}
+            <OpsTabs
+              tabs={statusTabs.map((tab) => ({
+                id: tab,
+                label: tab === "all" ? "All Orders" : formatLabel(tab),
+              }))}
+              activeTab={activeStatusTab}
+              onChange={setActiveStatusTab}
+            />
+
+            <div className="card-base bg-[var(--color-surf-hover)] px-4 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="ops-micro-label">Dispatch Exports</p>
+                  <p className="mt-2 text-sm text-[var(--color-txt-sec)]">
+                    Create Shipment stays manual and opens Logistics for the selected ready order.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <OpsActionButton
                     type="button"
-                    onClick={() => setActiveStatusTab(tab)}
-                    className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                      isActive
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
-                    }`}
+                    onClick={() => exportOrdersCsv("orders-filtered.csv", filteredOrders)}
                   >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <button
-                type="button"
-                onClick={() => exportOrdersCsv("orders-filtered.csv", filteredOrders)}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-              >
-                Export filtered CSV
-              </button>
-              <button
-                type="button"
-                onClick={() => exportOrdersCsv("dispatch-ready-orders.csv", dispatchReadyOrders)}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-              >
-                Export dispatch-ready CSV
-              </button>
-              <p className="text-xs text-slate-500">
-                Create Shipment stays manual and opens Logistics for the selected ready order.
-              </p>
+                    Export filtered CSV
+                  </OpsActionButton>
+                  <OpsActionButton
+                    type="button"
+                    onClick={() => exportOrdersCsv("dispatch-ready-orders.csv", dispatchReadyOrders)}
+                  >
+                    Export dispatch-ready CSV
+                  </OpsActionButton>
+                </div>
+              </div>
             </div>
 
             {selectedOrderIds.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
-                <p className="text-sm font-medium text-slate-700">{selectedOrderIds.length} selected</p>
-                <button
+              <BatchActionBar
+                label={
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="ops-micro-label !mb-0">Batch Actions</span>
+                    <span>{selectedOrderIds.length} selected</span>
+                  </div>
+                }
+              >
+                <OpsActionButton
                   type="button"
                   onClick={handlePrintSelected}
                   disabled={isBatchActionRunning}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
                 >
                   Print selected
-                </button>
-                <button
+                </OpsActionButton>
+                <OpsActionButton
                   type="button"
                   onClick={() => void handleCopyPrintLinks()}
                   disabled={isBatchActionRunning}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
                 >
                   Copy print links
-                </button>
-                <button
+                </OpsActionButton>
+                <OpsActionButton
                   type="button"
                   onClick={() => void handleBatchMarkPrinted()}
                   disabled={isBatchActionRunning}
-                  className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
+                  variant="secondary"
+                  className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
                 >
                   Mark selected printed
-                </button>
-                <button
+                </OpsActionButton>
+                <OpsActionButton
                   type="button"
                   onClick={() => exportOrdersCsv("orders-selected.csv", selectedOrders)}
                   disabled={isBatchActionRunning}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-60"
                 >
                   Export selected CSV
-                </button>
+                </OpsActionButton>
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     value={batchStatusTarget}
                     onChange={(event) => setBatchStatusTarget(event.target.value)}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-400"
+                    className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-txt-sec)] outline-none transition focus:border-slate-400"
                   >
                     {orderStatusOptions.map((statusValue) => (
                       <option key={statusValue} value={statusValue}>
@@ -1499,17 +1568,17 @@ export default function OrdersPage() {
                       </option>
                     ))}
                   </select>
-                  <button
+                  <OpsActionButton
                     type="button"
                     onClick={() => void handleBatchUpdateStatus()}
                     disabled={isBatchActionRunning}
-                    className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
+                    className="border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 disabled:opacity-60"
                   >
                     Update selected status
-                  </button>
+                  </OpsActionButton>
                 </div>
                 {isBatchActionRunning ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
-              </div>
+              </BatchActionBar>
             ) : null}
 
             {isLoading ? (
@@ -1546,7 +1615,7 @@ export default function OrdersPage() {
                   return (
                     <div
                       key={order.id}
-                      className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 xl:grid-cols-10 xl:gap-4"
+                      className="grid grid-cols-1 gap-4 px-5 py-5 text-sm text-[var(--color-txt-sec)] xl:grid-cols-10 xl:gap-5"
                     >
                       <div className="flex items-start">
                         <input
@@ -1556,41 +1625,32 @@ export default function OrdersPage() {
                           className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
                         />
                       </div>
-                      <div>
+                      <div className="space-y-2">
                         <Link
                           href={`/dashboard/orders/${order.id}`}
-                          className="font-semibold text-slate-950 transition hover:text-slate-700 hover:underline"
+                          className="text-sm font-semibold text-[var(--color-txt-pri)] transition hover:text-[var(--color-accent)] hover:underline"
                         >
                           {order.order_number}
                         </Link>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)}
-                        </p>
-                        {order.source === "woocommerce" ? (
-                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
-                              WooCommerce
-                            </span>
-                            {order.external_status ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700">
-                                {formatLabel(order.external_status)}
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : null}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={order.source} label={order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)} />
+                          {order.external_status ? (
+                            <StatusBadge status={order.external_status} label={formatLabel(order.external_status)} />
+                          ) : null}
+                        </div>
                         {order.external_synced_at ? (
-                          <p className="mt-1 text-xs text-slate-500">Synced {formatDateTime(order.external_synced_at)}</p>
+                          <p className="text-xs text-[var(--color-txt-mut)]">Synced {formatDateTime(order.external_synced_at)}</p>
                         ) : null}
                       </div>
-                      <div>
-                        <p className="font-medium text-slate-950">
+                      <div className="space-y-2">
+                        <p className="font-medium text-[var(--color-txt-pri)]">
                           {order.customer_name ||
                             order.customer?.name ||
                             (order.customer_id
                               ? customerMap.get(order.customer_id)?.name || "Unknown customer"
                               : "Guest")}
                         </p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="text-xs text-[var(--color-txt-sec)]">
                           {order.customer_phone ||
                             order.customer?.phone ||
                             "No phone on file"}
@@ -1599,73 +1659,79 @@ export default function OrdersPage() {
                       <span>
                         <StatusBadge status={order.status} />
                       </span>
-                      <div className="space-y-1">
+                      <div className="space-y-2">
                         <div className="flex flex-wrap items-center gap-1.5">
                           {order.stock_deducted ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                            <span className="ops-status-badge border-emerald-200 bg-emerald-50 text-emerald-700">
                               Stock deducted
                             </span>
                           ) : null}
                           {hasShipment ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700">
+                            <span className="ops-status-badge border-sky-200 bg-sky-50 text-sky-700">
                               Shipment linked
                             </span>
                           ) : null}
                           {primaryShipment?.external_status ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">
+                            <span className="ops-status-badge border-indigo-200 bg-indigo-50 text-indigo-700">
                               Courier {formatLabel(primaryShipment.external_status)}
                             </span>
                           ) : null}
                           {hasNotes ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
+                            <span className="ops-status-badge border-slate-200 bg-slate-100 text-slate-700">
                               <StickyNote className="h-3.5 w-3.5" />
                               Notes
                             </span>
                           ) : null}
                           {tagList.length > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
+                            <span className="ops-status-badge border-slate-200 bg-slate-100 text-slate-700">
                               <Tag className="h-3.5 w-3.5" />
                               {tagList.length} tags
                             </span>
                           ) : null}
                         </div>
                         {tagList.length > 0 ? (
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-[var(--color-txt-mut)]">
                             {tagList.slice(0, 2).join(", ")}
                             {tagList.length > 2 ? "..." : ""}
                           </p>
                         ) : (
-                          <p className="text-xs text-slate-400">
+                          <p className="text-xs text-[var(--color-txt-mut)]">
                             {order.source === "woocommerce" && order.external_synced_at
                               ? `Woo synced ${formatDateTime(order.external_synced_at)}`
                               : "No notes or tags"}
                           </p>
                         )}
                       </div>
-                      <span>
-                        {order.warehouse?.name ||
-                          (order.warehouse_id
-                            ? warehouseMap.get(order.warehouse_id)?.name || "Unknown warehouse"
-                            : "Not assigned")}
-                      </span>
-                      <span className="font-medium text-slate-950">{formatCurrency(order.total)}</span>
-                      <div>
-                        <p className="font-medium text-slate-950">{order.printed_count}x</p>
-                        <p className="mt-1 text-xs text-slate-500">
+                      <div className="space-y-2">
+                        <div className="inline-flex items-center gap-2 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2 text-xs font-medium text-[var(--color-txt-sec)]">
+                          <Warehouse className="h-3.5 w-3.5" />
+                          {order.warehouse?.name ||
+                            (order.warehouse_id
+                              ? warehouseMap.get(order.warehouse_id)?.name || "Unknown warehouse"
+                              : "Not assigned")}
+                        </div>
+                      </div>
+                      <span className="font-medium text-[var(--color-txt-pri)]">{formatCurrency(order.total)}</span>
+                      <div className="space-y-2">
+                        <p className="font-medium text-[var(--color-txt-pri)]">{order.printed_count}x</p>
+                        <p className="text-xs text-[var(--color-txt-mut)]">
                           {order.last_printed_at ? formatDateTime(order.last_printed_at) : "Never"}
                         </p>
                       </div>
-                      <span>{formatDate(order.created_at)}</span>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-[var(--color-txt-pri)]">{formatDate(order.created_at)}</p>
+                        <p className="text-xs text-[var(--color-txt-mut)]">{hasShipment ? "Shipment active" : "Waiting for dispatch"}</p>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         <Link
                           href={`/dashboard/orders/${order.id}`}
-                          className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                          className="inline-flex items-center rounded-full border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-1.5 text-xs font-semibold text-[var(--color-txt-sec)] transition hover:bg-white"
                         >
                           View
                         </Link>
                         <Link
                           href={`/dashboard/orders/${order.id}/invoice`}
-                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-1.5 text-xs font-semibold text-[var(--color-txt-sec)] transition hover:bg-white"
                           title={
                             order.printed_count > 0
                               ? `Printed ${order.printed_count} times`
@@ -1705,7 +1771,7 @@ export default function OrdersPage() {
                         ) : ["confirmed", "processing", "ready_to_ship"].includes(order.status) ? (
                           <Link
                             href={`/dashboard/logistics?order_id=${order.id}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                            className="inline-flex items-center gap-1 rounded-full border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-1.5 text-xs font-semibold text-[var(--color-txt-sec)] transition hover:bg-white"
                           >
                             <Truck className="h-3.5 w-3.5" />
                             Open Logistics
@@ -1723,7 +1789,7 @@ export default function OrdersPage() {
               </DataTable>
             )}
             {!isLoading && filteredOrders.length > 0 ? (
-              <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
+              <div className="mt-3 flex items-center gap-3 text-xs text-[var(--color-txt-mut)]">
                 <input
                   type="checkbox"
                   checked={selectedAllVisible}

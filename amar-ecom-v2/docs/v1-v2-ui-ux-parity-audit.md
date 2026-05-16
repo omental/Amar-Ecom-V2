@@ -351,6 +351,16 @@ Status:
 - Dispatch, print, shipment, reconciliation presentation alignment
 - Shared ops table and filter system
 
+Status:
+- completed for first-pass route-level parity on:
+  - `/dashboard/orders`
+  - `/dashboard/orders/[id]`
+  - `/dashboard/logistics`
+  - `/dashboard/shipments`
+  - `/dashboard/shipments/[id]`
+- the global shell language from `14D` now carries into the highest-traffic operations screens
+- remaining parity work is still needed for inventory, products, CRM, reports, and lower-priority admin modules
+
 ### Phase 14F
 
 - Inventory + Products v1-style admin hub UI

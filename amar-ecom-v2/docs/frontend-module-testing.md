@@ -1357,14 +1357,20 @@ Release-candidate audit result on 2026-05-16:
 ## Orders Operations Cockpit Checks
 
 1. Open `http://localhost:3000/dashboard/orders`
-2. Confirm the top cards show:
+2. Confirm the page now uses the denser Phase `14E` operations shell with:
+   - richer operations header
+   - summary card strip
+   - quick filter chips
+   - grouped filter bar
+   - batch action bar styling
+3. Confirm the top cards show:
    - `Open Orders`
    - `Ready to Ship`
    - `Need Shipment`
    - `Woo Orders`
    - `Need Woo Refresh`
    - `Unprinted`
-3. Use filters for:
+4. Use filters for:
    - status tabs
    - payment status
    - source
@@ -1373,44 +1379,65 @@ Release-candidate audit result on 2026-05-16:
    - has shipment
    - printed
    - search
-4. Confirm the list reloads without runtime errors
-5. Confirm WooCommerce-sourced rows show:
+5. Confirm the list reloads without runtime errors
+6. Confirm WooCommerce-sourced rows show:
    - source badge
    - external status when present
    - external synced timestamp when present
-6. Confirm rows show:
+7. Confirm rows show:
    - shipment linked or missing
    - stock deducted indicator
    - printed count
    - courier external status when a shipment exists
-7. Confirm actions now surface:
+8. Confirm actions now surface:
    - `View`
    - `Print`
    - `Create Shipment` when dispatch-ready
    - `Refresh Woo` only for WooCommerce-linked rows with `external_id`
    - `Open Logistics`
-8. Select one or more visible rows
-9. Confirm a batch action bar appears
-10. Test:
+9. Select one or more visible rows
+10. Confirm a batch action bar appears
+11. Test:
    - `Print selected`
    - `Copy print links`
    - `Mark selected printed`
    - `Export selected CSV`
    - `Update selected status`
-11. Confirm browser print may open multiple tabs and the warning text is clear
-12. Confirm `Export filtered CSV` and `Export dispatch-ready CSV` both download browser-generated files
+12. Confirm browser print may open multiple tabs and the warning text is clear
+13. Confirm `Export filtered CSV` and `Export dispatch-ready CSV` both download browser-generated files
+
+## Order Detail UI Checks
+
+1. Open `http://localhost:3000/dashboard/orders/{id}`
+2. Confirm the detail page now shows a denser operations header with:
+   - status cluster
+   - payment cluster
+   - source or Woo state
+   - print or sync metadata
+3. Confirm the page still surfaces:
+   - customer and shipping cards
+   - warehouse card
+   - shipment section
+   - print tracking
+   - totals
+   - event timeline
+4. For WooCommerce-sourced orders, confirm the refresh warning and action remain visible and unchanged functionally
 
 ## Logistics Operations Cockpit Checks
 
 1. Open `http://localhost:3000/dashboard/logistics`
-2. Confirm the top cards show:
+2. Confirm the page now uses the denser Phase `14E` logistics shell with:
+   - richer hub header
+   - semantic KPI strip
+   - stronger operations tabs
+3. Confirm the top cards show:
    - `Pending Dispatch`
    - `Sent to Courier`
    - `External Delivered Unsettled`
    - `External Failed or Returned`
    - `Missing Tracking`
    - `Needs Status Sync`
-3. Confirm shipment rows can show:
+4. Confirm shipment rows can show:
    - quick order link
    - quick shipment link
    - quick courier integrations link
@@ -1418,34 +1445,56 @@ Release-candidate audit result on 2026-05-16:
    - external status
    - tracking or consignment context
    - reconciliation status
-4. Open the `Reconciliation` tab
-5. Confirm filters now support:
+5. Open the `Reconciliation` tab
+6. Confirm filters now support:
    - courier
    - reconciliation status
    - external status
    - date range
-6. Confirm the filtered totals show:
+7. Confirm the filtered totals show:
    - COD
    - collected
    - courier charge
    - pending amount
-7. Confirm `Export current CSV` and `Export unsettled CSV` both download browser-generated files
+8. Confirm `Export current CSV` and `Export unsettled CSV` both download browser-generated files
 
 ## Shipments Workspace Batch Checks
 
 1. Open `http://localhost:3000/dashboard/shipments`
-2. Confirm quick filters exist for:
+2. Confirm the page now uses the denser Phase `14E` shipment list shell with:
+   - richer header
+   - summary strip
+   - quick filter chips
+   - batch action bar
+3. Confirm quick filters exist for:
    - `All`
    - `Missing tracking`
    - `Needs sync`
    - `Delivered`
    - `Reconciliation pending`
-3. Select one or more visible shipments
-4. Confirm the page allows:
+4. Select one or more visible shipments
+5. Confirm the page allows:
    - `Export filtered CSV`
    - `Export selected CSV`
    - batch status update for selected shipments
-5. Confirm the batch status update stays internal-only and does not trigger courier API calls
+6. Confirm the batch status update stays internal-only and does not trigger courier API calls
+
+## Shipment Detail UI Checks
+
+1. Open `http://localhost:3000/dashboard/shipments/{id}`
+2. Confirm the header now shows clearer:
+   - internal status
+   - recipient summary
+   - reconciliation state
+   - linked order metadata
+3. If the shipment has external linkage, confirm the safe apply checkbox and `Sync External Status` action remain visible
+4. Confirm the right-side summary still shows:
+   - external provider
+   - external tracking or consignment
+   - external status
+   - external synced time
+   - reconciliation values
+   - event timeline
 
 ## Reports Integration Health Checks
 

@@ -17,7 +17,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import {
@@ -285,21 +285,28 @@ export default function OrderDetailPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
+      <section className="card-base p-6 sm:p-8">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-4">
             <Link
               href="/dashboard/orders"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2 text-sm font-medium text-[var(--color-txt-sec)] transition hover:bg-white"
             >
               <ArrowLeft className="h-4 w-4" />
               Back to orders
             </Link>
-            <PageHeader
-              eyebrow="Order Detail"
+            <OpsPageHeader
+              eyebrow="Order Operations"
               title={order.order_number}
-              description="Review contact, shipping, print history, shipment linkage, and operational events before moving the order forward."
-              meta={order.stock_deducted ? "Stock deducted" : "Stock pending"}
+              description="Review customer, shipping, print, warehouse, shipment, and WooCommerce state from one denser order workspace before moving the row forward."
+              meta={
+                <div className="space-y-1">
+                  <p className="ops-micro-label !text-[10px]">Fulfillment State</p>
+                  <p className="text-sm font-semibold text-[var(--color-txt-pri)]">
+                    {order.stock_deducted ? "Stock deducted" : "Stock pending"}
+                  </p>
+                </div>
+              }
             />
           </div>
 
@@ -339,47 +346,33 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Status</p>
-            <div className="mt-2">
-              <StatusBadge status={order.status} />
-            </div>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+            <p className="ops-micro-label">Status</p>
+            <div className="mt-3"><StatusBadge status={order.status} /></div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Payment</p>
-            <div className="mt-2">
-              <StatusBadge status={order.payment_status} />
-            </div>
+          <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+            <p className="ops-micro-label">Payment</p>
+            <div className="mt-3"><StatusBadge status={order.payment_status} /></div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Source</p>
-            <p className="mt-2 text-sm font-semibold text-slate-950">
-              {order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)}
-            </p>
+          <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+            <p className="ops-micro-label">Source</p>
+            <div className="mt-3"><StatusBadge status={order.source} label={order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)} /></div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">External status</p>
-            <p className="mt-2 text-sm font-semibold text-slate-950">
+          <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+            <p className="ops-micro-label">Woo Status</p>
+            <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">
               {order.external_status ? formatLabel(order.external_status) : "Not linked"}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">External synced</p>
-            <p className="mt-2 text-sm font-semibold text-slate-950">
+          <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+            <p className="ops-micro-label">Printed</p>
+            <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">{order.printed_count} times</p>
+          </div>
+          <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+            <p className="ops-micro-label">External Sync</p>
+            <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">
               {order.external_synced_at ? formatDateTime(order.external_synced_at) : "Never"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Printed</p>
-            <p className="mt-2 text-sm font-semibold text-slate-950">
-              {order.printed_count} times
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Last printed</p>
-            <p className="mt-2 text-sm font-semibold text-slate-950">
-              {order.last_printed_at ? formatDateTime(order.last_printed_at) : "Never"}
             </p>
           </div>
         </div>

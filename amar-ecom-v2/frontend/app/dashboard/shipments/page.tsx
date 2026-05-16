@@ -4,12 +4,16 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, Plus, Rows3, Truck } from "lucide-react";
 
+import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsActionButton } from "@/components/ui/ops-action-button";
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatLabel } from "@/lib/format";
@@ -318,21 +322,55 @@ export default function ShipmentsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
           eyebrow="Logistics Operations"
           title="Shipments"
-          description="Create internal shipment records, assign couriers, and review safe external courier linkage without destructive local changes."
-          meta={`${shipments.length} shipments`}
+          description="Create internal shipment records, assign couriers, and review safe external linkage with denser routing, reconciliation, and sync metadata."
+          meta={
+            <div className="space-y-1">
+              <p className="ops-micro-label !text-[10px]">Shipment Volume</p>
+              <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{shipments.length} shipments</p>
+            </div>
+          }
+          actions={
+            <Link
+              href="/dashboard/courier-integrations"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
+            >
+              <Truck className="h-4 w-4" />
+              Open Courier Integrations
+            </Link>
+          }
         />
-        <div className="mt-4">
-          <Link
-            href="/dashboard/courier-integrations"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            <Truck className="h-4 w-4" />
-            Open Courier Integrations
-          </Link>
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <OpsSummaryCard
+            eyebrow="Queue"
+            label="Visible Shipments"
+            value={filteredShipments.length}
+            icon={Rows3}
+          />
+          <OpsSummaryCard
+            eyebrow="Tracking"
+            label="Missing Tracking"
+            value={shipments.filter((shipment) => !shipment.tracking_number && !shipment.external_tracking_number).length}
+            icon={Truck}
+            tone="warning"
+          />
+          <OpsSummaryCard
+            eyebrow="External"
+            label="Needs Sync"
+            value={shipments.filter((shipment) => !!shipment.external_provider && (!shipment.external_synced_at || !shipment.external_status)).length}
+            icon={Truck}
+            tone="info"
+          />
+          <OpsSummaryCard
+            eyebrow="Money"
+            label="Reconciliation Pending"
+            value={shipments.filter((shipment) => !["settled", "cancelled"].includes(shipment.reconciliation_status || "pending")).length}
+            icon={Download}
+            tone="danger"
+          />
         </div>
       </section>
 
@@ -480,11 +518,11 @@ export default function ShipmentsPage() {
           </form>
         </FormCard>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <PageHeader
+        <section className="card-base p-6">
+          <OpsPageHeader
             eyebrow="Saved Records"
             title="Recent shipments"
-            description="Review internal shipment records created for order dispatch and delivery tracking."
+            description="Review routing, courier assignment, external linkage, and reconciliation posture from one dense shipment table."
           />
 
           <div className="mt-6">
@@ -500,10 +538,10 @@ export default function ShipmentsPage() {
                   key={value}
                   type="button"
                   onClick={() => setQuickFilter(value)}
-                  className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
+                  className={`ops-filter-chip ${
                     quickFilter === value
                       ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                      : "border-[var(--color-brd)] bg-[var(--color-surf-hover)] text-[var(--color-txt-sec)] hover:bg-white"
                   }`}
                 >
                   {label}
@@ -511,29 +549,39 @@ export default function ShipmentsPage() {
               ))}
             </div>
 
-            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <button
+            <OpsFilterBar
+              title="Exports"
+              description="Use the filtered shipment table for operational CSV handoff without changing shipment data."
+            >
+              <OpsActionButton
                 type="button"
                 onClick={() => exportShipmentsCsv("shipments-filtered.csv", filteredShipments)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
               >
                 <Download className="h-3.5 w-3.5" />
                 Export filtered CSV
-              </button>
-              {selectedShipmentIds.length > 0 ? (
-                <>
-                  <button
+              </OpsActionButton>
+            </OpsFilterBar>
+
+            {selectedShipmentIds.length > 0 ? (
+              <BatchActionBar
+                label={
+                  <div className="flex items-center gap-3">
+                    <span className="ops-micro-label !mb-0">Batch Actions</span>
+                    <span>{selectedShipmentIds.length} selected</span>
+                  </div>
+                }
+              >
+                  <OpsActionButton
                     type="button"
                     onClick={() => exportShipmentsCsv("shipments-selected.csv", selectedShipments)}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
                   >
                     <Download className="h-3.5 w-3.5" />
                     Export selected CSV
-                  </button>
+                  </OpsActionButton>
                   <select
                     value={batchShipmentStatus}
                     onChange={(event) => setBatchShipmentStatus(event.target.value)}
-                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-slate-400"
+                    className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-2 text-xs font-semibold text-[var(--color-txt-sec)] outline-none transition focus:border-slate-400"
                   >
                     {statusOptions.map((statusValue) => (
                       <option key={statusValue} value={statusValue}>
@@ -541,18 +589,17 @@ export default function ShipmentsPage() {
                       </option>
                     ))}
                   </select>
-                  <button
+                  <OpsActionButton
                     type="button"
                     onClick={() => void handleBatchShipmentStatusUpdate()}
                     disabled={isBatchUpdating}
-                    className="rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
+                    className="border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100 disabled:opacity-60"
                   >
                     Update selected status
-                  </button>
+                  </OpsActionButton>
                   {isBatchUpdating ? <Loader2 className="h-4 w-4 animate-spin text-slate-500" /> : null}
-                </>
-              ) : null}
-            </div>
+              </BatchActionBar>
+            ) : null}
 
             {isLoading ? (
               <LoadingState label="Loading shipments..." />

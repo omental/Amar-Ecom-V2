@@ -19,6 +19,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
@@ -475,75 +478,86 @@ export default function LogisticsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <PageHeader
-            eyebrow="Logistics Workspace"
-            title="Internal logistics hub"
-            description="Work pending dispatch, shipment operations, courier coverage, reconciliation, and external courier handoff from one workflow-oriented page."
-            meta={`${shipments.length} shipments`}
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Logistics Workspace"
+          title="Internal logistics hub"
+          description="Run pending dispatch, shipment handoff, courier linkage, and reconciliation review from one denser operations workspace without changing the existing manual-safe flows."
+          meta={
+            <div className="space-y-1">
+              <p className="ops-micro-label !text-[10px]">Shipments In View</p>
+              <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{shipments.length} shipments</p>
+            </div>
+          }
+          actions={
+            <Link
+              href="/dashboard/courier-integrations"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
+            >
+              <Truck className="h-4 w-4" />
+              Open Courier Integrations
+            </Link>
+          }
+        />
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <OpsSummaryCard
+            eyebrow="Risk"
+            label="External Failed or Returned"
+            value={operationsSummary?.external_failed_returned_count ?? externalFailedReturnedCount}
+            icon={Rows3}
+            tone="danger"
           />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">External Failed or Returned</p>
-              <p className="mt-2 text-xl font-semibold text-slate-950">{operationsSummary?.external_failed_returned_count ?? externalFailedReturnedCount}</p>
-            </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-amber-700">Pending Dispatch</p>
-              <p className="mt-2 text-xl font-semibold text-amber-900">
-                {operationsSummary?.pending_dispatch_count ?? pendingDispatchOrders.length}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-emerald-700">Sent to Courier</p>
-              <p className="mt-2 text-xl font-semibold text-emerald-900">
-                {operationsSummary?.sent_to_external_courier_count ?? 0}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-rose-700">External Delivered Unsettled</p>
-              <p className="mt-2 text-xl font-semibold text-rose-900">{operationsSummary?.external_delivered_unsettled_count ?? externallyDeliveredPendingReconciliationCount}</p>
-            </div>
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-sky-700">Missing Tracking</p>
-              <p className="mt-2 text-xl font-semibold text-sky-900">{operationsSummary?.shipments_missing_tracking_count ?? 0}</p>
-            </div>
-            <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-orange-700">Needs Status Sync</p>
-              <p className="mt-2 text-xl font-semibold text-orange-900">{operationsSummary?.shipments_waiting_status_sync_count ?? 0}</p>
-            </div>
-          </div>
-        </div>
-        <div className="mt-4">
-          <Link
-            href="/dashboard/courier-integrations"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            <Truck className="h-4 w-4" />
-            Open Courier Integrations
-          </Link>
+          <OpsSummaryCard
+            eyebrow="Queue"
+            label="Pending Dispatch"
+            value={operationsSummary?.pending_dispatch_count ?? pendingDispatchOrders.length}
+            icon={PackageCheck}
+            tone="warning"
+          />
+          <OpsSummaryCard
+            eyebrow="Courier"
+            label="Sent to Courier"
+            value={operationsSummary?.sent_to_external_courier_count ?? 0}
+            icon={Truck}
+            tone="success"
+          />
+          <OpsSummaryCard
+            eyebrow="Reconciliation"
+            label="Delivered Unsettled"
+            value={operationsSummary?.external_delivered_unsettled_count ?? externallyDeliveredPendingReconciliationCount}
+            icon={Wallet}
+            tone="danger"
+          />
+          <OpsSummaryCard
+            eyebrow="Follow-up"
+            label="Missing Tracking"
+            value={operationsSummary?.shipments_missing_tracking_count ?? 0}
+            icon={Search}
+            tone="info"
+          />
+          <OpsSummaryCard
+            eyebrow="Sync"
+            label="Needs Status Sync"
+            value={operationsSummary?.shipments_waiting_status_sync_count ?? 0}
+            icon={Truck}
+            tone="warning"
+          />
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[var(--shadow-soft)] sm:p-6">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  isActive
-                    ? "border-slate-950 bg-slate-950 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+      <section className="card-base p-4 sm:p-6">
+        <div className="space-y-3">
+          <div>
+            <p className="ops-micro-label">Operations Views</p>
+            <p className="mt-2 text-sm text-[var(--color-txt-sec)]">
+              Shift between dispatch queue, saved shipments, courier coverage, and reconciliation without leaving the logistics console.
+            </p>
+          </div>
+          <OpsTabs
+            tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))}
+            activeTab={activeTab}
+            onChange={(value) => setActiveTab(value as (typeof tabs)[number]["id"])}
+          />
         </div>
       </section>
 

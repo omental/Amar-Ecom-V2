@@ -8,6 +8,7 @@ import { ArrowLeft, Clock3, Loader2, RefreshCw, Truck, Wallet } from "lucide-rea
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
@@ -255,28 +256,33 @@ export default function ShipmentDetailPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
+      <section className="card-base p-6 sm:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
             <Link
               href="/dashboard/shipments"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2 text-sm font-medium text-[var(--color-txt-sec)] transition hover:bg-white"
             >
               <ArrowLeft className="h-4 w-4" />
               Back to shipments
             </Link>
-            <PageHeader
-              eyebrow="Shipment Detail"
+            <OpsPageHeader
+              eyebrow="Shipment Operations"
               title={shipment.shipment_number}
-              description="Review recipient routing, courier assignment, reconciliation values, and event history from one logistics workspace."
-              meta={shipment.order?.order_number || shipment.order_id}
+              description="Review courier routing, external tracking, reconciliation posture, and shipment events from one denser logistics detail workspace."
+              meta={
+                <div className="space-y-1">
+                  <p className="ops-micro-label !text-[10px]">Linked Order</p>
+                  <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{shipment.order?.order_number || shipment.order_id}</p>
+                </div>
+              }
             />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Status</p>
-              <div className="mt-2">
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">Status</p>
+              <div className="mt-3">
                 <StatusBadge
                   status={shipment.status}
                   label={
@@ -289,15 +295,15 @@ export default function ShipmentDetailPage() {
                 />
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Recipient</p>
-              <p className="mt-2 text-sm font-semibold text-slate-950">
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">Recipient</p>
+              <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">
                 {shipment.recipient_name || "No recipient"}
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Reconciliation</p>
-              <div className="mt-2">
+            <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+              <p className="ops-micro-label">Reconciliation</p>
+              <div className="mt-3">
                 <StatusBadge status={shipment.reconciliation_status} />
               </div>
             </div>
