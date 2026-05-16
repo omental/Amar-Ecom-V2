@@ -377,6 +377,11 @@ Status:
 - Dashboard + Reports visual parity
 - Chart zones, hierarchy, and richer executive/ops summary presentation
 
+Status:
+- CRM list and CRM detail now have a first-pass v1-style operator treatment with denser headers, KPI strips, clearer badge clusters, richer timeline hierarchy, and stronger edit/activity panel framing
+- Reports now use the shared ops shell more directly with a richer reporting header, grouped filter bar, report-group tabs, stronger KPI strip, and a clearer integration health widget
+- remaining work after this phase is mostly final dashboard polish plus lower-priority finance, HR, POS, settings, admin, WooCommerce, and courier visual consistency
+
 ### Phase 14H
 
 - Finance + HR + POS + Settings + Team polish

@@ -215,15 +215,22 @@ npm run dev
 ## Filter Customer Directory
 
 1. Open `http://localhost:3000/dashboard/customers`
-2. Use the search field to find the customer by name, phone, email, tags, or notes
-3. Change the customer type filter
-4. Confirm the list refreshes with the expected matching records
+2. Confirm the page now shows:
+   - a richer CRM operations header
+   - KPI cards for customer mix and follow-up
+   - quick filter chips
+   - grouped search and filter controls
+3. Use the search field to find the customer by name, phone, email, tags, or notes
+4. Change the customer type filter
+5. Confirm the list refreshes with the expected matching records
 
 ## Open Customer CRM Detail
 
 1. From `/dashboard/customers`, click `View CRM`
 2. Confirm `/dashboard/customers/{id}` loads
 3. Confirm the page shows:
+   - premium CRM profile header
+   - badge cluster for type and follow-up
    - customer profile summary
    - total orders
    - total spend
@@ -503,7 +510,12 @@ npm run dev
 ## Open Reports Dashboard
 
 1. Open `http://localhost:3000/dashboard/reports`
-2. Confirm the page loads sections for:
+2. Confirm the page now shows:
+   - a richer reporting header
+   - a grouped date filter bar
+   - report-group tabs
+   - a KPI strip at the top
+3. Confirm the page loads sections for:
    - `Sales Summary`
    - `Order Status`
    - `Payment Status`
@@ -515,7 +527,7 @@ npm run dev
    - `Revenue Overview`
    - `Recent Order Activity`
    - `Stock Movement Summary`
-3. Confirm the top date filters appear with:
+4. Confirm the top date filters appear with:
    - `start date`
    - `end date`
    - `refresh`
@@ -1601,6 +1613,7 @@ Release-candidate audit result on 2026-05-16:
    - integration summary
    - courier failures
    - WooCommerce imported orders
+4. Confirm the management widget shows last Woo sync timestamps clearly and uses semantic badges or KPI styling for failure and pending-action counts
 
 ## Dashboard Ops Snapshot Checks
 

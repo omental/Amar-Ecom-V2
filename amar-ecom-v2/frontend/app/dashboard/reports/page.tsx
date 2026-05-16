@@ -3,17 +3,26 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
+  Boxes,
+  CircleDollarSign,
   Download,
   Loader2,
   PackageSearch,
   RefreshCcw,
   TrendingUp,
+  Wifi,
 } from "lucide-react";
 
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { LoadingState } from "@/components/ui/loading-state";
+import { OpsActionButton } from "@/components/ui/ops-action-button";
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
@@ -243,6 +252,7 @@ export default function ReportsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [activeReportTab, setActiveReportTab] = useState("all");
 
   const orderStatusMax = useMemo(
     () => Math.max(0, ...reports.orderStatus.map((item) => item.count)),
@@ -257,6 +267,11 @@ export default function ReportsPage() {
     [reports.revenueByDate],
   );
   const integrationSummary = reports.integrationSummary;
+  const showSales = activeReportTab === "all" || activeReportTab === "sales" || activeReportTab === "orders" || activeReportTab === "finance";
+  const showInventory = activeReportTab === "all" || activeReportTab === "inventory";
+  const showCustomers = activeReportTab === "all" || activeReportTab === "customers";
+  const showLogistics = activeReportTab === "all" || activeReportTab === "logistics";
+  const showIntegrations = activeReportTab === "all" || activeReportTab === "integrations";
 
   async function fetchReports(currentFilters: FilterState) {
     const dateQuery = buildDateQuery(currentFilters);
@@ -356,46 +371,67 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <PageHeader
-            eyebrow="Reports Enhancement"
-            title="Admin analytics workspace"
-            description="Review sales, revenue trends, order and payment mix, top sellers, low-stock risks, logistics totals, and recent order activity from one reporting page."
-            meta="Phase 10A-2"
-          />
-          <div className="flex flex-wrap gap-3">
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Start date</span>
-              <input
-                type="date"
-                value={filters.start_date}
-                onChange={(event) => setFilters((current) => ({ ...current, start_date: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-500">End date</span>
-              <input
-                type="date"
-                value={filters.end_date}
-                onChange={(event) => setFilters((current) => ({ ...current, end_date: event.target.value }))}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => void handleRefresh()}
-              disabled={isRefreshing}
-              className="mt-auto inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
+    <div className="space-y-5">
+      <section className="card-base px-6 py-7 sm:px-8">
+        <OpsPageHeader
+          eyebrow="Reporting Console"
+          title="Analytics and management workspace"
+          description="Review sales, revenue trends, order mix, low-stock risk, logistics totals, customer CRM health, and external integration status from one denser management surface."
+          meta={<span>Manual-safe reporting</span>}
+          actions={
+            <OpsActionButton type="button" variant="primary" onClick={() => void handleRefresh()} disabled={isRefreshing}>
               {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-              Refresh
-            </button>
-          </div>
-        </div>
+              Refresh reports
+            </OpsActionButton>
+          }
+        />
       </section>
+
+      <OpsFilterBar
+        title="Report Filters"
+        description="Keep date filters and report group switching close to the top so operators can move between sales, inventory, CRM, logistics, and integration slices quickly."
+      >
+        <label className="block">
+          <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Start date</span>
+          <input
+            type="date"
+            value={filters.start_date}
+            onChange={(event) => setFilters((current) => ({ ...current, start_date: event.target.value }))}
+            className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-[var(--color-accent)]"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-500">End date</span>
+          <input
+            type="date"
+            value={filters.end_date}
+            onChange={(event) => setFilters((current) => ({ ...current, end_date: event.target.value }))}
+            className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-[var(--color-accent)]"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => setFilters(initialFilters)}
+          className="ops-filter-chip"
+        >
+          Clear dates
+        </button>
+      </OpsFilterBar>
+
+      <OpsTabs
+        tabs={[
+          { id: "all", label: "All Reports" },
+          { id: "sales", label: "Sales" },
+          { id: "orders", label: "Orders" },
+          { id: "inventory", label: "Inventory" },
+          { id: "customers", label: "Customers" },
+          { id: "logistics", label: "Logistics" },
+          { id: "finance", label: "Finance" },
+          { id: "integrations", label: "Integrations" },
+        ]}
+        activeTab={activeReportTab}
+        onChange={setActiveReportTab}
+      />
 
       {error ? <ErrorAlert message={error} /> : null}
       {isLoading ? <LoadingState label="Loading reports..." /> : null}
@@ -403,50 +439,59 @@ export default function ReportsPage() {
       {!isLoading && reports.salesSummary && reports.inventoryReport && reports.customerReport && reports.logisticsReport ? (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              {
-                label: "Total Sales",
-                value: formatCurrency(reports.salesSummary.total_sales),
-                hint: `${reports.salesSummary.total_orders} orders`,
-                tone: "border-emerald-200 bg-emerald-50 text-emerald-900",
-              },
-              {
-                label: "Average Order Value",
-                value: formatCurrency(reports.salesSummary.average_order_value),
-                hint: `${reports.salesSummary.paid_orders} paid orders`,
-                tone: "border-sky-200 bg-sky-50 text-sky-900",
-              },
-              {
-                label: "Inventory Value",
-                value: formatCurrency(reports.inventoryReport.inventory_value_at_cost),
-                hint: `${reports.inventoryReport.total_stock_units} stock units`,
-                tone: "border-amber-200 bg-amber-50 text-amber-900",
-              },
-              {
-                label: "Collected COD",
-                value: formatCurrency(reports.logisticsReport.total_collected_amount),
-                hint: `${reports.logisticsReport.unsettled_reconciliations} unsettled shipments`,
-                tone: "border-rose-200 bg-rose-50 text-rose-900",
-              },
-            ].map((card) => (
-              <article key={card.label} className={`rounded-[28px] border p-6 shadow-[var(--shadow-soft)] ${card.tone}`}>
-                <p className="text-sm opacity-80">{card.label}</p>
-                <p className="mt-4 text-3xl font-semibold tracking-tight">{card.value}</p>
-                <p className="mt-2 text-sm opacity-75">{card.hint}</p>
-              </article>
-            ))}
+            <OpsSummaryCard
+              eyebrow="Top Metric"
+              label="Total sales"
+              value={formatCurrency(reports.salesSummary.total_sales)}
+              helper={`${reports.salesSummary.total_orders} orders in range`}
+              icon={CircleDollarSign}
+              tone="success"
+            />
+            <OpsSummaryCard
+              eyebrow="Top Metric"
+              label="Average order value"
+              value={formatCurrency(reports.salesSummary.average_order_value)}
+              helper={`${reports.salesSummary.paid_orders} paid orders`}
+              icon={TrendingUp}
+              tone="info"
+            />
+            <OpsSummaryCard
+              eyebrow="Top Metric"
+              label="Inventory value"
+              value={formatCurrency(reports.inventoryReport.inventory_value_at_cost)}
+              helper={`${reports.inventoryReport.total_stock_units} stock units`}
+              icon={Boxes}
+              tone="warning"
+            />
+            <OpsSummaryCard
+              eyebrow="Top Metric"
+              label="Collected COD"
+              value={formatCurrency(reports.logisticsReport.total_collected_amount)}
+              helper={`${reports.logisticsReport.unsettled_reconciliations} unsettled shipments`}
+              icon={Wifi}
+              tone="default"
+            />
           </section>
 
-          {integrationSummary ? (
-            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          {integrationSummary && showIntegrations ? (
+            <section className="card-base p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <PageHeader
+                <OpsPageHeader
                   eyebrow="Integration Health"
                   title="WooCommerce and Courier status"
-                  description="Keep operator attention on safe external sync activity without turning integrations into background automation."
+                  description="Keep management attention on safe external sync activity, failure counts, and last-sync visibility without turning integrations into background automation."
+                  meta={
+                    <div className="flex items-center gap-2">
+                      <OpsStatusBadge
+                        label={`${integrationSummary.pending_integration_actions} pending`}
+                        tone={integrationSummary.pending_integration_actions > 0 ? "warning" : "success"}
+                        dot
+                      />
+                    </div>
+                  }
                 />
                 <div className="flex flex-wrap gap-3">
-                  <button
+                  <OpsActionButton
                     type="button"
                     onClick={() =>
                       downloadCsv(
@@ -466,12 +511,11 @@ export default function ReportsPage() {
                         ],
                       )
                     }
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
                   >
                     <Download className="h-4 w-4" />
                     Export Summary CSV
-                  </button>
-                  <button
+                  </OpsActionButton>
+                  <OpsActionButton
                     type="button"
                     onClick={() =>
                       downloadCsv(
@@ -487,12 +531,11 @@ export default function ReportsPage() {
                         ]),
                       )
                     }
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
                   >
                     <Download className="h-4 w-4" />
                     Export Courier Failures
-                  </button>
-                  <button
+                  </OpsActionButton>
+                  <OpsActionButton
                     type="button"
                     onClick={() =>
                       downloadCsv(
@@ -506,29 +549,33 @@ export default function ReportsPage() {
                         ]),
                       )
                     }
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
                   >
                     <Download className="h-4 w-4" />
                     Export Woo Orders
-                  </button>
+                  </OpsActionButton>
                 </div>
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-4 text-sm text-violet-900">
-                  Woo orders: <span className="font-semibold">{integrationSummary.woocommerce_orders_count}</span>
+                <div className="rounded-[20px] border border-violet-200 bg-violet-50 px-4 py-4 text-sm text-violet-900">
+                  <p className="ops-micro-label text-violet-600">Woo Orders</p>
+                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.woocommerce_orders_count}</p>
                 </div>
-                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 text-sm text-indigo-900">
-                  Woo products: <span className="font-semibold">{integrationSummary.woocommerce_products_count}</span>
+                <div className="rounded-[20px] border border-indigo-200 bg-indigo-50 px-4 py-4 text-sm text-indigo-900">
+                  <p className="ops-micro-label text-indigo-600">Woo Products</p>
+                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.woocommerce_products_count}</p>
                 </div>
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900">
-                  Woo sync failures: <span className="font-semibold">{integrationSummary.woo_recent_sync_failures}</span>
+                <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900">
+                  <p className="ops-micro-label text-rose-600">Woo Failures</p>
+                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.woo_recent_sync_failures}</p>
                 </div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                  Courier sent: <span className="font-semibold">{integrationSummary.courier_sent_count}</span>
+                <div className="rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                  <p className="ops-micro-label text-emerald-600">Courier Sent</p>
+                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.courier_sent_count}</p>
                 </div>
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                  Pending actions: <span className="font-semibold">{integrationSummary.pending_integration_actions}</span>
+                <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                  <p className="ops-micro-label text-amber-600">Pending Actions</p>
+                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.pending_integration_actions}</p>
                 </div>
               </div>
 
@@ -549,6 +596,7 @@ export default function ReportsPage() {
             </section>
           ) : null}
 
+          {showSales && (
           <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
               <div className="flex items-center justify-between">
@@ -613,7 +661,9 @@ export default function ReportsPage() {
               </div>
             </article>
           </section>
+          )}
 
+          {showSales && (
           <section className="grid gap-4 xl:grid-cols-2">
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -689,8 +739,11 @@ export default function ReportsPage() {
               </div>
             </article>
           </section>
+          )}
 
+          {(showSales || showInventory) && (
           <section className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
+            {showSales ? (
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <PageHeader eyebrow="Top Selling Products" title="Best sellers" description="Top products by quantity sold and revenue." />
@@ -733,7 +786,9 @@ export default function ReportsPage() {
                 )}
               </div>
             </article>
+            ) : null}
 
+            {showInventory ? (
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <PageHeader eyebrow="Low Stock Products" title="Reorder risk" description="Products at or below threshold with warehouse context." />
@@ -788,9 +843,13 @@ export default function ReportsPage() {
                 )}
               </div>
             </article>
+            ) : null}
           </section>
+          )}
 
+          {(showSales || showInventory) && (
           <section className="grid gap-4 xl:grid-cols-[0.98fr_1.02fr]">
+              {showSales ? (
               <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <PageHeader eyebrow="Recent Orders" title="Recent order activity" description="Latest order creation activity for admin monitoring." />
@@ -835,7 +894,9 @@ export default function ReportsPage() {
                 )}
               </div>
             </article>
+              ) : null}
 
+            {showInventory ? (
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <PageHeader eyebrow="Stock Movement Summary" title="Movement rollup" description="Grouped stock movement counts and quantities over the selected date range." />
@@ -875,9 +936,13 @@ export default function ReportsPage() {
                 )}
               </div>
             </article>
+            ) : null}
           </section>
+          )}
 
+          {(showCustomers || showLogistics) && (
           <section className="grid gap-4 xl:grid-cols-2">
+            {showCustomers ? (
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
               <PageHeader eyebrow="Customer CRM" title="Customer mix" description="Simple segmentation and follow-up visibility for admin reporting." />
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -889,7 +954,9 @@ export default function ReportsPage() {
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-800">Blocked: <span className="font-semibold">{reports.customerReport.blocked_customers}</span></div>
               </div>
             </article>
+            ) : null}
 
+            {showLogistics ? (
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
               <PageHeader eyebrow="Logistics" title="Logistics summary" description="Shipment and reconciliation totals for operations leadership." />
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -903,7 +970,9 @@ export default function ReportsPage() {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Courier charge: <span className="font-semibold text-slate-950">{formatCurrency(reports.logisticsReport.total_courier_charge)}</span></div>
               </div>
             </article>
+            ) : null}
           </section>
+          )}
         </>
       ) : null}
     </div>
