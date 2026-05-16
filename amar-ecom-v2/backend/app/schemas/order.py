@@ -130,6 +130,21 @@ class OrderRead(OrderListRead):
     events: list[OrderEventRead] = []
 
 
+class OrderOperationsSummaryRead(BaseModel):
+    total_open_orders: int
+    ready_to_ship_orders: int
+    shipped_orders: int
+    delivered_orders: int
+    cancelled_orders: int
+    orders_with_woo_source: int
+    orders_needing_woo_refresh: int
+    orders_with_shipments: int
+    orders_without_shipments_ready_to_ship: int
+    orders_stock_not_deducted: int
+    orders_printed_count: int
+    orders_unprinted_count: int
+
+
 class InvoiceMetadataRead(BaseModel):
     invoice_number: str
     invoice_title: str

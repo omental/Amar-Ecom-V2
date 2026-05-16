@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
@@ -14,6 +14,7 @@ from app.models.invoice_template import InvoiceTemplate
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.user import User
 from app.models.warehouse import Warehouse
+from app.models.woocommerce import WooCommerceSetting
 from app.schemas.courier import ShipmentCreateFromOrder, ShipmentRead
 from app.schemas.order import (
     InvoiceDataRead,
@@ -21,6 +22,7 @@ from app.schemas.order import (
     OrderCreate,
     OrderDuplicateRead,
     OrderListRead,
+    OrderOperationsSummaryRead,
     OrderRead,
     OrderUpdate,
 )
@@ -155,13 +157,107 @@ async def list_orders(
     db: DBSession,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    source: str | None = Query(default=None),
+    warehouse_id: UUID | None = Query(default=None),
+    stock_deducted: bool | None = Query(default=None),
+    has_shipment: bool | None = Query(default=None),
+    printed: bool | None = Query(default=None),
+    external_status: str | None = Query(default=None),
+    payment_status: str | None = Query(default=None),
+    status_value: str | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None),
 ) -> list[Order]:
     skip, limit = normalize_pagination(skip, limit)
-    result = await db.execute(
-        _order_query().order_by(Order.created_at.desc()).offset(skip)
-        .limit(limit)
-    )
+    stmt = _order_query().order_by(Order.created_at.desc())
+    if source:
+        stmt = stmt.where(Order.source == source)
+    if warehouse_id is not None:
+        stmt = stmt.where(Order.warehouse_id == warehouse_id)
+    if stock_deducted is not None:
+        stmt = stmt.where(Order.stock_deducted.is_(stock_deducted))
+    if has_shipment is not None:
+        active_shipment_clause = Order.shipments.any(Shipment.status.not_in(["cancelled", "returned"]))
+        stmt = stmt.where(active_shipment_clause if has_shipment else not_(active_shipment_clause))
+    if printed is not None:
+        stmt = stmt.where(Order.printed_count > 0 if printed else Order.printed_count <= 0)
+    if external_status:
+        stmt = stmt.where(Order.external_status == external_status)
+    if payment_status:
+        stmt = stmt.where(Order.payment_status == payment_status)
+    if status_value:
+        stmt = stmt.where(Order.status == status_value)
+    if search and search.strip():
+        query = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Order.order_number.ilike(query),
+                Order.customer_name.ilike(query),
+                Order.customer_phone.ilike(query),
+                Order.shipping_address.ilike(query),
+                Order.notes.ilike(query),
+                Order.tags.ilike(query),
+                Order.external_id.ilike(query),
+                Order.external_number.ilike(query),
+            )
+        )
+
+    result = await db.execute(stmt.offset(skip).limit(limit))
     return list(result.scalars().unique().all())
+
+
+@router.get("/operations-summary", response_model=OrderOperationsSummaryRead)
+async def get_order_operations_summary(db: DBSession) -> OrderOperationsSummaryRead:
+    open_statuses = ["pending", "confirmed", "processing", "ready_to_ship", "shipped", "partial_delivered"]
+    ready_statuses = ["confirmed", "processing", "ready_to_ship"]
+    active_shipment_clause = Order.shipments.any(Shipment.status.not_in(["cancelled", "returned"]))
+
+    last_woo_sync_result = await db.execute(select(WooCommerceSetting.last_order_sync_at).limit(1))
+    last_woo_order_sync_at = last_woo_sync_result.scalar_one_or_none()
+
+    if last_woo_order_sync_at is not None:
+        orders_needing_woo_refresh_clause = and_(
+            Order.source == "woocommerce",
+            Order.external_id.is_not(None),
+            or_(Order.external_synced_at.is_(None), Order.external_synced_at < last_woo_order_sync_at),
+        )
+    else:
+        orders_needing_woo_refresh_clause = and_(
+            Order.source == "woocommerce",
+            Order.external_id.is_not(None),
+            Order.external_synced_at.is_(None),
+        )
+
+    counts_result = await db.execute(
+        select(
+            func.count(Order.id).filter(Order.status.in_(open_statuses)),
+            func.count(Order.id).filter(Order.status.in_(ready_statuses)),
+            func.count(Order.id).filter(Order.status == "shipped"),
+            func.count(Order.id).filter(Order.status == "delivered"),
+            func.count(Order.id).filter(Order.status == "cancelled"),
+            func.count(Order.id).filter(Order.source == "woocommerce"),
+            func.count(Order.id).filter(orders_needing_woo_refresh_clause),
+            func.count(Order.id).filter(active_shipment_clause),
+            func.count(Order.id).filter(and_(Order.status.in_(ready_statuses), not_(active_shipment_clause))),
+            func.count(Order.id).filter(Order.stock_deducted.is_(False)),
+            func.count(Order.id).filter(Order.printed_count > 0),
+            func.count(Order.id).filter(Order.printed_count <= 0),
+        )
+    )
+    row = counts_result.one()
+    return OrderOperationsSummaryRead(
+        total_open_orders=row[0] or 0,
+        ready_to_ship_orders=row[1] or 0,
+        shipped_orders=row[2] or 0,
+        delivered_orders=row[3] or 0,
+        cancelled_orders=row[4] or 0,
+        orders_with_woo_source=row[5] or 0,
+        orders_needing_woo_refresh=row[6] or 0,
+        orders_with_shipments=row[7] or 0,
+        orders_without_shipments_ready_to_ship=row[8] or 0,
+        orders_stock_not_deducted=row[9] or 0,
+        orders_printed_count=row[10] or 0,
+        orders_unprinted_count=row[11] or 0,
+    )
 
 
 @router.get("/duplicate-check", response_model=list[OrderDuplicateRead])

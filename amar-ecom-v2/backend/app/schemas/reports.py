@@ -107,3 +107,16 @@ class FinanceReportSummaryRead(BaseModel):
     total_expense: Decimal
     net_cash_flow: Decimal
     supplier_payments_total: Decimal
+
+
+class IntegrationSummaryRead(BaseModel):
+    woocommerce_orders_count: int
+    woocommerce_products_count: int
+    woo_recent_sync_failures: int
+    woo_last_product_sync_at: datetime | None
+    woo_last_order_sync_at: datetime | None
+    courier_sent_count: int
+    courier_recent_failures: int
+    courier_external_delivered_count: int
+    courier_external_failed_returned_count: int
+    pending_integration_actions: int

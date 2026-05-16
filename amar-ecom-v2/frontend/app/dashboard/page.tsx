@@ -84,6 +84,20 @@ type PosSummaryResponse = {
   today_pos_sales: number | string;
 };
 
+type OrderOperationsSummary = {
+  ready_to_ship_orders: number;
+  orders_without_shipments_ready_to_ship: number;
+};
+
+type LogisticsOperationsSummary = {
+  shipments_waiting_status_sync_count: number;
+};
+
+type IntegrationSummary = {
+  woo_recent_sync_failures: number;
+  courier_recent_failures: number;
+};
+
 function getCollectionCount(payload: unknown) {
   if (Array.isArray(payload)) {
     return payload.length;
@@ -153,13 +167,16 @@ export default function DashboardPage() {
     ok: false,
     message: "Checking backend connection...",
   });
+  const [orderOps, setOrderOps] = useState<OrderOperationsSummary | null>(null);
+  const [logisticsOps, setLogisticsOps] = useState<LogisticsOperationsSummary | null>(null);
+  const [integrationSummary, setIntegrationSummary] = useState<IntegrationSummary | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     async function checkBackend() {
       try {
-        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary, taskSummary, hrSummary, posSummary] = await Promise.all([
+        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary, taskSummary, hrSummary, posSummary, orderOpsSummary, logisticsOpsSummary, integrationData] = await Promise.all([
           api.get<HealthResponse>("/health"),
           api.get<unknown>("/products?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100"),
@@ -177,6 +194,9 @@ export default function DashboardPage() {
           api.get<TaskSummaryResponse>("/tasks/summary").catch(() => null),
           api.get<HrSummaryResponse>("/hr/summary").catch(() => null),
           api.get<PosSummaryResponse>("/pos/summary").catch(() => null),
+          api.get<OrderOperationsSummary>("/orders/operations-summary").catch(() => null),
+          api.get<LogisticsOperationsSummary>("/logistics/operations-summary").catch(() => null),
+          api.get<IntegrationSummary>("/reports/integration-summary").catch(() => null),
         ]);
         if (!isMounted) return;
 
@@ -258,6 +278,9 @@ export default function DashboardPage() {
           posTodaySales: Number(posSummary?.today_pos_sales || 0),
         });
         setCompanyName(businessSettings.company_name || "Amar eCom");
+        setOrderOps(orderOpsSummary);
+        setLogisticsOps(logisticsOpsSummary);
+        setIntegrationSummary(integrationData);
         setStatsError("");
       } catch (error) {
         if (!isMounted) return;
@@ -349,6 +372,41 @@ export default function DashboardPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
+        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                Operations Snapshot
+              </p>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">
+                Orders and integrations
+              </h2>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+              <ShoppingCart className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
+              <p className="text-sm text-sky-700">Ready to ship</p>
+              <p className="mt-2 text-2xl font-semibold text-sky-900">{backendStatus.ok ? (orderOps?.ready_to_ship_orders ?? "--") : "--"}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+              <p className="text-sm text-amber-700">Need shipment</p>
+              <p className="mt-2 text-2xl font-semibold text-amber-900">{backendStatus.ok ? (orderOps?.orders_without_shipments_ready_to_ship ?? "--") : "--"}</p>
+            </div>
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-4">
+              <p className="text-sm text-violet-700">Woo sync health</p>
+              <p className="mt-2 text-2xl font-semibold text-violet-900">{backendStatus.ok ? (integrationSummary?.woo_recent_sync_failures ?? "--") : "--"}</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4">
+              <p className="text-sm text-indigo-700">Courier sync health</p>
+              <p className="mt-2 text-2xl font-semibold text-indigo-900">{backendStatus.ok ? (logisticsOps?.shipments_waiting_status_sync_count ?? integrationSummary?.courier_recent_failures ?? "--") : "--"}</p>
+            </div>
+          </div>
+        </article>
+
         <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
           <div className="flex items-center justify-between">
             <div>

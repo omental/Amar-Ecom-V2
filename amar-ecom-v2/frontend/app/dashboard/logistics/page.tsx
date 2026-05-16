@@ -115,6 +115,18 @@ type ReconciliationForm = {
   reconciliation_status: string;
 };
 
+type LogisticsOperationsSummary = {
+  pending_dispatch_count: number;
+  sent_to_external_courier_count: number;
+  external_delivered_unsettled_count: number;
+  external_failed_returned_count: number;
+  unsettled_reconciliation_count: number;
+  shipments_missing_tracking_count: number;
+  shipments_waiting_status_sync_count: number;
+  delivered_shipments: number;
+  failed_shipments: number;
+};
+
 const tabs = [
   { id: "pending-dispatch", label: "Pending Dispatch" },
   { id: "shipments", label: "Shipments" },
@@ -153,6 +165,7 @@ export default function LogisticsPage() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("pending-dispatch");
   const [pendingDispatchOrders, setPendingDispatchOrders] = useState<PendingDispatchOrder[]>([]);
   const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [operationsSummary, setOperationsSummary] = useState<LogisticsOperationsSummary | null>(null);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<PendingDispatchOrder | null>(null);
   const [pendingSearch, setPendingSearch] = useState("");
@@ -168,10 +181,6 @@ export default function LogisticsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const unsettledReconciliationCount = useMemo(
-    () => shipments.filter((shipment) => !["settled", "cancelled"].includes(shipment.reconciliation_status)).length,
-    [shipments],
-  );
   const externallyDeliveredPendingReconciliationCount = useMemo(
     () =>
       shipments.filter(
@@ -247,10 +256,11 @@ export default function LogisticsPage() {
 
     async function loadLogisticsData() {
       try {
-        const [pendingDispatchData, shipmentsData, couriersData] = await Promise.all([
+        const [pendingDispatchData, shipmentsData, couriersData, summaryData] = await Promise.all([
           api.get<PendingDispatchOrder[]>("/logistics/pending-dispatch?skip=0&limit=100"),
           api.get<Shipment[]>("/shipments?skip=0&limit=100"),
           api.get<Courier[]>("/couriers?skip=0&limit=100"),
+          api.get<LogisticsOperationsSummary>("/logistics/operations-summary"),
         ]);
 
         if (!isMounted) {
@@ -260,6 +270,7 @@ export default function LogisticsPage() {
         setPendingDispatchOrders(pendingDispatchData);
         setShipments(shipmentsData);
         setCouriers(couriersData);
+        setOperationsSummary(summaryData);
       } catch (err) {
         if (!isMounted) {
           return;
@@ -279,14 +290,16 @@ export default function LogisticsPage() {
   }, []);
 
   async function refreshLogisticsData() {
-    const [pendingDispatchData, shipmentsData, couriersData] = await Promise.all([
+    const [pendingDispatchData, shipmentsData, couriersData, summaryData] = await Promise.all([
       api.get<PendingDispatchOrder[]>("/logistics/pending-dispatch?skip=0&limit=100"),
       api.get<Shipment[]>("/shipments?skip=0&limit=100"),
       api.get<Courier[]>("/couriers?skip=0&limit=100"),
+      api.get<LogisticsOperationsSummary>("/logistics/operations-summary"),
     ]);
     setPendingDispatchOrders(pendingDispatchData);
     setShipments(shipmentsData);
     setCouriers(couriersData);
+    setOperationsSummary(summaryData);
   }
 
   async function handleCreateShipment(event: React.FormEvent<HTMLFormElement>) {
@@ -370,32 +383,32 @@ export default function LogisticsPage() {
           />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Total shipments</p>
-              <p className="mt-2 text-xl font-semibold text-slate-950">{shipments.length}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">External Failed or Returned</p>
+              <p className="mt-2 text-xl font-semibold text-slate-950">{operationsSummary?.external_failed_returned_count ?? externalFailedReturnedCount}</p>
             </div>
             <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-amber-700">Pending shipments</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-amber-700">Pending Dispatch</p>
               <p className="mt-2 text-xl font-semibold text-amber-900">
-                {shipments.filter((shipment) => shipment.status === "pending").length}
+                {operationsSummary?.pending_dispatch_count ?? pendingDispatchOrders.length}
               </p>
             </div>
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-emerald-700">Delivered shipments</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-emerald-700">Sent to Courier</p>
               <p className="mt-2 text-xl font-semibold text-emerald-900">
-                {shipments.filter((shipment) => shipment.status === "delivered").length}
+                {operationsSummary?.sent_to_external_courier_count ?? 0}
               </p>
             </div>
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-rose-700">Unsettled reconciliation</p>
-              <p className="mt-2 text-xl font-semibold text-rose-900">{unsettledReconciliationCount}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-rose-700">External Delivered Unsettled</p>
+              <p className="mt-2 text-xl font-semibold text-rose-900">{operationsSummary?.external_delivered_unsettled_count ?? externallyDeliveredPendingReconciliationCount}</p>
             </div>
             <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-sky-700">External delivered, recon pending</p>
-              <p className="mt-2 text-xl font-semibold text-sky-900">{externallyDeliveredPendingReconciliationCount}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-sky-700">Missing Tracking</p>
+              <p className="mt-2 text-xl font-semibold text-sky-900">{operationsSummary?.shipments_missing_tracking_count ?? 0}</p>
             </div>
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-orange-700">External failed or returned</p>
-              <p className="mt-2 text-xl font-semibold text-orange-900">{externalFailedReturnedCount}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-orange-700">Needs Status Sync</p>
+              <p className="mt-2 text-xl font-semibold text-orange-900">{operationsSummary?.shipments_waiting_status_sync_count ?? 0}</p>
             </div>
           </div>
         </div>
@@ -729,7 +742,15 @@ export default function LogisticsPage() {
                       </Link>
                       <p className="mt-1 text-xs text-slate-500">{shipment.tracking_number || "No tracking yet"}</p>
                     </div>
-                    <span>{shipment.order?.order_number || "Unknown order"}</span>
+                    <span>
+                      {shipment.order?.order_number ? (
+                        <Link href={`/dashboard/orders/${shipment.order_id}`} className="font-medium text-slate-950 transition hover:text-slate-700 hover:underline">
+                          {shipment.order.order_number}
+                        </Link>
+                      ) : (
+                        "Unknown order"
+                      )}
+                    </span>
                     <div>
                       <p className="font-medium text-slate-950">{shipment.recipient_name || shipment.order?.customer?.name || "No recipient"}</p>
                       <p className="mt-1 text-xs text-slate-500">{shipment.recipient_phone || shipment.order?.customer_phone || "No phone"}</p>

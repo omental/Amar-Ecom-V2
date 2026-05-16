@@ -17,7 +17,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
-import { formatCurrency, formatDate, formatLabel } from "@/lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 
 type SalesSummary = {
   total_orders: number;
@@ -115,6 +115,37 @@ type RecentOrderActivityItem = {
   created_at: string;
 };
 
+type IntegrationSummary = {
+  woocommerce_orders_count: number;
+  woocommerce_products_count: number;
+  woo_recent_sync_failures: number;
+  woo_last_product_sync_at: string | null;
+  woo_last_order_sync_at: string | null;
+  courier_sent_count: number;
+  courier_recent_failures: number;
+  courier_external_delivered_count: number;
+  courier_external_failed_returned_count: number;
+  pending_integration_actions: number;
+};
+
+type CourierFailureLog = {
+  id: string;
+  provider: string;
+  action: string;
+  status: string;
+  external_id: string | null;
+  message: string | null;
+  created_at: string;
+};
+
+type WooImportedOrder = {
+  id: string;
+  order_number: string;
+  external_status: string | null;
+  external_synced_at: string | null;
+  total: number | string;
+};
+
 type FilterState = {
   start_date: string;
   end_date: string;
@@ -128,6 +159,9 @@ type ReportsState = {
   stockMovementSummary: StockMovementSummaryItem[];
   customerReport: CustomerReport | null;
   logisticsReport: LogisticsReport | null;
+  integrationSummary: IntegrationSummary | null;
+  courierFailures: CourierFailureLog[];
+  wooImportedOrders: WooImportedOrder[];
   topProducts: TopProductReportItem[];
   lowStockProducts: LowStockProductReportItem[];
   revenueByDate: RevenueByDateReportItem[];
@@ -147,6 +181,9 @@ const initialReportsState: ReportsState = {
   stockMovementSummary: [],
   customerReport: null,
   logisticsReport: null,
+  integrationSummary: null,
+  courierFailures: [],
+  wooImportedOrders: [],
   topProducts: [],
   lowStockProducts: [],
   revenueByDate: [],
@@ -219,6 +256,7 @@ export default function ReportsPage() {
     () => Math.max(0, ...reports.revenueByDate.map((item) => Number(item.total_sales ?? 0))),
     [reports.revenueByDate],
   );
+  const integrationSummary = reports.integrationSummary;
 
   async function fetchReports(currentFilters: FilterState) {
     const dateQuery = buildDateQuery(currentFilters);
@@ -230,6 +268,9 @@ export default function ReportsPage() {
       stockMovementSummary,
       customerReport,
       logisticsReport,
+      integrationSummary,
+      courierFailures,
+      wooImportedOrders,
       topProducts,
       lowStockProducts,
       revenueByDate,
@@ -242,6 +283,9 @@ export default function ReportsPage() {
       api.get<StockMovementSummaryItem[]>(`/reports/stock-movements-summary${dateQuery}`),
       api.get<CustomerReport>("/reports/customers"),
       api.get<LogisticsReport>("/reports/logistics"),
+      api.get<IntegrationSummary>("/reports/integration-summary"),
+      api.get<CourierFailureLog[]>("/courier-integrations/logs?status=failed&limit=50").catch(() => []),
+      api.get<WooImportedOrder[]>("/orders?source=woocommerce&limit=100").catch(() => []),
       api.get<TopProductReportItem[]>(appendLimit(`/reports/top-products${dateQuery}`, 10)),
       api.get<LowStockProductReportItem[]>(appendLimit("/reports/low-stock-products", 10)),
       api.get<RevenueByDateReportItem[]>(appendLimit(`/reports/revenue-by-date${dateQuery}`, 14)),
@@ -256,6 +300,9 @@ export default function ReportsPage() {
       stockMovementSummary,
       customerReport,
       logisticsReport,
+      integrationSummary,
+      courierFailures,
+      wooImportedOrders,
       topProducts,
       lowStockProducts,
       revenueByDate,
@@ -389,6 +436,118 @@ export default function ReportsPage() {
               </article>
             ))}
           </section>
+
+          {integrationSummary ? (
+            <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <PageHeader
+                  eyebrow="Integration Health"
+                  title="WooCommerce and Courier status"
+                  description="Keep operator attention on safe external sync activity without turning integrations into background automation."
+                />
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadCsv(
+                        "integration-summary.csv",
+                        ["metric", "value"],
+                        [
+                          ["woocommerce_orders_count", integrationSummary.woocommerce_orders_count],
+                          ["woocommerce_products_count", integrationSummary.woocommerce_products_count],
+                          ["woo_recent_sync_failures", integrationSummary.woo_recent_sync_failures],
+                          ["woo_last_product_sync_at", integrationSummary.woo_last_product_sync_at],
+                          ["woo_last_order_sync_at", integrationSummary.woo_last_order_sync_at],
+                          ["courier_sent_count", integrationSummary.courier_sent_count],
+                          ["courier_recent_failures", integrationSummary.courier_recent_failures],
+                          ["courier_external_delivered_count", integrationSummary.courier_external_delivered_count],
+                          ["courier_external_failed_returned_count", integrationSummary.courier_external_failed_returned_count],
+                          ["pending_integration_actions", integrationSummary.pending_integration_actions],
+                        ],
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Summary CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadCsv(
+                        "courier-failures.csv",
+                        ["provider", "action", "status", "external_id", "message", "created_at"],
+                        reports.courierFailures.map((item) => [
+                          item.provider,
+                          item.action,
+                          item.status,
+                          item.external_id,
+                          item.message,
+                          item.created_at,
+                        ]),
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Courier Failures
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadCsv(
+                        "woocommerce-imported-orders.csv",
+                        ["order_number", "external_status", "external_synced_at", "total"],
+                        reports.wooImportedOrders.map((item) => [
+                          item.order_number,
+                          item.external_status,
+                          item.external_synced_at,
+                          item.total,
+                        ]),
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Woo Orders
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-4 text-sm text-violet-900">
+                  Woo orders: <span className="font-semibold">{integrationSummary.woocommerce_orders_count}</span>
+                </div>
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 text-sm text-indigo-900">
+                  Woo products: <span className="font-semibold">{integrationSummary.woocommerce_products_count}</span>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900">
+                  Woo sync failures: <span className="font-semibold">{integrationSummary.woo_recent_sync_failures}</span>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                  Courier sent: <span className="font-semibold">{integrationSummary.courier_sent_count}</span>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                  Pending actions: <span className="font-semibold">{integrationSummary.pending_integration_actions}</span>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  Woo last product sync: <span className="font-semibold text-slate-950">{integrationSummary.woo_last_product_sync_at ? formatDateTime(integrationSummary.woo_last_product_sync_at) : "Never"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  Woo last order sync: <span className="font-semibold text-slate-950">{integrationSummary.woo_last_order_sync_at ? formatDateTime(integrationSummary.woo_last_order_sync_at) : "Never"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  Courier failures: <span className="font-semibold text-slate-950">{integrationSummary.courier_recent_failures}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  External delivered / failed-returned: <span className="font-semibold text-slate-950">{integrationSummary.courier_external_delivered_count} / {integrationSummary.courier_external_failed_returned_count}</span>
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
             <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">

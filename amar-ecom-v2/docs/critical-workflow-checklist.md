@@ -1,6 +1,6 @@
 # Critical Workflow Checklist
 
-Last reviewed: 2026-05-12
+Last reviewed: 2026-05-16
 
 Use this as a manual smoke pass after migrations and before release candidates.
 
@@ -292,6 +292,30 @@ Expected:
 - report cards/tables load without runtime errors
 - date-filtered finance summary responds correctly
 - browser CSV exports succeed without adding chart dependencies
+
+### Cross-Module Operations Cockpit
+
+1. Open `/dashboard/orders`.
+2. Confirm the summary cards show open orders, ready-to-ship, need shipment, Woo orders, need Woo refresh, and unprinted counts.
+3. Use filters for source, warehouse, stock deducted, has shipment, printed, payment status, status tab, and search.
+4. Confirm WooCommerce-linked rows show source, external status, and synced timing safely.
+5. Confirm `Refresh Woo` only appears for WooCommerce-linked rows with external identifiers.
+6. Confirm dispatch-ready orders can jump to logistics without destructive auto-actions.
+7. Open `/dashboard/logistics`.
+8. Confirm summary cards show pending dispatch, sent to courier, external delivered unsettled, external failed or returned, missing tracking, and needs status sync.
+9. Confirm shipment rows include quick links to the linked order, shipment detail, and courier integrations workspace where available.
+10. Open `/dashboard/reports`.
+11. Confirm the `Integration Health` section shows WooCommerce and courier counts, recent failures, last sync timings, and pending integration actions.
+12. Export integration summary, courier failures, and WooCommerce imported orders CSV files.
+13. Open `/dashboard`.
+14. Confirm the compact ops cards show ready-to-ship, need-shipment, Woo sync health, and courier sync health without crowding the main dashboard.
+
+Expected:
+
+- cross-module visibility is clearer for day-to-day operators
+- WooCommerce and courier states remain surfaced as read-only or manual-action context
+- no background worker is implied by the UI
+- no destructive external update path is introduced
 
 ### Admin Tools Check
 

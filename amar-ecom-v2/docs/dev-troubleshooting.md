@@ -1,6 +1,6 @@
 # Dev Troubleshooting
 
-Last reviewed: 2026-05-12
+Last reviewed: 2026-05-16
 
 ## Frontend Build Lock On Windows
 
@@ -123,6 +123,18 @@ Note:
 
 - this is separate from the Windows `.next` `EPERM` file-lock issue above
 - Phase 13A courier integration validation still passed backend tests, frontend lint, and frontend type-checking when this network-dependent build step failed
+
+## Phase 14A Build Validation Note
+
+Recent Phase 14A validation still hit the Windows `.next` lock path rather than an application-code failure:
+
+- example:
+  - `EPERM: operation not permitted, unlink 'D:\Amar-eCom\amar-ecom-v2\frontend\.next\build\chunks\node_modules_13sb.px._.js'`
+
+Interpretation:
+
+- if backend tests, frontend lint, and frontend type-check all pass, treat this as an environment cleanup issue first
+- rerun the cleanup steps from `D:\Amar-eCom\amar-ecom-v2\frontend` before treating it as a product regression
 
 ## Steadfast Configuration Check vs Live Connection Test
 

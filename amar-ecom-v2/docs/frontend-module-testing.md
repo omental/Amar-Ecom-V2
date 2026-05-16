@@ -1347,3 +1347,87 @@ Expected result:
 39. Open a log detail panel if present
 40. Confirm request and response snapshots remain sanitized
 41. Confirm no raw tokens, passwords, secrets, or auth headers appear anywhere in the UI
+
+## Orders Operations Cockpit Checks
+
+1. Open `http://localhost:3000/dashboard/orders`
+2. Confirm the top cards show:
+   - `Open Orders`
+   - `Ready to Ship`
+   - `Need Shipment`
+   - `Woo Orders`
+   - `Need Woo Refresh`
+   - `Unprinted`
+3. Use filters for:
+   - status tabs
+   - payment status
+   - source
+   - warehouse
+   - stock deducted
+   - has shipment
+   - printed
+   - search
+4. Confirm the list reloads without runtime errors
+5. Confirm WooCommerce-sourced rows show:
+   - source badge
+   - external status when present
+   - external synced timestamp when present
+6. Confirm rows show:
+   - shipment linked or missing
+   - stock deducted indicator
+   - printed count
+   - courier external status when a shipment exists
+7. Confirm actions now surface:
+   - `View`
+   - `Print`
+   - `Create Shipment` when dispatch-ready
+   - `Refresh Woo` only for WooCommerce-linked rows with `external_id`
+   - `Open Logistics`
+
+## Logistics Operations Cockpit Checks
+
+1. Open `http://localhost:3000/dashboard/logistics`
+2. Confirm the top cards show:
+   - `Pending Dispatch`
+   - `Sent to Courier`
+   - `External Delivered Unsettled`
+   - `External Failed or Returned`
+   - `Missing Tracking`
+   - `Needs Status Sync`
+3. Confirm shipment rows can show:
+   - quick order link
+   - quick shipment link
+   - quick courier integrations link
+   - external provider
+   - external status
+   - tracking or consignment context
+   - reconciliation status
+
+## Reports Integration Health Checks
+
+1. Open `http://localhost:3000/dashboard/reports`
+2. Confirm the `Integration Health` section shows:
+   - WooCommerce orders count
+   - WooCommerce products count
+   - Woo recent sync failures
+   - Woo last product sync
+   - Woo last order sync
+   - courier sent count
+   - courier recent failures
+   - external delivered count
+   - external failed or returned count
+   - pending integration actions
+3. Confirm browser CSV export works for:
+   - integration summary
+   - courier failures
+   - WooCommerce imported orders
+
+## Dashboard Ops Snapshot Checks
+
+1. Open `http://localhost:3000/dashboard`
+2. Confirm the dashboard now surfaces:
+   - `Ready to Ship`
+   - `Need Shipment`
+   - `Woo Sync Health`
+   - `Courier Sync Health`
+3. Confirm the cards stay compact and do not crowd out the existing dashboard content

@@ -149,3 +149,15 @@ class ShipmentListRead(ORMBaseSchema):
 
 class ShipmentRead(ShipmentListRead):
     events: list[ShipmentEventRead] = []
+
+
+class LogisticsOperationsSummaryRead(BaseModel):
+    pending_dispatch_count: int
+    sent_to_external_courier_count: int
+    external_delivered_unsettled_count: int
+    external_failed_returned_count: int
+    unsettled_reconciliation_count: int
+    shipments_missing_tracking_count: int
+    shipments_waiting_status_sync_count: int
+    delivered_shipments: int
+    failed_shipments: int

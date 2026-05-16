@@ -2503,6 +2503,93 @@ venv\Scripts\alembic.exe upgrade head
    - call `GET /api/v1/health`
 5. Drop the temporary database after validation.
 
+## Cross-Module Operations Summaries
+
+Phase 14A adds read-only operational summary endpoints for orders, logistics, and reports.
+
+### Orders Operations Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/orders/operations-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns counts for open, ready-to-ship, shipped, delivered, and cancelled orders
+- returns WooCommerce-facing counts such as:
+  - `orders_with_woo_source`
+  - `orders_needing_woo_refresh`
+- returns logistics handoff counts such as:
+  - `orders_with_shipments`
+  - `orders_without_shipments_ready_to_ship`
+- returns stock/print operational counts such as:
+  - `orders_stock_not_deducted`
+  - `orders_printed_count`
+  - `orders_unprinted_count`
+
+### Extended Order Filters
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/orders?source=woocommerce&has_shipment=true&printed=false&search=WC-" `
+  -Headers $headers
+```
+
+Supported filters now include:
+
+- `source`
+- `warehouse_id`
+- `stock_deducted`
+- `has_shipment`
+- `printed`
+- `external_status`
+- `payment_status`
+- `status`
+- `search`
+
+Expected result:
+
+- filter combinations remain non-destructive and read-only
+- WooCommerce-linked rows can be isolated without exposing secrets
+
+### Logistics Operations Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/logistics/operations-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns:
+  - `pending_dispatch_count`
+  - `sent_to_external_courier_count`
+  - `external_delivered_unsettled_count`
+  - `external_failed_returned_count`
+  - `unsettled_reconciliation_count`
+  - `shipments_missing_tracking_count`
+  - `shipments_waiting_status_sync_count`
+  - `delivered_shipments`
+  - `failed_shipments`
+
+### Reports Integration Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/reports/integration-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns WooCommerce counts and recent failure totals
+- returns courier sent/failure/delivered/failed-returned counts
+- returns `pending_integration_actions`
+- remains safe and read-only with no background worker requirement
+
 ## Seed Default Permissions
 
 ```powershell

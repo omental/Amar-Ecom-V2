@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Loader2,
   PackagePlus,
   Printer,
+  RefreshCw,
   Search,
   ShoppingCart,
   StickyNote,
   Tag,
+  Truck,
   Plus,
 } from "lucide-react";
 
@@ -89,6 +91,37 @@ type ShipmentSummary = {
   order_id: string;
   shipment_number: string;
   status: string;
+  external_provider?: string | null;
+  external_status?: string | null;
+  external_tracking_number?: string | null;
+  tracking_number?: string | null;
+  courier?: {
+    name: string;
+  } | null;
+};
+
+type OrderOperationsSummary = {
+  total_open_orders: number;
+  ready_to_ship_orders: number;
+  shipped_orders: number;
+  delivered_orders: number;
+  cancelled_orders: number;
+  orders_with_woo_source: number;
+  orders_needing_woo_refresh: number;
+  orders_with_shipments: number;
+  orders_without_shipments_ready_to_ship: number;
+  orders_stock_not_deducted: number;
+  orders_printed_count: number;
+  orders_unprinted_count: number;
+};
+
+type OrderFilters = {
+  payment_status: string;
+  source: string;
+  warehouse_id: string;
+  stock_deducted: string;
+  has_shipment: string;
+  printed: string;
 };
 
 type OrderDuplicate = {
@@ -172,6 +205,15 @@ const initialForm: OrderForm = {
   items: [createOrderItemRow()],
 };
 
+const initialOrderFilters: OrderFilters = {
+  payment_status: "",
+  source: "",
+  warehouse_id: "",
+  stock_deducted: "",
+  has_shipment: "",
+  printed: "",
+};
+
 function toNumber(value: string | number | null | undefined) {
   const numericValue = Number(value ?? 0);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -198,17 +240,20 @@ function parseTags(tags: string | null | undefined) {
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [shipments, setShipments] = useState<ShipmentSummary[]>([]);
+  const [operationsSummary, setOperationsSummary] = useState<OrderOperationsSummary | null>(null);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [form, setForm] = useState<OrderForm>(initialForm);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeStatusTab, setActiveStatusTab] = useState("all");
+  const [orderFilters, setOrderFilters] = useState<OrderFilters>(initialOrderFilters);
   const [duplicateMatches, setDuplicateMatches] = useState<OrderDuplicate[]>([]);
   const [duplicateError, setDuplicateError] = useState("");
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshingWooOrderId, setIsRefreshingWooOrderId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -245,48 +290,48 @@ export default function OrdersPage() {
     return subtotal - toNumber(form.discount) + toNumber(form.delivery_charge);
   }, [form.delivery_charge, form.discount, subtotal]);
 
-  const filteredOrders = useMemo(() => {
-    const searchLower = searchTerm.trim().toLowerCase();
-    return orders.filter((order) => {
-      const matchesStatus =
-        activeStatusTab === "all" || order.status === activeStatusTab;
-      if (!matchesStatus) {
-        return false;
-      }
-
-      if (!searchLower) {
-        return true;
-      }
-
-      const haystack = [
-        order.order_number,
-        order.customer_name,
-        order.customer?.name,
-        order.customer_phone,
-        order.customer?.phone,
-        order.shipping_address,
-        order.tags,
-        order.notes,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(searchLower);
-    });
-  }, [activeStatusTab, orders, searchTerm]);
+  const filteredOrders = orders;
+  const ordersQuery = useMemo(() => {
+    const params = new URLSearchParams({ skip: "0", limit: "100" });
+    if (activeStatusTab !== "all") {
+      params.set("status", activeStatusTab);
+    }
+    if (orderFilters.payment_status) {
+      params.set("payment_status", orderFilters.payment_status);
+    }
+    if (orderFilters.source) {
+      params.set("source", orderFilters.source);
+    }
+    if (orderFilters.warehouse_id) {
+      params.set("warehouse_id", orderFilters.warehouse_id);
+    }
+    if (orderFilters.stock_deducted) {
+      params.set("stock_deducted", orderFilters.stock_deducted);
+    }
+    if (orderFilters.has_shipment) {
+      params.set("has_shipment", orderFilters.has_shipment);
+    }
+    if (orderFilters.printed) {
+      params.set("printed", orderFilters.printed);
+    }
+    if (searchTerm.trim()) {
+      params.set("search", searchTerm.trim());
+    }
+    return params.toString();
+  }, [activeStatusTab, orderFilters, searchTerm]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadInitialData() {
       try {
-        const [ordersData, customersData, productsData, warehousesData, shipmentsData] = await Promise.all([
-          api.get<Order[]>("/orders?skip=0&limit=50"),
+        const [ordersData, customersData, productsData, warehousesData, shipmentsData, summaryData] = await Promise.all([
+          api.get<Order[]>("/orders?skip=0&limit=100"),
           api.get<CustomerOption[]>("/customers?skip=0&limit=100"),
           api.get<ProductOption[]>("/products?skip=0&limit=100"),
           api.get<WarehouseOption[]>("/warehouses?skip=0&limit=100"),
           api.get<ShipmentSummary[]>("/shipments?skip=0&limit=100"),
+          api.get<OrderOperationsSummary>("/orders/operations-summary"),
         ]);
 
         if (!isMounted) return;
@@ -295,6 +340,7 @@ export default function OrdersPage() {
         setProducts(productsData);
         setWarehouses(warehousesData);
         setShipments(shipmentsData);
+        setOperationsSummary(summaryData);
       } catch (err) {
         if (!isMounted) return;
         setError(err instanceof ApiError ? err.message : "Failed to load order data");
@@ -311,20 +357,35 @@ export default function OrdersPage() {
     };
   }, []);
 
-  async function loadOrders() {
+  const loadOrders = useCallback(async (query = ordersQuery) => {
     setError("");
 
     try {
-      const [ordersData, shipmentsData] = await Promise.all([
-        api.get<Order[]>("/orders?skip=0&limit=50"),
+      const [ordersData, shipmentsData, summaryData] = await Promise.all([
+        api.get<Order[]>(`/orders?${query}`),
         api.get<ShipmentSummary[]>("/shipments?skip=0&limit=100"),
+        api.get<OrderOperationsSummary>("/orders/operations-summary"),
       ]);
       setOrders(ordersData);
       setShipments(shipmentsData);
+      setOperationsSummary(summaryData);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to load orders");
     }
-  }
+  }, [ordersQuery]);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+    const refreshTimer = window.setTimeout(() => {
+      void loadOrders(ordersQuery);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(refreshTimer);
+    };
+  }, [isLoading, loadOrders, ordersQuery]);
 
   function updateItem(rowId: string, updater: (item: OrderItemForm) => OrderItemForm) {
     setForm((current) => ({
@@ -454,6 +515,21 @@ export default function OrdersPage() {
     }
   }
 
+  async function handleRefreshWooOrder(orderId: string) {
+    setError("");
+    setSuccess("");
+    setIsRefreshingWooOrderId(orderId);
+    try {
+      const result = await api.post<{ rows: Array<{ message: string }> }>(`/woocommerce/orders/${orderId}/refresh`, {});
+      await loadOrders();
+      setSuccess(result.rows?.[0]?.message || "WooCommerce order refreshed safely.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to refresh WooCommerce order");
+    } finally {
+      setIsRefreshingWooOrderId(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
@@ -464,6 +540,24 @@ export default function OrdersPage() {
           meta={`${orders.length} loaded`}
         />
       </section>
+
+      {operationsSummary ? (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          {[
+            { label: "Open Orders", value: operationsSummary.total_open_orders, tone: "border-slate-200 bg-slate-50 text-slate-950" },
+            { label: "Ready to Ship", value: operationsSummary.ready_to_ship_orders, tone: "border-sky-200 bg-sky-50 text-sky-900" },
+            { label: "Need Shipment", value: operationsSummary.orders_without_shipments_ready_to_ship, tone: "border-amber-200 bg-amber-50 text-amber-900" },
+            { label: "Woo Orders", value: operationsSummary.orders_with_woo_source, tone: "border-violet-200 bg-violet-50 text-violet-900" },
+            { label: "Need Woo Refresh", value: operationsSummary.orders_needing_woo_refresh, tone: "border-orange-200 bg-orange-50 text-orange-900" },
+            { label: "Unprinted", value: operationsSummary.orders_unprinted_count, tone: "border-rose-200 bg-rose-50 text-rose-900" },
+          ].map((card) => (
+            <article key={card.label} className={`rounded-[28px] border p-5 shadow-[var(--shadow-soft)] ${card.tone}`}>
+              <p className="text-sm opacity-80">{card.label}</p>
+              <p className="mt-3 text-3xl font-semibold tracking-tight">{card.value}</p>
+            </article>
+          ))}
+        </section>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
         <FormCard
@@ -1003,6 +1097,72 @@ export default function OrdersPage() {
               />
             </div>
 
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <select
+                value={orderFilters.payment_status}
+                onChange={(event) => setOrderFilters((current) => ({ ...current, payment_status: event.target.value }))}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All payment statuses</option>
+                {paymentStatusOptions.map((statusValue) => (
+                  <option key={statusValue} value={statusValue}>
+                    {formatLabel(statusValue)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={orderFilters.source}
+                onChange={(event) => setOrderFilters((current) => ({ ...current, source: event.target.value }))}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All sources</option>
+                {sourceOptions.map((sourceValue) => (
+                  <option key={sourceValue} value={sourceValue}>
+                    {formatLabel(sourceValue)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={orderFilters.warehouse_id}
+                onChange={(event) => setOrderFilters((current) => ({ ...current, warehouse_id: event.target.value }))}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All warehouses</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={orderFilters.stock_deducted}
+                onChange={(event) => setOrderFilters((current) => ({ ...current, stock_deducted: event.target.value }))}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All stock states</option>
+                <option value="true">Stock deducted</option>
+                <option value="false">Stock not deducted</option>
+              </select>
+              <select
+                value={orderFilters.has_shipment}
+                onChange={(event) => setOrderFilters((current) => ({ ...current, has_shipment: event.target.value }))}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All shipment states</option>
+                <option value="true">Has shipment</option>
+                <option value="false">Needs shipment</option>
+              </select>
+              <select
+                value={orderFilters.printed}
+                onChange={(event) => setOrderFilters((current) => ({ ...current, printed: event.target.value }))}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+              >
+                <option value="">All print states</option>
+                <option value="true">Printed</option>
+                <option value="false">Unprinted</option>
+              </select>
+            </div>
+
             <div className="flex gap-2 overflow-x-auto pb-1">
               {statusTabs.map((tab) => {
                 const isActive = activeStatusTab === tab;
@@ -1050,6 +1210,7 @@ export default function OrdersPage() {
                   const tagList = parseTags(order.tags);
                   const linkedShipments = shipmentOrderMap.get(order.id) || [];
                   const hasShipment = linkedShipments.length > 0;
+                  const primaryShipment = linkedShipments[0] || null;
                   const canCreateShipment =
                     ["confirmed", "processing", "ready_to_ship"].includes(order.status) &&
                     !hasShipment;
@@ -1080,6 +1241,9 @@ export default function OrdersPage() {
                             ) : null}
                           </div>
                         ) : null}
+                        {order.external_synced_at ? (
+                          <p className="mt-1 text-xs text-slate-500">Synced {formatDateTime(order.external_synced_at)}</p>
+                        ) : null}
                       </div>
                       <div>
                         <p className="font-medium text-slate-950">
@@ -1108,6 +1272,11 @@ export default function OrdersPage() {
                           {hasShipment ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700">
                               Shipment linked
+                            </span>
+                          ) : null}
+                          {primaryShipment?.external_status ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">
+                              Courier {formatLabel(primaryShipment.external_status)}
                             </span>
                           ) : null}
                           {hasNotes ? (
@@ -1169,13 +1338,24 @@ export default function OrdersPage() {
                           <Printer className="h-3.5 w-3.5" />
                           Print
                         </Link>
+                        {order.source === "woocommerce" && order.external_id ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleRefreshWooOrder(order.id)}
+                            disabled={isRefreshingWooOrderId === order.id}
+                            className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-100 disabled:opacity-60"
+                          >
+                            {isRefreshingWooOrderId === order.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                            Refresh Woo
+                          </button>
+                        ) : null}
                         {hasShipment ? (
                           <Link
-                            href={`/dashboard/shipments?order_id=${order.id}`}
+                            href={`/dashboard/logistics?order_id=${order.id}`}
                             className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
                           >
-                            <PackagePlus className="h-3.5 w-3.5" />
-                            View Shipment
+                            <Truck className="h-3.5 w-3.5" />
+                            Open Logistics
                           </Link>
                         ) : canCreateShipment ? (
                           <Link
@@ -1184,6 +1364,14 @@ export default function OrdersPage() {
                           >
                             <PackagePlus className="h-3.5 w-3.5" />
                             Create Shipment
+                          </Link>
+                        ) : ["confirmed", "processing", "ready_to_ship"].includes(order.status) ? (
+                          <Link
+                            href={`/dashboard/logistics?order_id=${order.id}`}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                          >
+                            <Truck className="h-3.5 w-3.5" />
+                            Open Logistics
                           </Link>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-400">

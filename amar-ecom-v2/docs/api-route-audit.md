@@ -1,6 +1,6 @@
 # API Route Audit
 
-Last reviewed: 2026-05-12
+Last reviewed: 2026-05-16
 
 Scope:
 - app import validated after full Alembic migration chain
@@ -33,11 +33,11 @@ Scope:
 | Stock Movements | `/api/v1/stock-movements` | `GET /`, `GET /{id}` | Protected | Read-only ledger surface for adjustments, transfers, returns, orders, and POS. |
 | Stock Transfers | `/api/v1/stock-transfers` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Internal warehouse transfer workflow. |
 | Wastage Logs | `/api/v1/wastage-logs` | `GET /`, `GET /{id}`, `POST /` | Protected | No delete route; acts as an operational log. |
-| Orders | `/api/v1/orders` | `GET /`, `GET /duplicate-check`, `GET /{id}`, `POST /`, `PATCH /{id}`, `GET /{id}/invoice-data`, `POST /{id}/mark-printed`, `POST /{id}/create-shipment` | Protected | Includes invoice payload and shipment creation handoff. |
+| Orders | `/api/v1/orders` | `GET /`, `GET /operations-summary`, `GET /duplicate-check`, `GET /{id}`, `POST /`, `PATCH /{id}`, `GET /{id}/invoice-data`, `POST /{id}/mark-printed`, `POST /{id}/create-shipment` | Protected | Includes invoice payload, shipment creation handoff, and operator-focused summary counts. The list endpoint now supports safe operational filters such as source, warehouse, stock deducted, has shipment, printed, external status, payment status, status, and search. |
 | Returns | `/api/v1/returns` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Restock behavior depends on status/action flags. |
 | Couriers | `/api/v1/couriers` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Internal courier master-data only. |
 | Shipments | `/api/v1/shipments` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Shipment lifecycle and reconciliation surface. |
-| Logistics | `/api/v1/logistics` | `GET /pending-dispatch` | Protected | Focused internal dispatch queue endpoint; reconciliation is still internal-first even though Phase 13A adds separate manual external courier foundation routes. |
+| Logistics | `/api/v1/logistics` | `GET /pending-dispatch`, `GET /operations-summary` | Protected | Focused internal dispatch queue plus operations summary. Reconciliation is still internal-first even though Phase 13A adds separate manual external courier foundation routes. |
 | Courier Integrations | `/api/v1/courier-integrations` | `GET /providers`, `GET /providers/{provider}/settings`, `PATCH /providers/{provider}/settings`, `POST /providers/{provider}/test-connection`, `POST /shipments/{shipment_id}/send`, `POST /shipments/{shipment_id}/sync-status`, `POST /status-sync/bulk`, `GET /logs` | Protected | External courier foundation with encrypted provider settings, manual shipment send, manual external status sync, bulk status sync, and sanitized API logs. Phase 13C hardens status sync with conservative external-to-internal mapping, conflict warnings, `apply_safe_status` opt-in behavior, and richer log filtering including message search. Settings and logs are admin-only. No background worker or destructive remote-driven shipment mutation is included in this phase. |
 | Suppliers | `/api/v1/suppliers` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Supplier foundation exists and is used by purchase orders and supplier payments, but no dedicated supplier ledger endpoint exists yet. |
 | Purchase Orders | `/api/v1/purchase-orders` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Receiving integrates with inventory and stock movements. |
@@ -55,7 +55,7 @@ Scope:
 | Salary Records | `/api/v1/salary-records` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Net salary is calculated server-side; paid status stamps time. |
 | HR Summary | `/api/v1/hr` | `GET /summary` | Protected | HR overview cards source. |
 | POS | `/api/v1/pos` | `GET /products`, `POST /checkout`, `GET /summary` | Protected | Walk-in POS checkout ties into orders, stock, and optional finance capture; refunds, offline mode, and hardware integration are not included yet. |
-| Reports | `/api/v1/reports` | `GET /sales-summary`, `GET /order-status`, `GET /payment-status`, `GET /inventory`, `GET /stock-movements-summary`, `GET /customers`, `GET /logistics`, `GET /finance-summary`, `GET /top-products`, `GET /low-stock-products`, `GET /revenue-by-date`, `GET /recent-order-activity` | Protected | Reporting foundation exists but remains lighter than statement-grade analytics. |
+| Reports | `/api/v1/reports` | `GET /sales-summary`, `GET /order-status`, `GET /payment-status`, `GET /inventory`, `GET /stock-movements-summary`, `GET /customers`, `GET /logistics`, `GET /integration-summary`, `GET /finance-summary`, `GET /top-products`, `GET /low-stock-products`, `GET /revenue-by-date`, `GET /recent-order-activity` | Protected | Reporting foundation exists but remains lighter than statement-grade analytics. Phase 14A adds a safe integration-health slice for WooCommerce and courier monitoring without adding destructive automation. |
 
 ## Validation Notes
 

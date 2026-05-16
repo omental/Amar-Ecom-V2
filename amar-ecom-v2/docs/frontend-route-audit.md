@@ -1,6 +1,6 @@
 # Frontend Route Audit
 
-Last reviewed: 2026-05-12
+Last reviewed: 2026-05-16
 
 Status labels:
 - `Working`
@@ -9,9 +9,9 @@ Status labels:
 
 | Route | Status | Connected APIs | Known limitations |
 | --- | --- | --- | --- |
-| `/dashboard` | Partial | dashboard summary calls across products, customers, orders, inventory, shipments, returns, finance, tasks, HR, POS | Useful overview cards exist, but charting and dense operator storytelling are still below v1. |
+| `/dashboard` | Working | dashboard summary calls across products, customers, orders, inventory, shipments, returns, finance, tasks, HR, POS, plus order/logistics/integration summaries | Compact ops cards now surface ready-to-ship, need-shipment, Woo sync health, and courier sync health without introducing destructive automation. |
 | `/dashboard/pos` | Working | `/api/v1/pos/products`, `/api/v1/pos/checkout`, `/api/v1/pos/summary`, `/api/v1/customers`, `/api/v1/accounts`, `/api/v1/warehouses` | No barcode hardware, offline mode, or refund workflow yet. |
-| `/dashboard/orders` | Partial | `/api/v1/orders`, `/api/v1/orders/duplicate-check`, supporting customer/warehouse data | Operational list is functional but lighter than the old dense dispatch workspace. |
+| `/dashboard/orders` | Working | `/api/v1/orders`, `/api/v1/orders/operations-summary`, `/api/v1/orders/duplicate-check`, supporting customer/warehouse/shipment data | Phase 14A turns this into a stronger operations cockpit with top summary cards, server-backed operations filters, WooCommerce state badges, shipment visibility, and direct links into logistics while keeping Woo refresh manual and safe. |
 | `/dashboard/orders/[id]` | Partial | `/api/v1/orders/{id}`, `/api/v1/orders/{id}/create-shipment`, `/api/v1/orders/{id}/mark-printed` | Good detail readability, but downstream ops still span multiple modules. |
 | `/dashboard/orders/[id]/invoice` | Working | `/api/v1/orders/{id}/invoice-data`, `/api/v1/orders/{id}/mark-printed` | Browser print only; no PDF generation and no advanced live template preview. |
 | `/dashboard/products` | Working | `/api/v1/products`, `/api/v1/categories`, `/api/v1/brands` | Functional CRUD page, but less dense than a full inventory admin hub. |
@@ -22,7 +22,7 @@ Status labels:
 | `/dashboard/stock-movements` | Working | `/api/v1/stock-movements` | Read-only ledger; export/reporting depth is still basic. |
 | `/dashboard/returns` | Working | `/api/v1/returns`, `/api/v1/orders`, `/api/v1/customers` | Practical RMA flow, but not a full service-desk style returns workspace. |
 | `/dashboard/returns/[id]` | Working | `/api/v1/returns/{id}` | Focused detail page; operational shortcuts are still limited. |
-| `/dashboard/logistics` | Partial | `/api/v1/logistics/pending-dispatch`, `/api/v1/orders`, `/api/v1/shipments`, `/api/v1/couriers` | Internal dispatch and reconciliation foundation exists, and Phase 13C adds lightweight external reconciliation visibility for externally delivered-but-unsettled plus failed or returned shipment counts, but this is still not a full courier control tower. |
+| `/dashboard/logistics` | Working | `/api/v1/logistics/pending-dispatch`, `/api/v1/logistics/operations-summary`, `/api/v1/orders`, `/api/v1/shipments`, `/api/v1/couriers` | Internal dispatch and reconciliation workspace now includes operations cards for pending dispatch, courier handoff, missing tracking, external failure visibility, and status-sync follow-up while remaining manual-first and non-destructive. |
 | `/dashboard/couriers` | Working | `/api/v1/couriers` | Internal master-data only. |
 | `/dashboard/shipments` | Working | `/api/v1/shipments`, `/api/v1/couriers`, `/api/v1/orders` | Reconciliation works, and shipment rows now surface external courier metadata when available, but partner-specific workflow depth is still intentionally light. |
 | `/dashboard/shipments/[id]` | Working | `/api/v1/shipments/{id}`, `/api/v1/courier-integrations/shipments/{shipment_id}/sync-status` | Functional detail page with external courier metadata, last external sync time, safe-status apply control, warning visibility, and a guarded manual status-sync action when a shipment has external linkage. |
@@ -36,7 +36,7 @@ Status labels:
 | `/dashboard/finance` | Working | `/api/v1/finance/summary`, `/api/v1/accounts`, `/api/v1/transactions`, `/api/v1/petty-cash`, `/api/v1/supplier-payments`, `/api/v1/suppliers` | Practical finance foundation with petty cash and supplier payments exists, but full accounting remains out of scope. |
 | `/dashboard/tasks` | Working | `/api/v1/tasks`, `/api/v1/tasks/summary`, `/api/v1/users` | Kanban is status-based only; no drag/drop or deep collaboration tooling. |
 | `/dashboard/hr` | Working | `/api/v1/hr/summary`, `/api/v1/designations`, `/api/v1/employees`, `/api/v1/attendance`, `/api/v1/salary-advances`, `/api/v1/salary-records`, `/api/v1/users` | HR foundation only; no payroll posting or advanced leave/payroll workflows. |
-| `/dashboard/reports` | Working | `/api/v1/reports/*` | Stronger reporting base exists, but advanced charts/saved views remain limited. |
+| `/dashboard/reports` | Working | `/api/v1/reports/*`, `/api/v1/courier-integrations/logs`, `/api/v1/orders?source=woocommerce` | Adds an `Integration Health` section for WooCommerce and courier visibility plus browser CSV exports for integration summary, courier failures, and WooCommerce imported orders. Advanced charts and saved views remain limited. |
 | `/dashboard/users` | Partial | `/api/v1/users`, `/api/v1/permissions`, `/api/v1/users/{id}/permissions`, `/api/v1/activity-logs` | Permission assignment exists, but full UI enforcement is still incomplete. |
 | `/dashboard/activity-logs` | Working | `/api/v1/activity-logs` | Good audit visibility; filtering depth can still expand later. |
 | `/dashboard/admin-tools` | Working | `/api/v1/admin/system-health`, `/api/v1/admin/backup-guidance`, `/api/v1/admin/maintenance-checklist`, `/api/v1/admin/exports/*` | Admin-only release-readiness workspace; no actual backup execution and no deep permission engine yet. |

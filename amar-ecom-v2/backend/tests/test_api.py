@@ -13,10 +13,14 @@ from app.api.routes import courier_integrations as courier_integration_routes
 from app.api.routes import woocommerce as woocommerce_routes
 from app.core import crypto as crypto_utils
 from app.core.crypto import decrypt_secret, encrypt_secret, is_encrypted_secret, mask_secret
-from app.core.database import engine
+from app.core.database import AsyncSessionLocal, engine
 from app.main import app
+from app.models.courier import Shipment
 from app.models.courier_integration import CourierApiLog, CourierProviderSetting
+from app.models.order import Order
+from app.models.product import Product
 from app.models.woocommerce import WooCommerceSetting
+from app.models.woocommerce import WooCommerceSyncLog
 from app.services.courier_adapters.steadfast import SteadfastCourierAdapter
 from app.services.courier_service import map_external_courier_status
 from app.services import woocommerce_service
@@ -78,6 +82,10 @@ def auth_headers() -> dict[str, str]:
     login_body = login_user(email)
     token = login_body["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def run_async(coro):
+    return asyncio.run(coro)
 
 
 def test_health() -> None:
@@ -4107,6 +4115,405 @@ def test_reports_foundation_endpoints() -> None:
             )
             assert recent_order_activity_response.status_code == 200, recent_order_activity_response.text
             assert any(item["order_number"] == order["order_number"] for item in recent_order_activity_response.json())
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events"]):
+            pytest.skip("Apply the latest migrations before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_operations_summary_and_integration_report_endpoints() -> None:
+    headers = auth_headers()
+
+    async def seed_external_state(
+        woo_order_id: str,
+        delivered_shipment_id: str,
+        pending_sync_shipment_id: str,
+        product_id: str,
+    ) -> None:
+        async with AsyncSessionLocal() as session:
+            product = await session.get(Product, uuid.UUID(product_id))
+            assert product is not None
+            product.source = "woocommerce"
+
+            woo_order = await session.get(Order, uuid.UUID(woo_order_id))
+            assert woo_order is not None
+            woo_order.source = "woocommerce"
+            woo_order.external_id = "woo-order-900"
+            woo_order.external_number = "900"
+            woo_order.external_status = "processing"
+            woo_order.external_synced_at = None
+
+            delivered_shipment = await session.get(Shipment, uuid.UUID(delivered_shipment_id))
+            assert delivered_shipment is not None
+            delivered_shipment.external_provider = "steadfast"
+            delivered_shipment.external_consignment_id = "CONS-OPS-1"
+            delivered_shipment.external_tracking_number = "TRK-OPS-1"
+            delivered_shipment.external_status = "delivered"
+            delivered_shipment.sent_to_courier_at = datetime.now(timezone.utc)
+            delivered_shipment.external_synced_at = None
+
+            pending_sync_shipment = await session.get(Shipment, uuid.UUID(pending_sync_shipment_id))
+            assert pending_sync_shipment is not None
+            pending_sync_shipment.external_provider = "steadfast"
+            pending_sync_shipment.external_consignment_id = "CONS-OPS-2"
+            pending_sync_shipment.external_tracking_number = "TRK-OPS-2"
+            pending_sync_shipment.external_status = "in_transit"
+            pending_sync_shipment.sent_to_courier_at = datetime.now(timezone.utc)
+            pending_sync_shipment.external_synced_at = None
+
+            session.add(
+                WooCommerceSetting(
+                    store_url="https://store.example.com",
+                    consumer_key_encrypted=encrypt_secret("ck_ops"),
+                    consumer_secret_encrypted=encrypt_secret("cs_ops"),
+                    api_version="wc/v3",
+                    is_active=True,
+                    last_order_sync_at=datetime.now(timezone.utc),
+                    last_product_sync_at=datetime.now(timezone.utc),
+                    last_test_success=True,
+                )
+            )
+            session.add(
+                WooCommerceSyncLog(
+                    sync_type="manual_sync",
+                    direction="import",
+                    status="failed",
+                    external_id="woo-order-900",
+                    local_entity_type="order",
+                    local_entity_id=woo_order_id,
+                    message="Woo sync failed",
+                    payload_snapshot='{"status":"failed"}',
+                    created_by_id=None,
+                    started_at=datetime.now(timezone.utc),
+                    finished_at=datetime.now(timezone.utc),
+                )
+            )
+            session.add(
+                CourierApiLog(
+                    provider="steadfast",
+                    action="status_sync",
+                    status="failed",
+                    shipment_id=uuid.UUID(pending_sync_shipment_id),
+                    external_id="CONS-OPS-2",
+                    request_snapshot='{"lookup":"CONS-OPS-2"}',
+                    response_snapshot='{"detail":"timeout"}',
+                    message="Courier sync failed",
+                    created_by_id=None,
+                    started_at=datetime.now(timezone.utc),
+                    finished_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Ops Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"ops-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Ops summary category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Ops Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"ops-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Ops summary brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Ops Product",
+                    "slug": f"ops-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"OPS-{uuid.uuid4().hex[:8]}",
+                    "description": "Ops product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 500.00,
+                    "cost_price": 300.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            customer_response = client.post(
+                "/api/v1/customers",
+                headers=headers,
+                json={
+                    "name": "Ops Customer",
+                    "phone": "01733334444",
+                    "email": unique_email(),
+                    "address": "Dhaka",
+                    "city": "Dhaka",
+                    "customer_type": "retail",
+                },
+            )
+            assert customer_response.status_code == 201, customer_response.text
+            customer = customer_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Ops Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"OPW-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 20,
+                    "low_stock_threshold": 3,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-OPS-{uuid.uuid4().hex[:8]}",
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": customer["phone"],
+                    "shipping_address": "Operations shipping",
+                    "status": "confirmed",
+                    "payment_status": "paid",
+                    "source": "manual",
+                    "subtotal": 500,
+                    "discount": 0,
+                    "delivery_charge": 50,
+                    "total": 550,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 500,
+                            "total_price": 500,
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+            order = order_response.json()
+
+            shipment_pending_sync_order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-SYNC-{uuid.uuid4().hex[:8]}",
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": customer["phone"],
+                    "shipping_address": "Sync shipping",
+                    "status": "confirmed",
+                    "payment_status": "paid",
+                    "source": "manual",
+                    "subtotal": 500,
+                    "discount": 0,
+                    "delivery_charge": 50,
+                    "total": 550,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 500,
+                            "total_price": 500,
+                        }
+                    ],
+                },
+            )
+            assert shipment_pending_sync_order_response.status_code == 201, shipment_pending_sync_order_response.text
+            pending_sync_order = shipment_pending_sync_order_response.json()
+
+            ready_order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-READY-{uuid.uuid4().hex[:8]}",
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": customer["phone"],
+                    "shipping_address": "Ready shipping",
+                    "status": "ready_to_ship",
+                    "payment_status": "unpaid",
+                    "source": "manual",
+                    "subtotal": 500,
+                    "discount": 0,
+                    "delivery_charge": 50,
+                    "total": 550,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 500,
+                            "total_price": 500,
+                        }
+                    ],
+                },
+            )
+            assert ready_order_response.status_code == 201, ready_order_response.text
+            ready_order = ready_order_response.json()
+
+            courier_response = client.post(
+                "/api/v1/couriers",
+                headers=headers,
+                json={
+                    "name": f"Ops Courier {uuid.uuid4().hex[:8]}",
+                    "code": f"OPC-{uuid.uuid4().hex[:8]}",
+                    "contact_phone": "01700000000",
+                    "website": "https://courier.example.com",
+                    "is_active": True,
+                },
+            )
+            assert courier_response.status_code == 201, courier_response.text
+            courier = courier_response.json()
+
+            shipment_response = client.post(
+                f"/api/v1/orders/{order['id']}/create-shipment",
+                headers=headers,
+                json={
+                    "courier_id": courier["id"],
+                    "delivery_charge": 50,
+                    "courier_charge": 30,
+                    "cod_amount": 550,
+                    "collected_amount": 0,
+                    "notes": "Ops shipment",
+                    "order_status": "shipped",
+                },
+            )
+            assert shipment_response.status_code == 201, shipment_response.text
+            shipment = shipment_response.json()
+
+            second_shipment_response = client.post(
+                f"/api/v1/orders/{pending_sync_order['id']}/create-shipment",
+                headers=headers,
+                json={
+                    "courier_id": courier["id"],
+                    "delivery_charge": 50,
+                    "courier_charge": 30,
+                    "cod_amount": 550,
+                    "collected_amount": 0,
+                    "notes": "Pending sync shipment",
+                    "order_status": "shipped",
+                },
+            )
+            assert second_shipment_response.status_code == 201, second_shipment_response.text
+            second_shipment = second_shipment_response.json()
+
+            printed_response = client.post(
+                f"/api/v1/orders/{order['id']}/mark-printed",
+                headers=headers,
+            )
+            assert printed_response.status_code == 200, printed_response.text
+        dispose_engine()
+
+        run_async(
+            seed_external_state(
+                woo_order_id=order["id"],
+                delivered_shipment_id=shipment["id"],
+                pending_sync_shipment_id=second_shipment["id"],
+                product_id=product["id"],
+            )
+        )
+        dispose_engine()
+
+        with TestClient(app) as client:
+            orders_summary_response = client.get("/api/v1/orders/operations-summary", headers=headers)
+            assert orders_summary_response.status_code == 200, orders_summary_response.text
+            orders_summary = orders_summary_response.json()
+            assert orders_summary["orders_with_woo_source"] >= 1
+            assert orders_summary["orders_with_shipments"] >= 2
+            assert orders_summary["orders_without_shipments_ready_to_ship"] >= 1
+            assert orders_summary["orders_printed_count"] >= 1
+            assert orders_summary["orders_unprinted_count"] >= 1
+            assert orders_summary["orders_needing_woo_refresh"] >= 1
+
+            filtered_woo_orders_response = client.get(
+                "/api/v1/orders?source=woocommerce&has_shipment=true",
+                headers=headers,
+            )
+            assert filtered_woo_orders_response.status_code == 200, filtered_woo_orders_response.text
+            filtered_woo_orders = filtered_woo_orders_response.json()
+            assert any(item["id"] == order["id"] for item in filtered_woo_orders)
+
+            unprinted_orders_response = client.get(
+                "/api/v1/orders?printed=false",
+                headers=headers,
+            )
+            assert unprinted_orders_response.status_code == 200, unprinted_orders_response.text
+            unprinted_orders = unprinted_orders_response.json()
+            assert any(item["id"] == ready_order["id"] for item in unprinted_orders)
+
+            searched_orders_response = client.get(
+                "/api/v1/orders?search=woo-order-900",
+                headers=headers,
+            )
+            assert searched_orders_response.status_code == 200, searched_orders_response.text
+            searched_orders = searched_orders_response.json()
+            assert any(item["id"] == order["id"] for item in searched_orders)
+
+            logistics_summary_response = client.get(
+                "/api/v1/logistics/operations-summary",
+                headers=headers,
+            )
+            assert logistics_summary_response.status_code == 200, logistics_summary_response.text
+            logistics_summary = logistics_summary_response.json()
+            assert logistics_summary["sent_to_external_courier_count"] >= 2
+            assert logistics_summary["external_delivered_unsettled_count"] >= 1
+            assert logistics_summary["shipments_waiting_status_sync_count"] >= 1
+            assert logistics_summary["shipments_missing_tracking_count"] >= 0
+
+            integration_summary_response = client.get(
+                "/api/v1/reports/integration-summary",
+                headers=headers,
+            )
+            assert integration_summary_response.status_code == 200, integration_summary_response.text
+            integration_summary = integration_summary_response.json()
+            assert integration_summary["woocommerce_orders_count"] >= 1
+            assert integration_summary["woocommerce_products_count"] >= 1
+            assert integration_summary["woo_recent_sync_failures"] >= 1
+            assert integration_summary["courier_sent_count"] >= 2
+            assert integration_summary["courier_recent_failures"] >= 1
+            assert integration_summary["courier_external_delivered_count"] >= 1
+            assert integration_summary["pending_integration_actions"] >= 1
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["reports", "couriers", "shipments", "activity_logs", "customer_phone", "customer_name", "payment_method", "paid_amount", "printed_count", "order_events"]):
             pytest.skip("Apply the latest migrations before running this test.")

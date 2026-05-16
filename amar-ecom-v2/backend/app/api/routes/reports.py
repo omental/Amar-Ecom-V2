@@ -2,10 +2,11 @@ from datetime import datetime, time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 
 from app.api.deps import DBSession, get_current_user
 from app.models.courier import Shipment
+from app.models.courier_integration import CourierApiLog
 from app.models.customer import Customer
 from app.models.finance import Account, SupplierPayment, Transaction
 from app.models.inventory import InventoryItem
@@ -13,9 +14,11 @@ from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.stock_movement import StockMovement
 from app.models.warehouse import Warehouse
+from app.models.woocommerce import WooCommerceSetting, WooCommerceSyncLog
 from app.schemas.reports import (
     CustomerReportRead,
     FinanceReportSummaryRead,
+    IntegrationSummaryRead,
     InventoryReportRead,
     LowStockProductReportItemRead,
     LogisticsReportRead,
@@ -293,6 +296,63 @@ async def get_logistics_report(db: DBSession) -> LogisticsReportRead:
         total_cod_amount=row[6] or Decimal("0"),
         total_collected_amount=row[7] or Decimal("0"),
         total_courier_charge=row[8] or Decimal("0"),
+    )
+
+
+@router.get("/integration-summary", response_model=IntegrationSummaryRead)
+async def get_integration_summary(db: DBSession) -> IntegrationSummaryRead:
+    woo_setting_result = await db.execute(select(WooCommerceSetting).limit(1))
+    woo_setting = woo_setting_result.scalar_one_or_none()
+
+    woo_orders_count = await db.scalar(select(func.count(Order.id)).where(Order.source == "woocommerce"))
+    woo_products_count = await db.scalar(select(func.count(Product.id)).where(Product.source == "woocommerce"))
+    woo_recent_sync_failures = await db.scalar(
+        select(func.count(WooCommerceSyncLog.id)).where(WooCommerceSyncLog.status == "failed")
+    )
+    courier_sent_count = await db.scalar(
+        select(func.count(Shipment.id)).where(Shipment.sent_to_courier_at.is_not(None))
+    )
+    courier_recent_failures = await db.scalar(
+        select(func.count(CourierApiLog.id)).where(CourierApiLog.status == "failed")
+    )
+    courier_external_delivered_count = await db.scalar(
+        select(func.count(Shipment.id)).where(Shipment.external_status == "delivered")
+    )
+    courier_external_failed_returned_count = await db.scalar(
+        select(func.count(Shipment.id)).where(Shipment.external_status.in_(["failed", "returned"]))
+    )
+    orders_needing_woo_refresh = await db.scalar(
+        select(func.count(Order.id)).where(
+            Order.source == "woocommerce",
+            or_(
+                Order.external_synced_at.is_(None),
+                Order.external_status.is_(None),
+            ),
+        )
+    )
+    shipments_waiting_status_sync = await db.scalar(
+        select(func.count(Shipment.id)).where(
+            Shipment.external_provider.is_not(None),
+            Shipment.sent_to_courier_at.is_not(None),
+            or_(
+                Shipment.external_synced_at.is_(None),
+                Shipment.external_status.is_(None),
+                Shipment.external_status.in_(["submitted", "pending", "processing", "assigned", "picked_up", "in_transit"]),
+            ),
+        )
+    )
+
+    return IntegrationSummaryRead(
+        woocommerce_orders_count=int(woo_orders_count or 0),
+        woocommerce_products_count=int(woo_products_count or 0),
+        woo_recent_sync_failures=int(woo_recent_sync_failures or 0),
+        woo_last_product_sync_at=woo_setting.last_product_sync_at if woo_setting else None,
+        woo_last_order_sync_at=woo_setting.last_order_sync_at if woo_setting else None,
+        courier_sent_count=int(courier_sent_count or 0),
+        courier_recent_failures=int(courier_recent_failures or 0),
+        courier_external_delivered_count=int(courier_external_delivered_count or 0),
+        courier_external_failed_returned_count=int(courier_external_failed_returned_count or 0),
+        pending_integration_actions=int((orders_needing_woo_refresh or 0) + (shipments_waiting_status_sync or 0)),
     )
 
 
