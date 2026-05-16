@@ -2293,6 +2293,17 @@ Invoke-RestMethod `
 venv\Scripts\pytest.exe -q
 ```
 
+Release-candidate audit result on 2026-05-16:
+
+- `30 passed`
+- `0 skipped`
+
+That result was re-validated after running:
+
+```powershell
+venv\Scripts\alembic.exe upgrade head
+```
+
 ## Courier Integration Foundation
 
 Phase 13A adds a safe external courier integration foundation:

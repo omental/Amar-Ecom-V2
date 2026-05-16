@@ -6,7 +6,7 @@ type LoadingStateProps = {
 
 export function LoadingState({ label }: LoadingStateProps) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+    <div className="flex items-center gap-3 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4 text-sm text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)]">
       <Loader2 className="h-4 w-4 animate-spin" />
       <span>{label}</span>
     </div>

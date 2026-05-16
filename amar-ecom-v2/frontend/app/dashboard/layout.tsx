@@ -48,8 +48,8 @@ export default function DashboardLayout({
 
   if (typeof window === "undefined" || !hasToken) {
     return (
-      <div className="app-shell flex min-h-screen items-center justify-center">
-        <div className="rounded-3xl border border-slate-200 bg-white px-6 py-5 text-sm font-medium text-slate-500 shadow-[var(--shadow-soft)]">
+      <div className="app-shell flex min-h-screen items-center justify-center p-6">
+        <div className="card-base px-6 py-5 text-sm font-medium text-[var(--color-txt-sec)]">
           Preparing your workspace...
         </div>
       </div>
@@ -57,13 +57,13 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="app-shell min-h-screen p-4 sm:p-6">
+    <div className="app-shell min-h-screen p-3 sm:p-5 lg:p-6">
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 lg:flex-row">
         <DashboardSidebar onLogout={handleLogout} />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <DashboardTopbar user={user} title={title} />
-          <main className="min-w-0">{children}</main>
+          <main className="min-w-0 pb-6">{children}</main>
         </div>
       </div>
     </div>

@@ -62,4 +62,5 @@ Scope:
 - Fresh migration path was validated against a temporary PostgreSQL database using `alembic upgrade head`.
 - App import succeeded after migration completion.
 - `GET /api/v1/health` returned `200 OK`.
+- Release-candidate backend test pass on 2026-05-16 completed with `30 passed` and `0 skipped`.
 - Registered `/api/v1/*` route count at validation time: `157`.

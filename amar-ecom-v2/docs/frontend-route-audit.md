@@ -49,3 +49,38 @@ Status labels:
 - `/dashboard/brands`
 
 These are active supporting routes used by the broader inventory and product workflows.
+
+## Release Candidate Notes
+
+- Current route validation remains clean for the requested v2 scope.
+- Frontend lint and TypeScript checks passed during the 2026-05-16 release-candidate audit.
+- Production build failure in this environment was caused by Google Fonts fetch restrictions, not by dashboard route regressions.
+
+## UI Parity Notes
+
+These notes track legacy v1 React UI parity only. They are planning markers for phased redesign work and do not imply backend gaps.
+
+Phase `14D` status:
+- global shell and dashboard design foundation completed
+- grouped sidebar, richer topbar, shared ops components, and v1-inspired tokens are now in place
+- remaining work is route-level module parity, starting with Orders + Logistics
+
+| Route / Module | Current UI parity status | Priority | Target phase |
+| --- | --- | --- | --- |
+| `/dashboard` shell and landing page | Partial. Functional summaries are strong, but shell chrome, dashboard hierarchy, and visual density are still behind v1. | High | `14D` then `14G` |
+| `/dashboard/orders` and `/dashboard/orders/[id]` | Partial. Strong operator features exist, but the v1 cockpit feel, dense row presentation, and print/dispatch experience still need redesign. | High | `14E` |
+| `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Partial. Workflows are safe and capable, but the v1 unified logistics command-center feel is still missing. | High | `14E` |
+| `/dashboard/products`, `/dashboard/products/[id]` | Partial. Product workflows work well, but they do not yet match the denser v1 inventory-admin presentation. | High | `14F` |
+| `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Needs redesign. v1 inventory behaved like a broad admin hub, while v2 is still more distributed and lighter visually. | High | `14F` |
+| `/dashboard/customers`, `/dashboard/customers/[id]` | Needs redesign. v2 lacks the v1 split-pane CRM directory/detail experience. | High | `14F` |
+| `/dashboard/returns` and `/dashboard/returns/[id]` | Partial. Safe and usable, but not yet integrated into a denser v1-style operations surface. | Medium | `14F` |
+| `/dashboard/suppliers`, `/dashboard/purchase-orders`, `/dashboard/purchase-orders/[id]` | Partial. Procurement works, but UI parity with the v1 inventory/procurement hub is still limited. | Medium | `14F` |
+| `/dashboard/reports` | Partial. Functional reporting is broad, but visual analytics parity and chart hierarchy are behind v1. | High | `14G` |
+| `/dashboard/finance` | Partial. Good foundation, but lacks the richer v1 finance workspace treatment. | Medium | `14H` |
+| `/dashboard/hr` | Partial. Practical module, but still lighter than the v1 tabbed HR management surface. | Medium | `14H` |
+| `/dashboard/tasks` | Partial. Task workflow exists, but the board/list polish and collaboration feel lag v1. | Medium | `14H` |
+| `/dashboard/pos` | Partial. Checkout flow is solid, but the retail workspace styling and speed cues are behind v1. | Medium | `14H` |
+| `/dashboard/settings` | Partial. Business/invoice settings work, but broader admin/settings shell parity is incomplete. | Medium | `14H` |
+| `/dashboard/users` | Partial. Team and permissions are functional, but the admin control surface is less polished than v1. | Medium | `14H` |
+| `/dashboard/activity-logs` | Better in v2 functionally, but still should inherit the final shared visual language. | Low | `14H` |
+| Cross-app regression pass | Not started. Shared component convergence and responsive QA still need a dedicated pass. | High | `14I` |

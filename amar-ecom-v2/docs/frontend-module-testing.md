@@ -1074,6 +1074,12 @@ Expected result:
 - build should pass once locked `.next` artifacts are released
 - if build fails because `next/font` cannot download Google-hosted fonts such as `Geist`, treat that as an environment issue rather than a courier feature failure
 
+Release-candidate audit result on 2026-05-16:
+
+- `npm run lint` passed
+- `npx tsc --noEmit` passed
+- `npm run build` failed only because `next/font/google` could not fetch `Geist` and `Geist Mono` in the current environment
+
 ## Workflow Hardening Checks
 
 1. Sign in as an admin user and confirm the full sidebar is still visible

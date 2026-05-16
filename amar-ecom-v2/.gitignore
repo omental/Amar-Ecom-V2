@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+backend/pytest-cache-files-*/
 .next/
 node_modules/
 venv/

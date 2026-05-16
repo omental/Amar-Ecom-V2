@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, Search } from "lucide-react";
+import Link from "next/link";
+import { Bell, MoonStar, Plus, Search, Zap } from "lucide-react";
 
 import type { AuthUser } from "@/lib/auth";
 
@@ -19,37 +20,52 @@ export function DashboardTopbar({ user, title }: TopbarProps) {
       .toUpperCase() || "AE";
 
   return (
-    <header className="flex flex-col gap-4 rounded-[28px] border border-[var(--color-border)] bg-white px-5 py-5 shadow-[var(--shadow-soft)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-muted)]">
-          Operations Console
-        </p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">
-          {title}
-        </h2>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="hidden items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500 md:flex">
-          <Search className="h-4 w-4" />
-          <span>Search coming next</span>
+    <header className="glass-morphism sticky top-4 z-20 rounded-[28px] border border-[var(--color-brd)] px-5 py-4 shadow-[var(--shadow-premium)] sm:px-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <p className="ops-micro-label">Operations Console</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
+            {title}
+          </h2>
         </div>
 
-        <button className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">
-          <Bell className="h-4 w-4" />
-        </button>
-
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold text-white">
-            {initials}
+        <div className="flex flex-1 flex-col gap-3 xl:ml-8 xl:max-w-[900px] xl:flex-row xl:items-center xl:justify-end">
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[20px] border border-[var(--color-brd)] bg-white px-4 py-3 text-sm text-[var(--color-txt-mut)] shadow-[var(--shadow-subtle)]">
+            <Search className="h-4 w-4 shrink-0" />
+            <span className="truncate">Search modules, orders, shipments, or customers</span>
           </div>
-          <div className="hidden sm:block">
-            <p className="text-sm font-semibold text-slate-950">
-              {user?.full_name || "Authenticated User"}
-            </p>
-            <p className="text-xs text-slate-500">
-              {user?.role || "admin"}
-            </p>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/dashboard/orders"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
+            >
+              <Plus className="h-4 w-4" />
+              Quick order
+            </Link>
+
+            <button className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-brd)] bg-white text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]">
+              <Bell className="h-4 w-4" />
+            </button>
+
+            <button className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-brd)] bg-white text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]">
+              <MoonStar className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-3 rounded-[20px] border border-[var(--color-brd)] bg-white px-3 py-2 shadow-[var(--shadow-subtle)]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--color-txt-pri)] text-sm font-semibold text-white">
+                {initials}
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-sm font-semibold text-[var(--color-txt-pri)]">
+                  {user?.full_name || "Authenticated User"}
+                </p>
+                <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-txt-mut)]">
+                  <Zap className="h-3.5 w-3.5" />
+                  <span>{user?.role || "admin"}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

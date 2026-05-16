@@ -124,6 +124,19 @@ Note:
 - this is separate from the Windows `.next` `EPERM` file-lock issue above
 - Phase 13A courier integration validation still passed backend tests, frontend lint, and frontend type-checking when this network-dependent build step failed
 
+## Release Candidate Build Note
+
+Release-candidate validation on 2026-05-16 hit the Google Fonts path rather than an application-code failure:
+
+- `Failed to fetch 'Geist' from Google Fonts`
+- `Failed to fetch 'Geist Mono' from Google Fonts`
+
+Interpretation:
+
+- if backend tests, frontend lint, and frontend type-check all pass, treat this as an environment or outbound-network issue first
+- this is separate from the Windows `.next` lock workaround
+- do not treat this alone as a WooCommerce, courier, or operator-workflow regression
+
 ## Phase 14A Build Validation Note
 
 Recent Phase 14A validation still hit the Windows `.next` lock path rather than an application-code failure:

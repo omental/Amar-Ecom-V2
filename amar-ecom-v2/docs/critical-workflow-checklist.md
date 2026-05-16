@@ -4,6 +4,13 @@ Last reviewed: 2026-05-16
 
 Use this as a manual smoke pass after migrations and before release candidates.
 
+Release-candidate audit status on 2026-05-16:
+
+- backend tests passed with `30 passed`
+- frontend lint passed
+- frontend type-check passed
+- frontend build remained environment-sensitive because of Windows `.next` locking or Google Fonts fetch restrictions
+
 ## Setup
 
 1. Apply backend migrations with `venv\Scripts\alembic.exe upgrade head`.

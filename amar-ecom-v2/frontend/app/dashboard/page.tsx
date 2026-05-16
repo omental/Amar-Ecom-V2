@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowRight,
   Boxes,
   Building2,
   ClipboardList,
@@ -19,9 +20,12 @@ import {
   WifiOff,
 } from "lucide-react";
 
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { api, ApiError } from "@/lib/api";
 import { getUser } from "@/lib/auth";
-import { formatLabel } from "@/lib/format";
 
 type HealthResponse = {
   status: string;
@@ -51,36 +55,24 @@ type StatsState = {
   outOfStockInventory: number;
   recentStockMovements: number;
   financeCashBalance: number;
-  financeNetCashFlow: number;
   totalTasks: number;
-  overdueTasks: number;
-  myOpenTasks: number;
   totalEmployees: number;
-  presentToday: number;
-  pendingAdvances: number;
-  posTodayOrders: number;
   posTodaySales: number;
 };
 
 type FinanceSummaryResponse = {
   total_cash_bank_balance: number | string;
-  net_cash_flow: number | string;
 };
 
 type TaskSummaryResponse = {
   total_tasks: number;
-  overdue_tasks: number;
-  my_open_tasks: number;
 };
 
 type HrSummaryResponse = {
   total_employees: number;
-  present_today: number;
-  pending_advances: number;
 };
 
 type PosSummaryResponse = {
-  today_pos_orders: number;
   today_pos_sales: number | string;
 };
 
@@ -115,17 +107,13 @@ function getCollectionCount(payload: unknown) {
     if ("results" in payload && Array.isArray(payload.results)) {
       return payload.results.length;
     }
-
-    if ("count" in payload && typeof payload.count === "number") {
-      return payload.count;
-    }
-
-    if ("total" in payload && typeof payload.total === "number") {
-      return payload.total;
-    }
   }
 
   return 0;
+}
+
+function formatCurrency(value: number) {
+  return `BDT ${value.toLocaleString()}`;
 }
 
 export default function DashboardPage() {
@@ -149,21 +137,12 @@ export default function DashboardPage() {
     outOfStockInventory: 0,
     recentStockMovements: 0,
     financeCashBalance: 0,
-    financeNetCashFlow: 0,
     totalTasks: 0,
-    overdueTasks: 0,
-    myOpenTasks: 0,
     totalEmployees: 0,
-    presentToday: 0,
-    pendingAdvances: 0,
-    posTodayOrders: 0,
     posTodaySales: 0,
   });
   const [statsError, setStatsError] = useState("");
-  const [backendStatus, setBackendStatus] = useState<{
-    ok: boolean;
-    message: string;
-  }>({
+  const [backendStatus, setBackendStatus] = useState({
     ok: false,
     message: "Checking backend connection...",
   });
@@ -176,7 +155,28 @@ export default function DashboardPage() {
 
     async function checkBackend() {
       try {
-        const [health, products, customers, followUpCustomers, orders, shipments, pendingDispatchOrders, returns, inventory, movements, suppliers, purchaseOrders, businessSettings, financeSummary, taskSummary, hrSummary, posSummary, orderOpsSummary, logisticsOpsSummary, integrationData] = await Promise.all([
+        const [
+          health,
+          products,
+          customers,
+          followUpCustomers,
+          orders,
+          shipments,
+          pendingDispatchOrders,
+          returns,
+          inventory,
+          movements,
+          suppliers,
+          purchaseOrders,
+          businessSettings,
+          financeSummary,
+          taskSummary,
+          hrSummary,
+          posSummary,
+          orderOpsSummary,
+          logisticsOpsSummary,
+          integrationData,
+        ] = await Promise.all([
           api.get<HealthResponse>("/health"),
           api.get<unknown>("/products?skip=0&limit=100"),
           api.get<unknown>("/customers?skip=0&limit=100"),
@@ -198,14 +198,16 @@ export default function DashboardPage() {
           api.get<LogisticsOperationsSummary>("/logistics/operations-summary").catch(() => null),
           api.get<IntegrationSummary>("/reports/integration-summary").catch(() => null),
         ]);
+
         if (!isMounted) return;
 
         setBackendStatus({
           ok: health.status === "ok",
           message: `${health.service} (${health.environment})`,
         });
+
         const inventoryRows = Array.isArray(inventory) ? inventory : [];
-        const movementRows = Array.isArray(movements) ? movements : [];
+        const shipmentsRows = Array.isArray(shipments) ? shipments : [];
 
         setStats({
           products: getCollectionCount(products),
@@ -213,35 +215,29 @@ export default function DashboardPage() {
           customersWithFollowUp: getCollectionCount(followUpCustomers),
           orders: getCollectionCount(orders),
           shipments: getCollectionCount(shipments),
-          pendingShipments: Array.isArray(shipments)
-            ? shipments.filter(
-                (shipment) =>
-                  shipment &&
-                  typeof shipment === "object" &&
-                  "status" in shipment &&
-                  shipment.status === "pending",
-              ).length
-            : 0,
-          deliveredShipments: Array.isArray(shipments)
-            ? shipments.filter(
-                (shipment) =>
-                  shipment &&
-                  typeof shipment === "object" &&
-                  "status" in shipment &&
-                  shipment.status === "delivered",
-              ).length
-            : 0,
+          pendingShipments: shipmentsRows.filter(
+            (shipment) =>
+              shipment &&
+              typeof shipment === "object" &&
+              "status" in shipment &&
+              shipment.status === "pending",
+          ).length,
+          deliveredShipments: shipmentsRows.filter(
+            (shipment) =>
+              shipment &&
+              typeof shipment === "object" &&
+              "status" in shipment &&
+              shipment.status === "delivered",
+          ).length,
           pendingDispatch: getCollectionCount(pendingDispatchOrders),
-          unsettledReconciliation: Array.isArray(shipments)
-            ? shipments.filter(
-                (shipment) =>
-                  shipment &&
-                  typeof shipment === "object" &&
-                  "reconciliation_status" in shipment &&
-                  shipment.reconciliation_status !== "settled" &&
-                  shipment.reconciliation_status !== "cancelled",
-              ).length
-            : 0,
+          unsettledReconciliation: shipmentsRows.filter(
+            (shipment) =>
+              shipment &&
+              typeof shipment === "object" &&
+              "reconciliation_status" in shipment &&
+              shipment.reconciliation_status !== "settled" &&
+              shipment.reconciliation_status !== "cancelled",
+          ).length,
           returns: getCollectionCount(returns),
           suppliers: getCollectionCount(suppliers),
           purchaseOrders: getCollectionCount(purchaseOrders),
@@ -265,16 +261,10 @@ export default function DashboardPage() {
               typeof item.quantity === "number" &&
               item.quantity <= 0,
           ).length,
-          recentStockMovements: movementRows.length,
+          recentStockMovements: Array.isArray(movements) ? movements.length : 0,
           financeCashBalance: Number(financeSummary?.total_cash_bank_balance || 0),
-          financeNetCashFlow: Number(financeSummary?.net_cash_flow || 0),
           totalTasks: Number(taskSummary?.total_tasks || 0),
-          overdueTasks: Number(taskSummary?.overdue_tasks || 0),
-          myOpenTasks: Number(taskSummary?.my_open_tasks || 0),
           totalEmployees: Number(hrSummary?.total_employees || 0),
-          presentToday: Number(hrSummary?.present_today || 0),
-          pendingAdvances: Number(hrSummary?.pending_advances || 0),
-          posTodayOrders: Number(posSummary?.today_pos_orders || 0),
           posTodaySales: Number(posSummary?.today_pos_sales || 0),
         });
         setCompanyName(businessSettings.company_name || "Amar eCom");
@@ -285,447 +275,257 @@ export default function DashboardPage() {
       } catch (error) {
         if (!isMounted) return;
 
-        const message =
-          error instanceof ApiError
-            ? error.message
-            : "Backend connection failed";
-
         setBackendStatus({
           ok: false,
-          message,
+          message: error instanceof ApiError ? error.message : "Backend connection failed",
         });
         setStatsError("Could not load live dashboard counts.");
       }
     }
 
-    checkBackend();
+    void checkBackend();
     return () => {
       isMounted = false;
     };
   }, []);
 
-  return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">
-              Welcome Back
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              {user?.full_name || "Amar eCom Operator"}
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-              {companyName} is connected to the backend and ready for daily operational work across catalog, inventory, and order modules.
-            </p>
-          </div>
+  const topCards = useMemo(
+    () => [
+      { label: "Orders", value: stats.orders.toLocaleString(), icon: ShoppingCart, tone: "info" as const },
+      { label: "Shipments", value: stats.shipments.toLocaleString(), icon: PackageCheck, tone: "default" as const },
+      { label: "Products", value: stats.products.toLocaleString(), icon: Package, tone: "default" as const },
+      { label: "Customers", value: stats.customers.toLocaleString(), icon: Users, tone: "info" as const },
+      { label: "Returns", value: stats.returns.toLocaleString(), icon: RotateCcw, tone: "warning" as const },
+      { label: "Suppliers", value: stats.suppliers.toLocaleString(), icon: Building2, tone: "default" as const },
+      { label: "Finance Cash", value: formatCurrency(stats.financeCashBalance), icon: Wallet, tone: "success" as const },
+      { label: "POS Sales", value: formatCurrency(stats.posTodaySales), icon: Store, tone: "success" as const },
+    ],
+    [stats],
+  );
 
-          <div
-            className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium ${
-              backendStatus.ok
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-amber-200 bg-amber-50 text-amber-700"
-            }`}
-          >
-            {backendStatus.ok ? (
-              <Wifi className="h-4 w-4" />
-            ) : (
-              <WifiOff className="h-4 w-4" />
-            )}
-            <span>{backendStatus.message}</span>
-          </div>
-        </div>
+  return (
+    <div className="space-y-5">
+      <section className="card-base px-6 py-7 sm:px-8">
+        <OpsPageHeader
+          eyebrow="Morning Overview"
+          title={user?.full_name || "Amar eCom Operator"}
+          description={`${companyName} is connected and ready for day-to-day operations across orders, inventory, customers, logistics, finance, HR, tasks, and POS. This shell now leans into the denser v1 console language while preserving the modular v2 route architecture.`}
+          meta={
+            <div className="flex items-center gap-2">
+              {backendStatus.ok ? <Wifi className="h-4 w-4 text-emerald-600" /> : <WifiOff className="h-4 w-4 text-amber-600" />}
+              <span>{backendStatus.message}</span>
+            </div>
+          }
+          actions={
+            <>
+              <Link href="/dashboard/orders" className="btn-primary">
+                <ShoppingCart className="h-4 w-4" />
+                Open Orders
+              </Link>
+              <Link
+                href="/dashboard/logistics"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
+              >
+                <PackageCheck className="h-4 w-4" />
+                Open Logistics
+              </Link>
+            </>
+          }
+        />
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <OpsFilterBar
+        title="Quick Paths"
+        description="Keep the landing screen acting like an operations console by surfacing high-frequency routes directly under the header."
+      >
         {[
-          { label: "Orders", value: stats.orders, icon: ShoppingCart },
-          { label: "Purchase Orders", value: stats.purchaseOrders, icon: ClipboardList },
-          { label: "Shipments", value: stats.shipments, icon: PackageCheck },
-          { label: "Returns", value: stats.returns, icon: RotateCcw },
-          { label: "Suppliers", value: stats.suppliers, icon: Building2 },
-          { label: "Products", value: stats.products, icon: Package },
-          { label: "Customers", value: stats.customers, icon: Users },
-          { label: "Inventory", value: stats.inventory, icon: Boxes },
-          { label: "Finance Cash", value: stats.financeCashBalance, icon: Wallet, isCurrency: true },
-          { label: "POS Sales", value: stats.posTodaySales, icon: Store, isCurrency: true },
-          { label: "Tasks", value: stats.totalTasks, icon: TicketCheck },
-          { label: "Employees", value: stats.totalEmployees, icon: UserCheck },
-        ].map(({ label, value, icon: Icon, isCurrency }) => (
-          <article
-            key={label}
-            className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">{label}</p>
-                <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
-                  {backendStatus.ok ? (typeof value === "number" && isCurrency ? `BDT ${value.toLocaleString()}` : value) : "--"}
-                </p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                <Icon className="h-5 w-5" />
-              </div>
-            </div>
-          </article>
+          { href: "/dashboard/reports", label: "Reports" },
+          { href: "/dashboard/finance", label: "Finance" },
+          { href: "/dashboard/tasks", label: "Tasks" },
+          { href: "/dashboard/hr", label: "HR" },
+          { href: "/dashboard/admin-tools", label: "Admin Tools" },
+          { href: "/dashboard/woocommerce", label: "WooCommerce" },
+          { href: "/dashboard/courier-integrations", label: "Courier Integrations" },
+        ].map((item) => (
+          <Link key={item.href} href={item.href} className="ops-filter-chip">
+            {item.label}
+          </Link>
+        ))}
+      </OpsFilterBar>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {topCards.map((card) => (
+          <OpsSummaryCard
+            key={card.label}
+            eyebrow="Live Metric"
+            label={card.label}
+            value={backendStatus.ok ? card.value : "--"}
+            icon={card.icon}
+            tone={card.tone}
+          />
         ))}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
+      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <article className="card-base p-6">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                Operations Snapshot
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Orders and integrations
+              <p className="ops-micro-label">Operations Snapshot</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
+                Orders, sync, and dispatch
               </h2>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <ShoppingCart className="h-5 w-5" />
-            </div>
+            <OpsStatusBadge label={backendStatus.ok ? "Live" : "Offline"} tone={backendStatus.ok ? "success" : "warning"} dot />
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
-              <p className="text-sm text-sky-700">Ready to ship</p>
-              <p className="mt-2 text-2xl font-semibold text-sky-900">{backendStatus.ok ? (orderOps?.ready_to_ship_orders ?? "--") : "--"}</p>
+            <div className="rounded-[20px] border border-sky-200 bg-sky-50 px-4 py-4">
+              <p className="ops-micro-label text-sky-600">Ready Queue</p>
+              <p className="mt-2 text-3xl font-semibold text-sky-900">{backendStatus.ok ? (orderOps?.ready_to_ship_orders ?? "--") : "--"}</p>
+              <p className="mt-2 text-sm text-sky-800">Orders ready for dispatch.</p>
             </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-              <p className="text-sm text-amber-700">Need shipment</p>
-              <p className="mt-2 text-2xl font-semibold text-amber-900">{backendStatus.ok ? (orderOps?.orders_without_shipments_ready_to_ship ?? "--") : "--"}</p>
+            <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4">
+              <p className="ops-micro-label text-amber-600">Need Shipment</p>
+              <p className="mt-2 text-3xl font-semibold text-amber-900">{backendStatus.ok ? (orderOps?.orders_without_shipments_ready_to_ship ?? "--") : "--"}</p>
+              <p className="mt-2 text-sm text-amber-800">Ready orders missing shipment creation.</p>
             </div>
-            <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-4">
-              <p className="text-sm text-violet-700">Woo sync health</p>
-              <p className="mt-2 text-2xl font-semibold text-violet-900">{backendStatus.ok ? (integrationSummary?.woo_recent_sync_failures ?? "--") : "--"}</p>
+            <div className="rounded-[20px] border border-violet-200 bg-violet-50 px-4 py-4">
+              <p className="ops-micro-label text-violet-600">Woo Health</p>
+              <p className="mt-2 text-3xl font-semibold text-violet-900">{backendStatus.ok ? (integrationSummary?.woo_recent_sync_failures ?? "--") : "--"}</p>
+              <p className="mt-2 text-sm text-violet-800">Recent Woo sync failure count.</p>
             </div>
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4">
-              <p className="text-sm text-indigo-700">Courier sync health</p>
-              <p className="mt-2 text-2xl font-semibold text-indigo-900">{backendStatus.ok ? (logisticsOps?.shipments_waiting_status_sync_count ?? integrationSummary?.courier_recent_failures ?? "--") : "--"}</p>
+            <div className="rounded-[20px] border border-indigo-200 bg-indigo-50 px-4 py-4">
+              <p className="ops-micro-label text-indigo-600">Courier Sync</p>
+              <p className="mt-2 text-3xl font-semibold text-indigo-900">
+                {backendStatus.ok ? (logisticsOps?.shipments_waiting_status_sync_count ?? integrationSummary?.courier_recent_failures ?? "--") : "--"}
+              </p>
+              <p className="mt-2 text-sm text-indigo-800">Shipments waiting for safe status sync.</p>
             </div>
           </div>
         </article>
 
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
+        <article className="card-base p-6">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                Logistics Snapshot
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Shipment status mix
+              <p className="ops-micro-label">Operator Focus</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
+                Today&apos;s next actions
               </h2>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <PackageCheck className="h-5 w-5" />
+            <div className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2 text-sm font-medium text-[var(--color-txt-sec)]">
+              Manual + safe
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-              <p className="text-sm text-amber-700">Pending shipments</p>
-              <p className="mt-2 text-2xl font-semibold text-amber-900">
-                {backendStatus.ok ? stats.pendingShipments : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
-              <p className="text-sm text-emerald-700">Delivered shipments</p>
-              <p className="mt-2 text-2xl font-semibold text-emerald-900">
-                {backendStatus.ok ? stats.deliveredShipments : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
-              <p className="text-sm text-sky-700">Pending dispatch</p>
-              <p className="mt-2 text-2xl font-semibold text-sky-900">
-                {backendStatus.ok ? stats.pendingDispatch : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
-              <p className="text-sm text-rose-700">Unsettled reconciliation</p>
-              <p className="mt-2 text-2xl font-semibold text-rose-900">
-                {backendStatus.ok ? stats.unsettledReconciliation : "--"}
-              </p>
-            </div>
-          </div>
-        </article>
-
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                CRM Snapshot
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Follow-up workload
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <Users className="h-5 w-5" />
-            </div>
+          <div className="mt-6 space-y-3">
+            {[
+              "Review ready-to-ship orders and create missing shipments.",
+              "Check WooCommerce manual sync health before order refreshes.",
+              "Review courier status sync backlog before reconciliation work.",
+              "Confirm low-stock and out-of-stock items before procurement follow-up.",
+            ].map((item) => (
+              <div key={item} className="flex items-start gap-3 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4 text-sm text-[var(--color-txt-sec)]">
+                <span className="mt-0.5 inline-block h-2 w-2 rounded-full bg-[var(--color-accent)]" />
+                <span>{item}</span>
+              </div>
+            ))}
           </div>
 
-          <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
-            <p className="text-sm text-sky-700">Customers with follow-up dates</p>
-            <p className="mt-2 text-2xl font-semibold text-sky-900">
-              {backendStatus.ok ? stats.customersWithFollowUp : "--"}
-            </p>
-          </div>
-
-          <p className="mt-4 text-sm leading-7 text-slate-500">
-            This gives the team a lightweight CRM pulse while customer activities and order history grow into a fuller workspace.
-          </p>
-        </article>
-
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                Tasks Snapshot
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Team task workload
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <TicketCheck className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-sm text-slate-600">Total tasks</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">
-                {backendStatus.ok ? stats.totalTasks : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
-              <p className="text-sm text-rose-700">Overdue tasks</p>
-              <p className="mt-2 text-2xl font-semibold text-rose-900">
-                {backendStatus.ok ? stats.overdueTasks : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 sm:col-span-2">
-              <p className="text-sm text-sky-700">My open tasks</p>
-              <p className="mt-2 text-2xl font-semibold text-sky-900">
-                {backendStatus.ok ? stats.myOpenTasks : "--"}
-              </p>
-            </div>
-          </div>
-        </article>
-
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                POS Snapshot
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Walk-in sales pulse
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <Store className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-sm text-slate-600">Today POS orders</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">
-                {backendStatus.ok ? stats.posTodayOrders : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
-              <p className="text-sm text-emerald-700">Today POS sales</p>
-              <p className="mt-2 text-2xl font-semibold text-emerald-900">
-                {backendStatus.ok ? `BDT ${stats.posTodaySales.toLocaleString()}` : "--"}
-              </p>
-            </div>
-          </div>
-        </article>
-
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                HR Snapshot
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                People operations
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <UserCheck className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <p className="text-sm text-slate-600">Total employees</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">
-                {backendStatus.ok ? stats.totalEmployees : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
-              <p className="text-sm text-emerald-700">Present today</p>
-              <p className="mt-2 text-2xl font-semibold text-emerald-900">
-                {backendStatus.ok ? stats.presentToday : "--"}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 sm:col-span-2">
-              <p className="text-sm text-amber-700">Pending salary advances</p>
-              <p className="mt-2 text-2xl font-semibold text-amber-900">
-                {backendStatus.ok ? stats.pendingAdvances : "--"}
-              </p>
-            </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/dashboard/orders" className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]">
+              Review orders
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link href="/dashboard/logistics" className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]">
+              Open logistics
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </article>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                Inventory Pulse
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Low-stock watch
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
-              <Boxes className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-            <p className="text-sm text-amber-700">Low-stock inventory rows</p>
-            <p className="mt-2 text-2xl font-semibold text-amber-900">
-              {backendStatus.ok ? stats.lowStockInventory : "--"}
-            </p>
-          </div>
-        </article>
-
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                Inventory Pulse
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Out-of-stock count
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
-              <Boxes className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
-            <p className="text-sm text-rose-700">Out-of-stock inventory rows</p>
-            <p className="mt-2 text-2xl font-semibold text-rose-900">
-              {backendStatus.ok ? stats.outOfStockInventory : "--"}
-            </p>
-          </div>
-        </article>
-
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                Inventory Pulse
-              </p>
-              <h2 className="mt-3 text-xl font-semibold text-slate-950">
-                Recent movements
-              </h2>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
-              <Boxes className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4">
-            <p className="text-sm text-sky-700">Latest stock movement rows</p>
-            <p className="mt-2 text-2xl font-semibold text-sky-900">
-              {backendStatus.ok ? stats.recentStockMovements : "--"}
-            </p>
-          </div>
-        </article>
+        <OpsSummaryCard eyebrow="Inventory Pulse" label="Low-stock watch" value={backendStatus.ok ? stats.lowStockInventory.toLocaleString() : "--"} icon={Boxes} tone="warning" helper="Inventory rows at or below threshold." />
+        <OpsSummaryCard eyebrow="Inventory Pulse" label="Out-of-stock count" value={backendStatus.ok ? stats.outOfStockInventory.toLocaleString() : "--"} icon={Boxes} tone="danger" helper="Rows currently out of stock." />
+        <OpsSummaryCard eyebrow="Inventory Pulse" label="Recent movements" value={backendStatus.ok ? stats.recentStockMovements.toLocaleString() : "--"} icon={Boxes} tone="info" helper="Latest stock movement rows loaded from the ledger." />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <h2 className="text-lg font-semibold text-slate-950">
-            Frontend foundation status
-          </h2>
-          <div className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              Login page connected to FastAPI auth
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <article className="card-base p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="ops-micro-label">Module Pulse</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
+                Daily workspace mix
+              </h2>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              Protected dashboard shell enabled
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              API client with bearer token support
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              Inventory and orders ready for live testing
-            </div>
+            <OpsStatusBadge label={backendStatus.ok ? "Connected" : "Retrying"} tone={backendStatus.ok ? "info" : "warning"} />
           </div>
-          {statsError ? (
-            <p className="mt-4 text-sm text-amber-600">{statsError}</p>
-          ) : null}
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {[
+              { label: "Purchase Orders", value: stats.purchaseOrders, icon: ClipboardList },
+              { label: "Tasks", value: stats.totalTasks, icon: TicketCheck },
+              { label: "Employees", value: stats.totalEmployees, icon: UserCheck },
+              { label: "POS Sales", value: stats.posTodaySales, icon: Store },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="ops-micro-label">{item.label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-[var(--color-txt-pri)]">
+                      {backendStatus.ok
+                        ? item.label === "POS Sales"
+                          ? formatCurrency(item.value)
+                          : item.value.toLocaleString()
+                        : "--"}
+                    </p>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--color-brd)] bg-white text-[var(--color-txt-sec)]">
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {statsError ? <p className="mt-4 text-sm font-medium text-amber-700">{statsError}</p> : null}
         </article>
 
-        <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <h2 className="text-lg font-semibold text-slate-950">
-            Suggested next test
-          </h2>
-          <p className="mt-4 text-sm leading-7 text-slate-500">
-            Sign in, create an inventory record for a warehouse product, then
-            create an order and confirm the dashboard counts update from live API
-            responses.
-          </p>
-          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-            Backend environment: {formatLabel(backendStatus.ok ? "development" : "offline")}
+        <article className="card-base p-6">
+          <div>
+            <p className="ops-micro-label">Workspace Note</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
+              Phase 14D foundation
+            </h2>
+            <p className="mt-3 text-sm leading-7 text-[var(--color-txt-sec)]">
+              The shell, cards, badges, and spacing language now move toward the legacy v1 operations console. Module-level parity for orders, logistics, inventory, CRM, and reports still needs the next phases.
+            </p>
           </div>
-          <Link
-            href="/dashboard/reports"
-            className="mt-5 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            Open Reports
-          </Link>
-          <Link
-            href="/dashboard/finance"
-            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            Open Finance
-          </Link>
-          <Link
-            href="/dashboard/tasks"
-            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            Open Tasks
-          </Link>
-          <Link
-            href="/dashboard/pos"
-            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            Open POS
-          </Link>
-          <Link
-            href="/dashboard/hr"
-            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            Open HR
-          </Link>
-          <Link
-            href="/dashboard/admin-tools"
-            className="mt-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-          >
-            Open Admin Tools
-          </Link>
+
+          <div className="mt-6 space-y-3">
+            {[
+              { status: "complete", label: "Shell density and grouped sidebar" },
+              { status: "complete", label: "Topbar visual parity foundation" },
+              { status: "complete", label: "Dashboard visual language pass" },
+              { status: "next", label: "Orders + Logistics UI parity phase" },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center justify-between rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3">
+                <span className="text-sm font-medium text-[var(--color-txt-pri)]">{item.label}</span>
+                <OpsStatusBadge
+                  label={item.status === "complete" ? "Complete" : "Next"}
+                  tone={item.status === "complete" ? "success" : "info"}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/dashboard/reports" className="ops-filter-chip">Reports</Link>
+            <Link href="/dashboard/finance" className="ops-filter-chip">Finance</Link>
+            <Link href="/dashboard/tasks" className="ops-filter-chip">Tasks</Link>
+            <Link href="/dashboard/hr" className="ops-filter-chip">HR</Link>
+          </div>
         </article>
       </section>
     </div>
