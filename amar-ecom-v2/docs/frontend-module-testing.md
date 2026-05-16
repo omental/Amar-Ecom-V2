@@ -1307,19 +1307,36 @@ Expected result:
    - message
 19. If send fails because required shipment fields are missing, confirm the UI shows a clean error instead of pretending the send succeeded
 20. Use `Sync external status` on a shipment that already has external linkage
-21. Confirm external status and external synced timing update safely
-22. Open `/dashboard/shipments/{id}`
-23. Confirm the detail page shows external provider, consignment, tracking, and status fields when available
-24. Confirm `Sync External Status` only appears when the shipment has usable external linkage
-25. Open `/dashboard/logistics`
-26. Confirm courier-linked shipments show external provider or status context without cluttering rows that have no external data
-27. Open `API Logs`
-28. Filter by:
+21. Confirm the single-sync panel can opt into:
+   - `Apply safe delivered status locally`
+22. Confirm external status and external synced timing update safely
+23. If the checkbox stays off, confirm a remote `delivered` result does not change local shipment status automatically
+24. If the shipment is already in a shipped-ready local state and the checkbox is on, confirm the local shipment can move to `delivered`
+25. Confirm any conflict or warning text is shown clearly in the result summary
+26. Run `Bulk Status Sync`
+27. Confirm filters exist for:
+   - provider
+   - internal status
+   - limit
+   - apply safe delivered status locally
+28. Confirm the bulk result summary shows synced, skipped, and failed counts plus row-level warnings
+29. Open `/dashboard/shipments/{id}`
+30. Confirm the detail page shows external provider, consignment, tracking, and status fields when available
+31. Confirm `Sync External Status` only appears when the shipment has usable external linkage
+32. Confirm the detail page shows the safe delivered checkbox and warning text before sync
+33. Open `/dashboard/logistics`
+34. Confirm courier-linked shipments show external provider or status context without cluttering rows that have no external data
+35. Confirm the top summary includes:
+   - external delivered but reconciliation pending
+   - external failed or returned shipments
+36. Open `API Logs`
+37. Filter by:
    - provider
    - action
    - status
    - shipment or external id search if available
-29. Confirm the table shows:
+   - message search
+38. Confirm the table shows:
    - date
    - provider
    - action
@@ -1327,6 +1344,6 @@ Expected result:
    - shipment
    - external id
    - message
-30. Open a log detail panel if present
-31. Confirm request and response snapshots remain sanitized
-32. Confirm no raw tokens, passwords, secrets, or auth headers appear anywhere in the UI
+39. Open a log detail panel if present
+40. Confirm request and response snapshots remain sanitized
+41. Confirm no raw tokens, passwords, secrets, or auth headers appear anywhere in the UI

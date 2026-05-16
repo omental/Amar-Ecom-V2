@@ -102,20 +102,54 @@ class CourierSendShipmentResult(BaseModel):
 
 class CourierStatusSyncRequest(BaseModel):
     provider: str | None = None
+    apply_safe_status: bool = False
 
 
 class CourierStatusSyncResult(BaseModel):
     status: str
     provider: str
     shipment_id: UUID
+    shipment_number: str | None = None
     external_id: str | None = None
     external_tracking_number: str | None = None
+    old_external_status: str | None = None
     external_status: str | None = None
+    normalized_external_status: str | None = None
     internal_status: str | None = None
+    suggested_internal_status: str | None = None
+    internal_status_changed: bool = False
+    severity: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     synced_at: datetime | None = None
     message: str
     request_snapshot: Any | None = None
     response_snapshot: Any | None = None
+
+
+class CourierBulkStatusSyncRequest(BaseModel):
+    provider: str | None = None
+    status: str | None = None
+    limit: int = Field(default=20, ge=1, le=100)
+    apply_safe_status: bool = False
+
+
+class CourierBulkStatusSyncRowResult(BaseModel):
+    shipment_id: UUID
+    shipment_number: str
+    provider: str
+    old_external_status: str | None = None
+    new_external_status: str | None = None
+    internal_status_changed: bool = False
+    message: str
+    warnings: list[str] = Field(default_factory=list)
+    status: str
+
+
+class CourierBulkStatusSyncResult(BaseModel):
+    synced_count: int
+    skipped_count: int
+    failed_count: int
+    rows: list[CourierBulkStatusSyncRowResult] = Field(default_factory=list)
 
 
 class CourierLogListFilters(BaseModel):
@@ -126,5 +160,6 @@ class CourierLogListFilters(BaseModel):
     external_id: str | None = None
     date_from: datetime | None = None
     date_to: datetime | None = None
+    search: str | None = None
     skip: int = Field(default=0, ge=0)
     limit: int = Field(default=100, ge=1, le=200)

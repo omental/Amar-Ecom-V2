@@ -84,6 +84,15 @@ type ShipmentEvent = {
   } | null;
 };
 
+type ExternalStatusSyncResult = {
+  old_external_status?: string | null;
+  external_status: string | null;
+  suggested_internal_status?: string | null;
+  internal_status_changed?: boolean;
+  warnings?: string[];
+  message: string;
+};
+
 const statusOptions = [
   "pending",
   "ready_to_ship",
@@ -128,6 +137,8 @@ export default function ShipmentDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncingExternalStatus, setIsSyncingExternalStatus] = useState(false);
+  const [applySafeStatus, setApplySafeStatus] = useState(false);
+  const [lastExternalSyncResult, setLastExternalSyncResult] = useState<ExternalStatusSyncResult | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -213,13 +224,15 @@ export default function ShipmentDetailPage() {
     setIsSyncingExternalStatus(true);
 
     try {
-      await api.post(`/courier-integrations/shipments/${shipment.id}/sync-status`, {
+      const syncResult = await api.post<ExternalStatusSyncResult>(`/courier-integrations/shipments/${shipment.id}/sync-status`, {
         provider: shipment.external_provider,
+        apply_safe_status: applySafeStatus,
       });
       const refreshed = await api.get<ShipmentDetail>(`/shipments/${shipment.id}`);
       setShipment(refreshed);
       setForm(shipmentToForm(refreshed));
-      setSuccess("External courier status synced successfully.");
+      setLastExternalSyncResult(syncResult);
+      setSuccess(syncResult.message);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to sync external courier status");
     } finally {
@@ -299,15 +312,26 @@ export default function ShipmentDetailPage() {
             Open Courier Integrations
           </Link>
           {shipment.external_provider ? (
-            <button
-              type="button"
-              onClick={() => void handleSyncExternalStatus()}
-              disabled={isSyncingExternalStatus}
-              className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
-            >
-              {isSyncingExternalStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Sync External Status
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={applySafeStatus}
+                  onChange={(event) => setApplySafeStatus(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                />
+                Apply safe delivered status locally
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleSyncExternalStatus()}
+                disabled={isSyncingExternalStatus}
+                className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-60"
+              >
+                {isSyncingExternalStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Sync External Status
+              </button>
+            </div>
           ) : null}
         </div>
       </section>
@@ -322,7 +346,7 @@ export default function ShipmentDetailPage() {
 
           {shipment.external_provider ? (
             <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-              Sync external status updates courier tracking metadata safely. It does not change WooCommerce or local inventory.
+              Sync external status updates courier tracking metadata safely. By default it does not change local shipment status unless you explicitly apply the safe delivered mapping.
             </div>
           ) : null}
 
@@ -485,6 +509,11 @@ export default function ShipmentDetailPage() {
                 {success}
               </div>
             ) : null}
+            {lastExternalSyncResult?.warnings?.length ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {lastExternalSyncResult.warnings.join(" | ")}
+              </div>
+            ) : null}
 
             <button
               type="submit"
@@ -531,6 +560,11 @@ export default function ShipmentDetailPage() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 External status: <span className="font-semibold text-slate-950">{shipment.external_status ? formatLabel(shipment.external_status) : "Not synced"}</span>
               </div>
+              {lastExternalSyncResult ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Sync suggestion: <span className="font-semibold text-slate-950">{lastExternalSyncResult.suggested_internal_status ? formatLabel(lastExternalSyncResult.suggested_internal_status) : "External-only update"}</span>
+                </div>
+              ) : null}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 External synced: <span className="font-semibold text-slate-950">{shipment.external_synced_at ? formatDateTime(shipment.external_synced_at) : "Never"}</span>
               </div>
@@ -579,6 +613,11 @@ export default function ShipmentDetailPage() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 Reconciled at: <span className="font-semibold text-slate-950">{shipment.reconciled_at ? formatDate(shipment.reconciled_at) : "Not reconciled"}</span>
               </div>
+              {lastExternalSyncResult ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Last sync mapping: <span className="font-semibold text-slate-950">{lastExternalSyncResult.old_external_status ? formatLabel(lastExternalSyncResult.old_external_status) : "None"} to {lastExternalSyncResult.external_status ? formatLabel(lastExternalSyncResult.external_status) : "Unknown"}</span>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-6 space-y-4">

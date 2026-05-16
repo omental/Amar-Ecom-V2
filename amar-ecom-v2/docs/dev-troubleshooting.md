@@ -149,3 +149,12 @@ Notes:
 - sandbox mode only changes labeling unless the configured `base_url` is actually a sandbox URL
 - shipment send and status sync remain manual only in this phase
 - logs stay sanitized and should not expose raw credentials even when Steadfast returns an error
+
+## Courier Status Sync Safety Notes
+
+When testing external courier status sync:
+
+- `apply_safe_status` defaults to off
+- if a remote shipment returns `delivered` while the local shipment was never in a shipped-ready state, the sync may record a warning and keep the local shipment status unchanged
+- returned, cancelled, and failed remote states stay warning-first and do not auto-apply destructively by default
+- use the bulk status sync endpoint or UI only for manual operator-driven reconciliation; no background worker exists yet

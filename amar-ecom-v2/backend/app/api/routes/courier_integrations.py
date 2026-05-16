@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
@@ -11,6 +11,8 @@ from app.models.courier_integration import CourierApiLog
 from app.models.user import User
 from app.schemas.courier_integration import (
     CourierApiLogRead,
+    CourierBulkStatusSyncRequest,
+    CourierBulkStatusSyncResult,
     CourierConnectionTestRead,
     CourierProviderSettingRead,
     CourierProviderSettingUpdate,
@@ -21,6 +23,7 @@ from app.schemas.courier_integration import (
 )
 from app.services.activity_log_service import log_activity
 from app.services.courier_service import (
+    bulk_sync_shipment_statuses,
     count_recent_failed_api_logs,
     courier_log_to_read_model_payload,
     get_provider_setting,
@@ -148,7 +151,13 @@ async def sync_shipment_external_status(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> CourierStatusSyncResult:
-    result = await sync_shipment_status(db, shipment_id, current_user, provider=sync_in.provider)
+    result = await sync_shipment_status(
+        db,
+        shipment_id,
+        current_user,
+        provider=sync_in.provider,
+        apply_safe_status=sync_in.apply_safe_status,
+    )
     if result["status"] == "success":
         await log_activity(
             db,
@@ -169,6 +178,38 @@ async def sync_shipment_external_status(
     return CourierStatusSyncResult(**result)
 
 
+@router.post("/status-sync/bulk", response_model=CourierBulkStatusSyncResult)
+async def bulk_sync_external_statuses(
+    sync_in: CourierBulkStatusSyncRequest,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> CourierBulkStatusSyncResult:
+    result = await bulk_sync_shipment_statuses(
+        db,
+        current_user,
+        provider=sync_in.provider,
+        shipment_status=sync_in.status,
+        limit=sync_in.limit,
+        apply_safe_status=sync_in.apply_safe_status,
+    )
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="shipment_external_status_synced",
+        module="courier_integrations",
+        entity_type="shipment",
+        entity_id=None,
+        message=(
+            f"Bulk courier status sync finished. Synced {result['synced_count']}, "
+            f"skipped {result['skipped_count']}, failed {result['failed_count']}."
+        ),
+        request=request,
+    )
+    await commit_or_409(db, "Could not complete bulk courier status sync")
+    return CourierBulkStatusSyncResult(**result)
+
+
 @router.get("/logs", response_model=list[CourierApiLogRead])
 async def list_courier_api_logs(
     db: DBSession,
@@ -177,6 +218,7 @@ async def list_courier_api_logs(
     status_value: str | None = Query(default=None, alias="status"),
     shipment_id: UUID | None = Query(default=None),
     external_id: str | None = Query(default=None),
+    search: str | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
@@ -195,6 +237,14 @@ async def list_courier_api_logs(
         stmt = stmt.where(CourierApiLog.shipment_id == shipment_id)
     if external_id:
         stmt = stmt.where(CourierApiLog.external_id.ilike(f"%{external_id}%"))
+    if search:
+        query = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                CourierApiLog.message.ilike(query),
+                CourierApiLog.external_id.ilike(query),
+            )
+        )
     if date_from:
         stmt = stmt.where(CourierApiLog.created_at >= date_from)
     if date_to:

@@ -172,6 +172,18 @@ export default function LogisticsPage() {
     () => shipments.filter((shipment) => !["settled", "cancelled"].includes(shipment.reconciliation_status)).length,
     [shipments],
   );
+  const externallyDeliveredPendingReconciliationCount = useMemo(
+    () =>
+      shipments.filter(
+        (shipment) =>
+          shipment.external_status === "delivered" && !["settled", "cancelled"].includes(shipment.reconciliation_status),
+      ).length,
+    [shipments],
+  );
+  const externalFailedReturnedCount = useMemo(
+    () => shipments.filter((shipment) => ["failed", "returned"].includes(shipment.external_status || "")).length,
+    [shipments],
+  );
   const pendingWarehouseOptions = useMemo(
     () =>
       Array.from(
@@ -356,7 +368,7 @@ export default function LogisticsPage() {
             description="Work pending dispatch, shipment operations, courier coverage, reconciliation, and external courier handoff from one workflow-oriented page."
             meta={`${shipments.length} shipments`}
           />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Total shipments</p>
               <p className="mt-2 text-xl font-semibold text-slate-950">{shipments.length}</p>
@@ -376,6 +388,14 @@ export default function LogisticsPage() {
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
               <p className="text-xs uppercase tracking-[0.22em] text-rose-700">Unsettled reconciliation</p>
               <p className="mt-2 text-xl font-semibold text-rose-900">{unsettledReconciliationCount}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.22em] text-sky-700">External delivered, recon pending</p>
+              <p className="mt-2 text-xl font-semibold text-sky-900">{externallyDeliveredPendingReconciliationCount}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.22em] text-orange-700">External failed or returned</p>
+              <p className="mt-2 text-xl font-semibold text-orange-900">{externalFailedReturnedCount}</p>
             </div>
           </div>
         </div>

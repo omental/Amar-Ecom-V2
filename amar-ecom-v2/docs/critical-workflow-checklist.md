@@ -258,17 +258,25 @@ Expected:
 13. Open `/dashboard/shipments/{id}` for a linked shipment.
 14. Confirm external provider and status metadata are visible when values exist.
 15. Use `Sync External Status` on a shipment with external linkage.
-16. Confirm external status and synced time update safely.
-17. Open `API Logs`.
-18. Filter by provider, action, and status.
-19. Review at least one log entry or detail panel.
-20. Open `/dashboard/admin-tools` and confirm the maintenance checklist includes courier integration readiness.
+16. Confirm the sync UI offers `Apply safe delivered status locally` and that it defaults to off.
+17. Confirm external status and synced time update safely.
+18. If the external result is `delivered` while the checkbox is off, confirm the local shipment status does not auto-change.
+19. If the shipment is already in a shipped-ready local state and the checkbox is on, confirm a safe `delivered` sync can update local shipment status.
+20. Run `Bulk Status Sync`.
+21. Confirm the summary shows synced, skipped, and failed counts plus row-level warnings where relevant.
+22. Open `API Logs`.
+23. Filter by provider, action, status, and message search.
+24. Review at least one log entry or detail panel.
+25. Open `/dashboard/admin-tools` and confirm the maintenance checklist includes courier integration readiness.
 
 Expected:
 - provider credentials are encrypted server-side and never returned raw
 - connection testing creates a courier API log entry
 - manual send creates an external courier event and API log entry
 - external status sync updates safe shipment metadata only
+- external delivered can map to local delivered only when explicitly allowed and conflict-free
+- returned, cancelled, and failed external states do not auto-apply destructively by default
+- sync warnings remain visible in shipment events and courier API logs
 - local WooCommerce, inventory, and unrelated order fields are not modified by courier API actions
 - request and response snapshots are sanitized and do not expose tokens, passwords, keys, or auth headers
 - no background courier worker is running in this phase

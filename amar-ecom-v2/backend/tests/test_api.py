@@ -18,6 +18,7 @@ from app.main import app
 from app.models.courier_integration import CourierApiLog, CourierProviderSetting
 from app.models.woocommerce import WooCommerceSetting
 from app.services.courier_adapters.steadfast import SteadfastCourierAdapter
+from app.services.courier_service import map_external_courier_status
 from app.services import woocommerce_service
 
 
@@ -86,6 +87,23 @@ def test_health() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
+
+
+def test_map_external_courier_status_helper() -> None:
+    delivered = map_external_courier_status("steadfast", "delivered_to_customer")
+    assert delivered["normalized_external_status"] == "delivered"
+    assert delivered["suggested_internal_status"] == "delivered"
+    assert delivered["severity"] == "info"
+
+    returned = map_external_courier_status("steadfast", "rto")
+    assert returned["normalized_external_status"] == "returned"
+    assert returned["suggested_internal_status"] == "returned"
+    assert returned["severity"] == "warning"
+
+    in_transit = map_external_courier_status("steadfast", "processing")
+    assert in_transit["normalized_external_status"] == "processing"
+    assert in_transit["suggested_internal_status"] is None
+    assert "no local status change" in (in_transit["warning_message"] or "").lower()
 
 
 def test_register() -> None:
@@ -708,7 +726,7 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
             "response_snapshot": {"consignment_id": "CONS-101"},
         }
 
-    async def fake_sync_shipment_status(db, shipment_id, current_user, provider=None):
+    async def fake_sync_shipment_status(db, shipment_id, current_user, provider=None, apply_safe_status=False):
         provider_name = provider or "manual"
         log = CourierApiLog(
             provider=provider_name,
@@ -729,14 +747,83 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
             "status": "success",
             "provider": provider_name,
             "shipment_id": shipment_id,
+            "shipment_number": "SHP-TEST",
             "external_id": "CONS-101",
             "external_tracking_number": "TRK-101",
+            "old_external_status": "submitted",
             "external_status": "delivered",
+            "normalized_external_status": "delivered",
             "internal_status": "delivered",
+            "suggested_internal_status": "delivered",
+            "internal_status_changed": apply_safe_status,
+            "severity": "warning" if not apply_safe_status else "info",
+            "warnings": [] if apply_safe_status else ["External delivered status was not applied locally because apply_safe_status is off."],
             "synced_at": datetime.now(timezone.utc),
             "message": "Courier provider status synced successfully.",
             "request_snapshot": {"lookup": "CONS-101"},
             "response_snapshot": {"status": "delivered"},
+        }
+
+    async def fake_bulk_sync_shipment_statuses(
+        db,
+        current_user,
+        *,
+        provider=None,
+        shipment_status=None,
+        limit=20,
+        apply_safe_status=False,
+    ):
+        del db, current_user, shipment_status, limit
+        return {
+            "synced_count": 2,
+            "skipped_count": 1,
+            "failed_count": 1,
+            "rows": [
+                {
+                    "shipment_id": str(uuid.uuid4()),
+                    "shipment_number": "SHP-201",
+                    "provider": provider or "manual",
+                    "old_external_status": "submitted",
+                    "new_external_status": "delivered",
+                    "internal_status_changed": apply_safe_status,
+                    "message": "Courier provider status synced successfully.",
+                    "warnings": [] if apply_safe_status else ["External delivered status was not applied locally because apply_safe_status is off."],
+                    "status": "success",
+                },
+                {
+                    "shipment_id": str(uuid.uuid4()),
+                    "shipment_number": "SHP-202",
+                    "provider": provider or "manual",
+                    "old_external_status": "in_transit",
+                    "new_external_status": "returned",
+                    "internal_status_changed": False,
+                    "message": "Conflict warning recorded.",
+                    "warnings": ["External status indicates return or cancellation, but the linked local order is already delivered."],
+                    "status": "success",
+                },
+                {
+                    "shipment_id": str(uuid.uuid4()),
+                    "shipment_number": "SHP-203",
+                    "provider": provider or "manual",
+                    "old_external_status": "pending",
+                    "new_external_status": "pending",
+                    "internal_status_changed": False,
+                    "message": "Shipment is not linked to an external courier provider yet.",
+                    "warnings": ["Shipment is missing an external provider link."],
+                    "status": "skipped",
+                },
+                {
+                    "shipment_id": str(uuid.uuid4()),
+                    "shipment_number": "SHP-204",
+                    "provider": provider or "manual",
+                    "old_external_status": "submitted",
+                    "new_external_status": "submitted",
+                    "internal_status_changed": False,
+                    "message": "Courier provider API unavailable.",
+                    "warnings": ["Courier provider API unavailable."],
+                    "status": "failed",
+                },
+            ],
         }
 
     monkeypatch.setattr(courier_integration_routes, "list_provider_settings", list_settings)
@@ -745,6 +832,7 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(courier_integration_routes, "test_provider_connection", fake_test_provider_connection)
     monkeypatch.setattr(courier_integration_routes, "send_shipment_to_provider", fake_send_shipment_to_provider)
     monkeypatch.setattr(courier_integration_routes, "sync_shipment_status", fake_sync_shipment_status)
+    monkeypatch.setattr(courier_integration_routes, "bulk_sync_shipment_statuses", fake_bulk_sync_shipment_statuses)
 
     try:
         with TestClient(app) as client:
@@ -832,10 +920,24 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
             sync_response = client.post(
                 f"/api/v1/courier-integrations/shipments/{shipment_id}/sync-status",
                 headers=headers,
-                json={"provider": "manual"},
+                json={"provider": "manual", "apply_safe_status": False},
             )
             assert sync_response.status_code == 200, sync_response.text
             assert sync_response.json()["external_status"] == "delivered"
+            assert sync_response.json()["internal_status_changed"] is False
+            assert sync_response.json()["warnings"]
+
+            bulk_sync_response = client.post(
+                "/api/v1/courier-integrations/status-sync/bulk",
+                headers=headers,
+                json={"provider": "manual", "status": "in_transit", "limit": 10, "apply_safe_status": True},
+            )
+            assert bulk_sync_response.status_code == 200, bulk_sync_response.text
+            bulk_sync_payload = bulk_sync_response.json()
+            assert bulk_sync_payload["synced_count"] == 2
+            assert bulk_sync_payload["skipped_count"] == 1
+            assert bulk_sync_payload["failed_count"] == 1
+            assert any(row["status"] == "failed" for row in bulk_sync_payload["rows"])
 
             logs_response = client.get("/api/v1/courier-integrations/logs?provider=manual", headers=headers)
             assert logs_response.status_code == 200, logs_response.text
@@ -853,6 +955,13 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
             filtered_logs_payload = filtered_logs_response.json()
             assert filtered_logs_payload
             assert all(log["action"] == "status_sync" for log in filtered_logs_payload)
+
+            searched_logs_response = client.get(
+                "/api/v1/courier-integrations/logs?provider=manual&search=synced",
+                headers=headers,
+            )
+            assert searched_logs_response.status_code == 200, searched_logs_response.text
+            assert any("synced" in (log["message"] or "").lower() for log in searched_logs_response.json())
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if any(token in str(exc) for token in ["courier_provider_settings", "courier_api_logs", "shipments.external_provider"]):
             pytest.skip("Apply the latest courier integration migration before running this test.")
@@ -1040,6 +1149,19 @@ def test_steadfast_courier_adapter_flow(monkeypatch: pytest.MonkeyPatch) -> None
             )
         if state["get_mode"] == "failure":
             return httpx.Response(404, json={"message": "Not found"}, request=request)
+        if state["get_mode"] == "returned":
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "consignment_id": "CONS-200",
+                        "tracking_code": "TRK-200",
+                        "delivery_status": "returned",
+                        "message": "Shipment returned.",
+                    }
+                },
+                request=request,
+            )
         return httpx.Response(
             200,
             json={
@@ -1184,12 +1306,45 @@ def test_steadfast_courier_adapter_flow(monkeypatch: pytest.MonkeyPatch) -> None
             sync_response = client.post(
                 f"/api/v1/courier-integrations/shipments/{shipment['id']}/sync-status",
                 headers=headers,
-                json={},
+                json={"apply_safe_status": False},
             )
             assert sync_response.status_code == 200, sync_response.text
             sync_payload = sync_response.json()
             assert sync_payload["external_status"] == "delivered"
-            assert sync_payload["internal_status"] == "delivered"
+            assert sync_payload["internal_status_changed"] is False
+            assert sync_payload["internal_status"] != "delivered"
+            assert any("not applied locally" in warning.lower() for warning in sync_payload["warnings"])
+
+            mark_shipment_ready_response = client.patch(
+                f"/api/v1/shipments/{shipment['id']}",
+                headers=headers,
+                json={"status": "shipped"},
+            )
+            assert mark_shipment_ready_response.status_code == 200, mark_shipment_ready_response.text
+
+            sync_apply_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment['id']}/sync-status",
+                headers=headers,
+                json={"apply_safe_status": True},
+            )
+            assert sync_apply_response.status_code == 200, sync_apply_response.text
+            sync_apply_payload = sync_apply_response.json()
+            assert sync_apply_payload["external_status"] == "delivered"
+            assert sync_apply_payload["internal_status"] == "delivered"
+            assert sync_apply_payload["internal_status_changed"] is True
+
+            state["get_mode"] = "returned"
+            sync_conflict_response = client.post(
+                f"/api/v1/courier-integrations/shipments/{shipment['id']}/sync-status",
+                headers=headers,
+                json={"apply_safe_status": False},
+            )
+            assert sync_conflict_response.status_code == 200, sync_conflict_response.text
+            sync_conflict_payload = sync_conflict_response.json()
+            assert sync_conflict_payload["external_status"] == "returned"
+            assert sync_conflict_payload["internal_status"] == "delivered"
+            assert sync_conflict_payload["internal_status_changed"] is False
+            assert any("manually closed locally" in warning.lower() for warning in sync_conflict_payload["warnings"])
 
             state["post_mode"] = "failure"
             send_failure_response = client.post(

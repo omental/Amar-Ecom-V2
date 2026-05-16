@@ -4,7 +4,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -121,15 +121,102 @@ def _parse_snapshot_text(snapshot_text: str | None) -> Any:
         return snapshot_text
 
 
-def _map_external_status_to_internal(status_value: str | None) -> str | None:
-    normalized = (status_value or "").strip().lower()
-    if normalized == "delivered":
-        return "delivered"
-    if normalized in {"cancelled", "canceled"}:
-        return "cancelled"
-    if normalized in {"failed", "delivery_failed"}:
-        return "failed"
-    return None
+def map_external_courier_status(provider: str, external_status: str | None) -> dict[str, Any]:
+    del provider
+    normalized = (external_status or "").strip().lower().replace(" ", "_")
+    if not normalized:
+        return {
+            "normalized_external_status": None,
+            "suggested_internal_status": None,
+            "severity": "warning",
+            "warning_message": "Courier provider did not return a recognizable external status.",
+        }
+
+    delivered_statuses = {"delivered", "completed", "delivered_to_customer"}
+    cancelled_statuses = {"cancelled", "canceled"}
+    failed_statuses = {"failed", "delivery_failed"}
+    returned_statuses = {"returned", "return", "rto", "return_to_origin"}
+    in_progress_statuses = {"in_transit", "picked_up", "assigned", "pending", "processing"}
+
+    if normalized in delivered_statuses:
+        return {
+            "normalized_external_status": "delivered",
+            "suggested_internal_status": "delivered",
+            "severity": "info",
+            "warning_message": None,
+        }
+    if normalized in cancelled_statuses:
+        return {
+            "normalized_external_status": "cancelled",
+            "suggested_internal_status": "cancelled",
+            "severity": "warning",
+            "warning_message": None,
+        }
+    if normalized in failed_statuses:
+        return {
+            "normalized_external_status": "failed",
+            "suggested_internal_status": "failed",
+            "severity": "warning",
+            "warning_message": None,
+        }
+    if normalized in returned_statuses:
+        return {
+            "normalized_external_status": "returned",
+            "suggested_internal_status": "returned",
+            "severity": "warning",
+            "warning_message": None,
+        }
+    if normalized in in_progress_statuses:
+        return {
+            "normalized_external_status": normalized,
+            "suggested_internal_status": None,
+            "severity": "info",
+            "warning_message": "External shipment is still in progress. No local status change is suggested.",
+        }
+    return {
+        "normalized_external_status": normalized,
+        "suggested_internal_status": None,
+        "severity": "warning",
+        "warning_message": f"External status '{normalized}' is not mapped to a safe local shipment status.",
+    }
+
+
+def _detect_status_sync_conflicts(
+    shipment: Shipment,
+    *,
+    old_external_status: str | None,
+    normalized_external_status: str | None,
+    suggested_internal_status: str | None,
+) -> list[str]:
+    warnings: list[str] = []
+    internal_status = (shipment.status or "").strip().lower()
+    order_status = (shipment.order.status if shipment.order and shipment.order.status else "").strip().lower()
+    reconciliation_status = (shipment.reconciliation_status or "").strip().lower()
+
+    if normalized_external_status == "delivered" and internal_status not in {"ready_to_ship", "shipped", "in_transit", "delivered"}:
+        warnings.append("External status is delivered, but the local shipment was not yet in a shipped-ready state.")
+    if normalized_external_status in {"returned", "cancelled"} and order_status == "delivered":
+        warnings.append("External status indicates return or cancellation, but the linked local order is already delivered.")
+    if normalized_external_status == "failed" and reconciliation_status == "settled":
+        warnings.append("External status is failed even though reconciliation is already settled locally.")
+    if normalized_external_status != old_external_status and internal_status in {"delivered", "cancelled", "returned", "failed"}:
+        warnings.append("External status changed after the shipment had already been manually closed locally.")
+    if suggested_internal_status in {"cancelled", "failed", "returned"}:
+        warnings.append("This external status can be risky to apply automatically. Review locally before changing internal shipment state.")
+    return warnings
+
+
+def _can_apply_safe_internal_status(
+    shipment: Shipment,
+    *,
+    suggested_internal_status: str | None,
+    warnings: list[str],
+) -> tuple[bool, str | None]:
+    if suggested_internal_status != "delivered":
+        return False, None
+    if warnings:
+        return False, "Safe local status apply was skipped because the sync produced warning conditions."
+    return True, None
 
 
 def _touch_shipment_status_timestamps(shipment: Shipment) -> None:
@@ -509,6 +596,7 @@ async def sync_shipment_status(
     current_user: User,
     *,
     provider: str | None = None,
+    apply_safe_status: bool = False,
 ) -> dict[str, Any]:
     shipment = await _get_shipment_for_integration(db, shipment_id)
     provider_candidate = provider or shipment.external_provider
@@ -547,9 +635,12 @@ async def sync_shipment_status(
     if not shipment.external_provider:
         shipment.external_provider = provider_name
     adapter = _get_adapter(setting)
+    old_external_status = shipment.external_status
+    old_internal_status = shipment.status
     request_snapshot = {
         "external_consignment_id": shipment.external_consignment_id,
         "tracking_number": shipment.external_tracking_number or shipment.tracking_number,
+        "apply_safe_status": apply_safe_status,
     }
     try:
         result = await adapter.get_status(
@@ -586,30 +677,67 @@ async def sync_shipment_status(
         }
 
     if result.success:
-        previous_status = shipment.status
+        mapped_status = map_external_courier_status(provider_name, result.external_status)
+        normalized_external_status = mapped_status["normalized_external_status"]
+        suggested_internal_status = mapped_status["suggested_internal_status"]
+        severity = mapped_status["severity"]
+        warnings = _detect_status_sync_conflicts(
+            shipment,
+            old_external_status=old_external_status,
+            normalized_external_status=normalized_external_status,
+            suggested_internal_status=suggested_internal_status,
+        )
+        if mapped_status["warning_message"]:
+            warnings.append(str(mapped_status["warning_message"]))
+
         shipment.external_provider = provider_name
         shipment.external_consignment_id = result.external_id or shipment.external_consignment_id
         shipment.external_tracking_number = result.tracking_number or shipment.external_tracking_number
-        shipment.external_status = result.external_status or shipment.external_status
+        shipment.external_status = normalized_external_status or result.external_status or shipment.external_status
         shipment.external_synced_at = _now()
+        internal_status_changed = False
+        internal_apply_warning = None
+        if apply_safe_status:
+            can_apply, internal_apply_warning = _can_apply_safe_internal_status(
+                shipment,
+                suggested_internal_status=suggested_internal_status,
+                warnings=warnings,
+            )
+            if can_apply and suggested_internal_status and suggested_internal_status != shipment.status:
+                shipment.status = suggested_internal_status
+                internal_status_changed = True
+                _touch_shipment_status_timestamps(shipment)
+        elif suggested_internal_status == "delivered":
+            warnings.append("External delivered status was not applied locally because apply_safe_status is off.")
+        if internal_apply_warning:
+            warnings.append(internal_apply_warning)
+
         shipment.external_payload_snapshot = _safe_snapshot_text(
             {
                 "provider": provider_name,
                 "status_request": result.request_snapshot,
                 "status_response": result.response_snapshot,
+                "old_external_status": old_external_status,
+                "new_external_status": shipment.external_status,
+                "suggested_internal_status": suggested_internal_status,
+                "internal_status_changed": internal_status_changed,
+                "warnings": warnings,
+                "severity": severity,
             }
         )
-        internal_status = _map_external_status_to_internal(result.external_status)
-        if internal_status and internal_status != shipment.status:
-            shipment.status = internal_status
-            _touch_shipment_status_timestamps(shipment)
+        event_parts = [
+            f"External courier status synced for {provider_name}: {old_external_status or 'none'} -> {shipment.external_status or 'unknown'}.",
+        ]
+        if suggested_internal_status:
+            event_parts.append(f"Suggested local status: {suggested_internal_status}.")
+        if internal_status_changed:
+            event_parts.append(f"Local shipment status changed: {old_internal_status} -> {shipment.status}.")
+        if warnings:
+            event_parts.append(f"Warnings: {' | '.join(warnings)}")
         _append_shipment_event(
             shipment,
             event_type="external_status_synced",
-            message=(
-                f"External courier status synced from {provider_name}: "
-                f"{previous_status} -> {shipment.status if shipment.status != previous_status else previous_status}."
-            ),
+            message=" ".join(event_parts),
             created_by_id=current_user.id,
         )
     else:
@@ -640,6 +768,7 @@ async def sync_shipment_status(
             "http_status": status.HTTP_502_BAD_GATEWAY,
         }
 
+    log_message = result.message if not warnings else f"{result.message} Warnings: {' | '.join(warnings)}"
     await _create_api_log(
         db,
         provider=provider_name,
@@ -647,9 +776,18 @@ async def sync_shipment_status(
         status_value=result.status,
         shipment_id=shipment.id,
         external_id=result.external_id or shipment.external_consignment_id,
-        message=result.message,
+        message=log_message,
         request_snapshot=result.request_snapshot,
-        response_snapshot=result.response_snapshot,
+        response_snapshot={
+            "response": result.response_snapshot,
+            "old_external_status": old_external_status,
+            "new_external_status": shipment.external_status,
+            "normalized_external_status": normalized_external_status,
+            "suggested_internal_status": suggested_internal_status,
+            "internal_status_changed": internal_status_changed,
+            "warnings": warnings,
+            "severity": severity,
+        },
         created_by_id=current_user.id,
     )
 
@@ -657,14 +795,117 @@ async def sync_shipment_status(
         "status": result.status,
         "provider": provider_name,
         "shipment_id": shipment.id,
+        "shipment_number": shipment.shipment_number,
         "external_id": shipment.external_consignment_id,
         "external_tracking_number": shipment.external_tracking_number,
+        "old_external_status": old_external_status,
         "external_status": shipment.external_status,
+        "normalized_external_status": normalized_external_status,
         "internal_status": shipment.status,
+        "suggested_internal_status": suggested_internal_status,
+        "internal_status_changed": internal_status_changed,
+        "severity": severity,
+        "warnings": warnings,
         "synced_at": shipment.external_synced_at,
         "message": result.message,
         "request_snapshot": _sanitize_snapshot(result.request_snapshot),
-        "response_snapshot": _sanitize_snapshot(result.response_snapshot),
+        "response_snapshot": _sanitize_snapshot(
+            {
+                "response": result.response_snapshot,
+                "warnings": warnings,
+                "severity": severity,
+            }
+        ),
+        }
+
+
+async def bulk_sync_shipment_statuses(
+    db: AsyncSession,
+    current_user: User,
+    *,
+    provider: str | None = None,
+    shipment_status: str | None = None,
+    limit: int = 20,
+    apply_safe_status: bool = False,
+) -> dict[str, Any]:
+    stmt = (
+        select(Shipment)
+        .options(
+            selectinload(Shipment.order),
+            selectinload(Shipment.events),
+        )
+        .where(
+            Shipment.external_provider.is_not(None),
+            or_(Shipment.external_consignment_id.is_not(None), Shipment.external_tracking_number.is_not(None)),
+        )
+        .order_by(Shipment.updated_at.desc(), Shipment.created_at.desc())
+        .limit(limit)
+    )
+    if provider:
+        stmt = stmt.where(Shipment.external_provider == _validate_provider(provider))
+    if shipment_status:
+        stmt = stmt.where(Shipment.status == shipment_status)
+
+    shipments = (await db.execute(stmt)).scalars().all()
+    synced_count = 0
+    skipped_count = 0
+    failed_count = 0
+    rows: list[dict[str, Any]] = []
+
+    for shipment in shipments:
+        provider_name = shipment.external_provider or provider
+        if not provider_name:
+            skipped_count += 1
+            rows.append(
+                {
+                    "shipment_id": shipment.id,
+                    "shipment_number": shipment.shipment_number,
+                    "provider": None,
+                    "old_external_status": shipment.external_status,
+                    "new_external_status": shipment.external_status,
+                    "internal_status_changed": False,
+                    "message": "Shipment is not linked to an external courier provider yet.",
+                    "warnings": ["Shipment is missing an external provider link."],
+                    "status": "skipped",
+                }
+            )
+            continue
+
+        result = await sync_shipment_status(
+            db,
+            shipment.id,
+            current_user,
+            provider=provider_name,
+            apply_safe_status=apply_safe_status,
+        )
+
+        row_status = result["status"]
+        if row_status == "success":
+            synced_count += 1
+        elif row_status == "skipped":
+            skipped_count += 1
+        else:
+            failed_count += 1
+
+        rows.append(
+            {
+                "shipment_id": shipment.id,
+                "shipment_number": shipment.shipment_number,
+                "provider": result.get("provider") or provider_name,
+                "old_external_status": result.get("old_external_status"),
+                "new_external_status": result.get("external_status"),
+                "internal_status_changed": bool(result.get("internal_status_changed")),
+                "message": result.get("message") or "Courier status sync completed.",
+                "warnings": result.get("warnings") or [],
+                "status": row_status,
+            }
+        )
+
+    return {
+        "synced_count": synced_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "rows": rows,
     }
 
 

@@ -2314,6 +2314,16 @@ Phase 13B completes the Steadfast adapter into a production-shaped manual integr
 - status sync uses external consignment id first and falls back to tracking number
 - request and response snapshots are sanitized before storage
 
+Phase 13C hardens courier status sync further:
+
+- external status mapping is conservative and produces normalized status plus warnings
+- `apply_safe_status` defaults to `false`
+- with `apply_safe_status = false`, external delivered updates remain external-only
+- with `apply_safe_status = true`, local shipment status changes only for safe delivered mapping and only when no warning/conflict blocks it
+- returned, cancelled, and failed states still do not auto-apply destructively by default
+- bulk manual status sync is available without adding any background worker
+- courier API log filtering now supports message search in addition to provider, action, status, shipment, external id, and date filters
+
 Supported provider keys:
 
 - `manual`
@@ -2413,21 +2423,52 @@ Expected result:
 ### Sync Shipment External Status
 
 ```powershell
+$syncShipmentBody = @{
+  apply_safe_status = $false
+} | ConvertTo-Json
+
 Invoke-RestMethod `
   -Uri http://127.0.0.1:8000/api/v1/courier-integrations/shipments/{shipmentId}/sync-status `
   -Method Post `
   -Headers $headers `
   -ContentType "application/json" `
-  -Body (@{} | ConvertTo-Json)
+  -Body $syncShipmentBody
 ```
 
 Expected result:
 
 - external status and sync time update safely
-- safe status mapping may update local shipment status when the remote state clearly matches
+- default behavior does not destructively update local shipment state
+- response includes old external status, new external status, warnings, and whether local internal status changed
+- safe status mapping may update local shipment status only when `apply_safe_status = true` and no warning/conflict blocks the change
 - no destructive shipment, order, or inventory mutation occurs
 - Steadfast `delivered` can safely map to internal `delivered`
 - cancelled, failed, or returned states remain conservative and do not destructively rewrite unrelated local data
+
+### Bulk Sync Shipment External Status
+
+```powershell
+$bulkSyncBody = @{
+  provider = "steadfast"
+  status = "shipped"
+  limit = 20
+  apply_safe_status = $false
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/courier-integrations/status-sync/bulk `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $bulkSyncBody
+```
+
+Expected result:
+
+- returns `synced_count`, `skipped_count`, and `failed_count`
+- row results include shipment id, shipment number, provider, old/new external status, local status changed flag, and message
+- warnings are surfaced for conflict cases
+- no background worker is used
 
 ### Filter Courier API Logs
 
@@ -2439,7 +2480,7 @@ Invoke-RestMethod `
 
 Expected result:
 
-- logs filter by provider, action, status, shipment, external id, and date window
+- logs filter by provider, action, status, shipment, external id, message search, and date window
 - request and response snapshots remain sanitized
 - auth headers, tokens, passwords, and secrets are never exposed
 

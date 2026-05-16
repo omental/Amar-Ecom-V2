@@ -112,14 +112,47 @@ type StatusSyncResult = {
   status: string;
   provider: string;
   shipment_id: string;
+  shipment_number?: string;
   external_id: string | null;
   external_tracking_number: string | null;
+  old_external_status?: string | null;
   external_status: string | null;
+  normalized_external_status?: string | null;
   internal_status: string | null;
+  suggested_internal_status?: string | null;
+  internal_status_changed?: boolean;
+  severity?: string;
+  warnings?: string[];
   synced_at: string | null;
   message: string;
   request_snapshot?: unknown;
   response_snapshot?: unknown;
+};
+
+type BulkStatusSyncFilters = {
+  provider: string;
+  status: string;
+  limit: string;
+  apply_safe_status: boolean;
+};
+
+type BulkStatusSyncRow = {
+  shipment_id: string;
+  shipment_number: string;
+  provider: string | null;
+  old_external_status: string | null;
+  new_external_status: string | null;
+  internal_status_changed: boolean;
+  message: string;
+  warnings: string[];
+  status: string;
+};
+
+type BulkStatusSyncResult = {
+  synced_count: number;
+  skipped_count: number;
+  failed_count: number;
+  rows: BulkStatusSyncRow[];
 };
 
 type LogFilters = {
@@ -127,6 +160,7 @@ type LogFilters = {
   action: string;
   status: string;
   external_id: string;
+  search: string;
 };
 
 const providerOptions = ["manual", "steadfast", "pathao", "redx", "paperfly"] as const;
@@ -156,6 +190,14 @@ const initialLogFilters: LogFilters = {
   action: "",
   status: "",
   external_id: "",
+  search: "",
+};
+
+const initialBulkStatusSyncFilters: BulkStatusSyncFilters = {
+  provider: "",
+  status: "",
+  limit: "20",
+  apply_safe_status: false,
 };
 
 function renderSnapshot(value: unknown) {
@@ -181,12 +223,16 @@ export default function CourierIntegrationsPage() {
   const [lastConnectionTest, setLastConnectionTest] = useState<CourierConnectionTestResult | null>(null);
   const [lastSendResult, setLastSendResult] = useState<SendShipmentResult | null>(null);
   const [lastSyncResult, setLastSyncResult] = useState<StatusSyncResult | null>(null);
+  const [lastBulkSyncResult, setLastBulkSyncResult] = useState<BulkStatusSyncResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isRefreshingLogs, setIsRefreshingLogs] = useState(false);
   const [busySendShipmentId, setBusySendShipmentId] = useState<string | null>(null);
   const [busySyncShipmentId, setBusySyncShipmentId] = useState<string | null>(null);
+  const [applySafeStatusForSingleSync, setApplySafeStatusForSingleSync] = useState(false);
+  const [bulkStatusSyncFilters, setBulkStatusSyncFilters] = useState<BulkStatusSyncFilters>(initialBulkStatusSyncFilters);
+  const [isBulkSyncing, setIsBulkSyncing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
@@ -229,6 +275,7 @@ export default function CourierIntegrationsPage() {
     if (filters.action) query.set("action", filters.action);
     if (filters.status) query.set("status", filters.status);
     if (filters.external_id.trim()) query.set("external_id", filters.external_id.trim());
+    if (filters.search.trim()) query.set("search", filters.search.trim());
     query.set("limit", "100");
     const rows = await api.get<CourierLog[]>(`/courier-integrations/logs?${query.toString()}`);
     setLogs(rows);
@@ -378,8 +425,10 @@ export default function CourierIntegrationsPage() {
     try {
       const result = await api.post<StatusSyncResult>(`/courier-integrations/shipments/${shipmentId}/sync-status`, {
         provider: provider || undefined,
+        apply_safe_status: applySafeStatusForSingleSync,
       });
       setLastSyncResult(result);
+      setLastBulkSyncResult(null);
       await loadShipments();
       await loadLogs();
       setSuccess(result.message);
@@ -387,6 +436,28 @@ export default function CourierIntegrationsPage() {
       setError(err instanceof ApiError ? err.message : "Failed to sync external courier status");
     } finally {
       setBusySyncShipmentId(null);
+    }
+  }
+
+  async function handleBulkStatusSync() {
+    setError("");
+    setSuccess("");
+    setIsBulkSyncing(true);
+    try {
+      const result = await api.post<BulkStatusSyncResult>("/courier-integrations/status-sync/bulk", {
+        provider: bulkStatusSyncFilters.provider || undefined,
+        status: bulkStatusSyncFilters.status || undefined,
+        limit: Number(bulkStatusSyncFilters.limit || 20),
+        apply_safe_status: bulkStatusSyncFilters.apply_safe_status,
+      });
+      setLastBulkSyncResult(result);
+      await loadShipments();
+      await loadLogs();
+      setSuccess(`Bulk sync finished. Synced ${result.synced_count}, skipped ${result.skipped_count}, failed ${result.failed_count}.`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to run bulk courier status sync");
+    } finally {
+      setIsBulkSyncing(false);
     }
   }
 
@@ -652,6 +723,21 @@ export default function CourierIntegrationsPage() {
               </div>
             </div>
 
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+              <label className="inline-flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={applySafeStatusForSingleSync}
+                  onChange={(event) => setApplySafeStatusForSingleSync(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                />
+                <span>Apply safe delivered status locally during single sync</span>
+              </label>
+              <p className="mt-2 text-xs text-slate-500">
+                Default is off. External delivered updates stay external-only unless you opt in.
+              </p>
+            </div>
+
             {shipments.length === 0 ? (
               <div className="mt-5">
                 <EmptyState title="No shipments available" description="Create shipments first, then send them to a configured external courier provider from this page." />
@@ -731,6 +817,123 @@ export default function CourierIntegrationsPage() {
             )}
           </FormCard>
 
+          <FormCard title="Bulk status sync" description="Manually sync recent externally linked shipments in one pass without background workers or destructive status changes.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Provider</span>
+                <select
+                  value={bulkStatusSyncFilters.provider}
+                  onChange={(event) => setBulkStatusSyncFilters((current) => ({ ...current, provider: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="">All linked providers</option>
+                  {providerOptions.map((provider) => (
+                    <option key={provider} value={provider}>
+                      {formatLabel(provider)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Internal status</span>
+                <select
+                  value={bulkStatusSyncFilters.status}
+                  onChange={(event) => setBulkStatusSyncFilters((current) => ({ ...current, status: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                >
+                  <option value="">All statuses</option>
+                  {["pending", "ready_to_ship", "shipped", "in_transit", "delivered", "failed", "returned", "cancelled"].map((statusValue) => (
+                    <option key={statusValue} value={statusValue}>
+                      {formatLabel(statusValue)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Limit</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={bulkStatusSyncFilters.limit}
+                  onChange={(event) => setBulkStatusSyncFilters((current) => ({ ...current, limit: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                />
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 xl:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={bulkStatusSyncFilters.apply_safe_status}
+                  onChange={(event) => setBulkStatusSyncFilters((current) => ({ ...current, apply_safe_status: event.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
+                />
+                <span>Apply safe delivered status locally during bulk sync</span>
+              </label>
+            </div>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => void handleBulkStatusSync()}
+                disabled={isBulkSyncing}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isBulkSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Run Bulk Sync
+              </button>
+            </div>
+
+            {lastBulkSyncResult ? (
+              <div className="mt-5 space-y-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Synced: <span className="font-semibold text-slate-950">{lastBulkSyncResult.synced_count}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Skipped: <span className="font-semibold text-slate-950">{lastBulkSyncResult.skipped_count}</span>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Failed: <span className="font-semibold text-slate-950">{lastBulkSyncResult.failed_count}</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-3xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3">Shipment</th>
+                        <th className="px-4 py-3">Provider</th>
+                        <th className="px-4 py-3">External Status</th>
+                        <th className="px-4 py-3">Local Change</th>
+                        <th className="px-4 py-3">Result</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {lastBulkSyncResult.rows.map((row) => (
+                        <tr key={`${row.shipment_id}-${row.shipment_number}`}>
+                          <td className="px-4 py-3">
+                            <Link href={`/dashboard/shipments/${row.shipment_id}`} className="font-medium text-slate-950 hover:underline">
+                              {row.shipment_number}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{row.provider ? formatLabel(row.provider) : "-"}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {(row.old_external_status ? formatLabel(row.old_external_status) : "None")} to{" "}
+                            {row.new_external_status ? formatLabel(row.new_external_status) : "None"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{row.internal_status_changed ? "Yes" : "No"}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            <StatusBadge status={row.status} />
+                            <p className="mt-1 text-xs text-slate-500">{row.message}</p>
+                            {row.warnings.length ? <p className="mt-1 text-xs text-amber-700">{row.warnings.join(" | ")}</p> : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </FormCard>
+
           {lastSendResult ? (
             <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm text-slate-700 shadow-[var(--shadow-soft)]">
               <p className="font-semibold text-slate-950">Latest send result</p>
@@ -769,7 +972,26 @@ export default function CourierIntegrationsPage() {
                   External status: <span className="font-semibold text-slate-950">{lastSyncResult.external_status ? formatLabel(lastSyncResult.external_status) : "Not available"}</span>
                 </div>
               </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Previous status: <span className="font-semibold text-slate-950">{lastSyncResult.old_external_status ? formatLabel(lastSyncResult.old_external_status) : "Not available"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Suggested local status: <span className="font-semibold text-slate-950">{lastSyncResult.suggested_internal_status ? formatLabel(lastSyncResult.suggested_internal_status) : "No change"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Local status changed: <span className="font-semibold text-slate-950">{lastSyncResult.internal_status_changed ? "Yes" : "No"}</span>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  Severity: <span className="font-semibold text-slate-950">{lastSyncResult.severity ? formatLabel(lastSyncResult.severity) : "Info"}</span>
+                </div>
+              </div>
               <p className="mt-3 text-slate-700">{lastSyncResult.message}</p>
+              {lastSyncResult.warnings?.length ? (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {lastSyncResult.warnings.join(" | ")}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -778,7 +1000,7 @@ export default function CourierIntegrationsPage() {
       {activeTab === "logs" ? (
         <div className="space-y-4">
           <FormCard title="API logs" description="Review connection tests, shipment send attempts, and status sync calls with sanitized snapshots.">
-            <div className="grid gap-4 md:grid-cols-[180px_180px_180px_1fr_auto]">
+            <div className="grid gap-4 md:grid-cols-[180px_180px_180px_1fr_1fr_auto]">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Provider</span>
                 <select
@@ -831,6 +1053,15 @@ export default function CourierIntegrationsPage() {
                   onChange={(event) => setLogFilters((current) => ({ ...current, external_id: event.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
                   placeholder="Search external ID"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Message Search</span>
+                <input
+                  value={logFilters.search}
+                  onChange={(event) => setLogFilters((current) => ({ ...current, search: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                  placeholder="Search log message"
                 />
               </label>
               <div className="flex items-end">
