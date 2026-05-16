@@ -20,6 +20,14 @@ npm run dev
 3. Open `http://localhost:3000`
 4. Log in with an existing backend user
 
+## Phase 14H UI Polish Checks
+
+1. Open `/dashboard/finance` and confirm the richer header, KPI strip, shared tabs, and warning text render without changing transaction behavior.
+2. Open `/dashboard/hr` and confirm the richer header, KPI strip, and shared tab shell render while designation, employee, attendance, and salary flows still submit normally.
+3. Open `/dashboard/pos` and confirm the denser KPI/header workspace renders while product search, cart updates, checkout, and success links still work.
+4. Open `/dashboard/settings` and `/dashboard/admin-tools` and confirm the richer admin shell renders without changing save, export, health, or maintenance behavior.
+5. Open `/dashboard/woocommerce` and `/dashboard/courier-integrations` and confirm the new shared shell styling appears while all safety warnings and manual-only behavior remain intact.
+
 ## Create Product
 
 1. Open `http://localhost:3000/dashboard/products`

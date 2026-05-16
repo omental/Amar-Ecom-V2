@@ -8,7 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatDateTime, formatLabel } from "@/lib/format";
@@ -479,10 +480,10 @@ export default function CourierIntegrationsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
+      <section className="card-base p-6 sm:p-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <PageHeader
-            eyebrow="Courier API Foundation"
+          <OpsPageHeader
+            eyebrow="Courier Console"
             title="Courier Integrations"
             description="Save provider credentials, send shipments manually to external couriers, and sync external shipment status without background workers or destructive local changes."
             meta="Foundation only"
@@ -493,29 +494,7 @@ export default function CourierIntegrationsPage() {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-[var(--shadow-soft)] sm:p-6">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  isActive
-                    ? "border-slate-950 bg-slate-950 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      <OpsTabs tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))} activeTab={activeTab} onChange={(id) => setActiveTab(id as TabId)} />
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? (

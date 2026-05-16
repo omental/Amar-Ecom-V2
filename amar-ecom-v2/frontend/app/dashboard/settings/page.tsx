@@ -7,7 +7,7 @@ import { Building2, FileText, LayoutTemplate, Loader2, Settings2 } from "lucide-
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
 
 type BusinessSettings = {
@@ -401,18 +401,18 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="Operations Settings"
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Settings Console"
           title="Business settings"
-          description="Keep the business profile, invoice presentation, and template defaults aligned as the v2 commercial workflow gets closer to parity."
+          description="Keep the business profile, invoice presentation, template defaults, and admin jump-links aligned in a denser v1-style settings console."
           meta={settings?.company_name || "Settings"}
         />
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[var(--shadow-soft)]">
+          <div className="card-base p-3">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -490,6 +490,9 @@ export default function SettingsPage() {
               {success}
             </div>
           ) : null}
+          <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-subtle)]">
+            Invoice preview uses the latest available order. If no order exists yet, preview remains unavailable until a first order is created.
+          </div>
 
           {activeTab === "profile" ? (
             <form onSubmit={handleSettingsSubmit} className="space-y-4">

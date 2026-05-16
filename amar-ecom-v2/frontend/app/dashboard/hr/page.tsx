@@ -13,7 +13,9 @@ import {
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 
@@ -583,63 +585,29 @@ export default function HrPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="HR Foundation"
+    <div className="space-y-5">
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="HR Console"
           title="HR workspace"
-          description="Run a practical HR foundation with designations, employees, attendance, salary advances, salary records, and a lightweight HR summary."
-          meta="People + payroll foundation"
+          description="Run the practical HR foundation with a denser people-ops shell for designations, employees, attendance, salary advances, and salary records."
+          meta="People operations, attendance, and payroll support"
         />
       </section>
 
-      <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[var(--shadow-soft)]">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                  isActive ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <OpsTabs tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))} activeTab={activeTab} onChange={(id) => setActiveTab(id as TabId)} />
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? <div className="rounded-[28px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700 shadow-[var(--shadow-soft)]">{success}</div> : null}
 
       {activeTab === "overview" && summary ? (
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[
-            { label: "Total Employees", value: summary.total_employees, icon: Users },
-            { label: "Active Employees", value: summary.active_employees, icon: UserCheck },
-            { label: "Present Today", value: summary.present_today, icon: CalendarClock },
-            { label: "Absent Today", value: summary.absent_today, icon: CalendarClock },
-            { label: "Pending Advances", value: summary.pending_advances, icon: BadgeDollarSign },
-            { label: "Unpaid Salaries", value: summary.unpaid_salary_records, icon: BadgeDollarSign },
-          ].map(({ label, value, icon: Icon }) => (
-            <article key={label} className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">{label}</p>
-                  <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <Icon className="h-5 w-5" />
-                </div>
-              </div>
-            </article>
-          ))}
+          <OpsSummaryCard label="Employees" value={summary.total_employees} icon={Users} eyebrow="Headcount" />
+          <OpsSummaryCard label="Active Employees" value={summary.active_employees} icon={UserCheck} eyebrow="Current Roster" tone="success" />
+          <OpsSummaryCard label="Present Today" value={summary.present_today} icon={CalendarClock} eyebrow="Attendance" tone="info" />
+          <OpsSummaryCard label="Absent Today" value={summary.absent_today} icon={CalendarClock} eyebrow="Attendance" tone="warning" />
+          <OpsSummaryCard label="Pending Advances" value={summary.pending_advances} icon={BadgeDollarSign} eyebrow="Advance Queue" tone="warning" />
+          <OpsSummaryCard label="Unpaid Salaries" value={summary.unpaid_salary_records} icon={BadgeDollarSign} eyebrow="Payroll Queue" tone="danger" />
         </section>
       ) : null}
 

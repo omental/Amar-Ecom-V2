@@ -496,10 +496,10 @@ export default function DashboardPage() {
           <div>
             <p className="ops-micro-label">Workspace Note</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
-              Phase 14D foundation
+              Phase 14H polish
             </h2>
             <p className="mt-3 text-sm leading-7 text-[var(--color-txt-sec)]">
-              The shell, cards, badges, and spacing language now move toward the legacy v1 operations console. Module-level parity for orders, logistics, inventory, CRM, and reports still needs the next phases.
+              The shared shell, cards, badges, and spacing language now carry through orders, logistics, inventory, CRM, reports, finance, HR, POS, settings, and integration routes. The remaining work is primarily regression QA and optional deeper exact-v1 recreation.
             </p>
           </div>
 
@@ -508,7 +508,8 @@ export default function DashboardPage() {
               { status: "complete", label: "Shell density and grouped sidebar" },
               { status: "complete", label: "Topbar visual parity foundation" },
               { status: "complete", label: "Dashboard visual language pass" },
-              { status: "next", label: "Orders + Logistics UI parity phase" },
+              { status: "complete", label: "Orders, logistics, inventory, CRM, and reports parity passes" },
+              { status: "next", label: "Cross-route UI regression QA" },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3">
                 <span className="text-sm font-medium text-[var(--color-txt-pri)]">{item.label}</span>

@@ -17,7 +17,9 @@ import {
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsActionButton } from "@/components/ui/ops-action-button";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatLabel } from "@/lib/format";
 
@@ -346,48 +348,33 @@ export default function PosPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="POS Foundation"
+    <div className="space-y-5">
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="POS Console"
           title="Point of sale workspace"
-          description="Run walk-in checkout with warehouse-first stock validation, immediate stock deduction, optional finance capture, and a direct path into the existing invoice print flow."
-          meta="Walk-in sales + receipt handoff"
+          description="Run walk-in checkout with a denser warehouse-first selling layout, immediate stock deduction, optional finance capture, and a direct path into the existing invoice print flow."
+          meta="Walk-in sales, payment capture, and receipt handoff"
+          actions={
+            <OpsActionButton
+              type="button"
+              variant="secondary"
+              onClick={() => void handleSummaryRefresh()}
+              disabled={isRefreshingSummary}
+            >
+              {isRefreshingSummary ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh summary
+            </OpsActionButton>
+          }
         />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          { label: "Today POS Orders", value: summary?.today_pos_orders || 0, icon: ShoppingCart },
-          { label: "Today POS Sales", value: formatCurrency(summary?.today_pos_sales), icon: Receipt },
-          { label: "Today Paid", value: formatCurrency(summary?.today_paid_amount), icon: Wallet },
-          { label: "Today Due", value: formatCurrency(summary?.today_due_amount), icon: CreditCard },
-        ].map(({ label, value, icon: Icon }) => (
-          <article key={label} className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[var(--shadow-soft)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-slate-500">{label}</p>
-                <p className="mt-3 text-2xl font-semibold text-slate-950">{value}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                <Icon className="h-5 w-5" />
-              </div>
-            </div>
-          </article>
-        ))}
+        <OpsSummaryCard label="Today Orders" value={summary?.today_pos_orders || 0} icon={ShoppingCart} eyebrow="Counter Flow" />
+        <OpsSummaryCard label="Today Sales" value={formatCurrency(summary?.today_pos_sales)} icon={Receipt} eyebrow="Gross Sales" tone="success" />
+        <OpsSummaryCard label="Today Paid" value={formatCurrency(summary?.today_paid_amount)} icon={Wallet} eyebrow="Collected" tone="info" />
+        <OpsSummaryCard label="Today Due" value={formatCurrency(summary?.today_due_amount)} icon={CreditCard} eyebrow="Receivable" tone="warning" />
       </section>
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => void handleSummaryRefresh()}
-          disabled={isRefreshingSummary}
-          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-        >
-          {isRefreshingSummary ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Refresh summary
-        </button>
-      </div>
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? (

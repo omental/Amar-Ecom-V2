@@ -8,7 +8,8 @@ import { ErrorAlert } from "@/components/ui/error-alert";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatLabel } from "@/lib/format";
@@ -658,9 +659,9 @@ export default function WooCommercePage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="Scheduled Sync Foundation"
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="WooCommerce Console"
           title="WooCommerce workspace"
           description="Configure a safer read-only WooCommerce connection, store sync schedule preferences, run manual sync safely, preview duplicate risk before import, refresh imported Woo products and orders, and inspect sync-log details."
           meta="Read-only"
@@ -681,27 +682,7 @@ export default function WooCommercePage() {
         </div>
       ) : null}
 
-      <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[var(--shadow-soft)]">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  isActive ? "bg-slate-950 text-white" : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <OpsTabs tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))} activeTab={activeTab} onChange={(id) => setActiveTab(id as TabId)} />
 
       {activeTab === "connection" ? (
         <FormCard

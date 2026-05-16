@@ -7,7 +7,8 @@ import { Activity, Copy, DatabaseBackup, Download, Loader2, RefreshCcw, ShieldCh
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { api, ApiError } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
@@ -217,18 +218,18 @@ export default function AdminToolsPage() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="Production Readiness"
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Admin Console"
           title="Admin tools"
-          description="Use this workspace for release checks, CSV exports, backup guidance, and a quick operational maintenance pass before deployment."
+          description="Use this workspace for release checks, CSV exports, backup guidance, and a clearer operational maintenance pass before deployment."
           meta="Admin only"
         />
       </section>
 
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[var(--shadow-soft)]">
+          <div className="card-base p-3">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -284,30 +285,10 @@ export default function AdminToolsPage() {
                 {health ? (
                   <div className="space-y-5">
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {[
-                        { label: "API Status", value: health.service_status.api, accent: "emerald" },
-                        { label: "Database Status", value: health.service_status.database, accent: "emerald" },
-                        { label: "Environment", value: health.environment, accent: "sky" },
-                        {
-                          label: "Migration Status",
-                          value: health.migrations.up_to_date ? "Up to date" : "Review needed",
-                          accent: health.migrations.up_to_date ? "emerald" : "amber",
-                        },
-                      ].map((item) => (
-                        <div
-                          key={item.label}
-                          className={`rounded-3xl border px-4 py-4 ${
-                            item.accent === "emerald"
-                              ? "border-emerald-200 bg-emerald-50"
-                              : item.accent === "amber"
-                                ? "border-amber-200 bg-amber-50"
-                                : "border-sky-200 bg-sky-50"
-                          }`}
-                        >
-                          <p className="text-sm text-slate-600">{item.label}</p>
-                          <p className="mt-2 text-xl font-semibold text-slate-950">{item.value}</p>
-                        </div>
-                      ))}
+                      <OpsSummaryCard label="API Status" value={health.service_status.api} icon={Activity} eyebrow="Health" tone="success" />
+                      <OpsSummaryCard label="Database Status" value={health.service_status.database} icon={ShieldCheck} eyebrow="Health" tone="success" />
+                      <OpsSummaryCard label="Environment" value={health.environment} icon={Wrench} eyebrow="Runtime" tone="info" />
+                      <OpsSummaryCard label="Migration Status" value={health.migrations.up_to_date ? "Up to date" : "Review needed"} icon={DatabaseBackup} eyebrow="Schema" tone={health.migrations.up_to_date ? "success" : "warning"} />
                     </div>
 
                     <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">

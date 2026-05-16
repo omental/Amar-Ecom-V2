@@ -16,7 +16,11 @@ import {
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsActionButton } from "@/components/ui/ops-action-button";
+import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
+import { OpsTabs } from "@/components/ui/ops-tabs";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatLabel } from "@/lib/format";
 
@@ -588,37 +592,28 @@ export default function FinancePage() {
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="Finance Integration Polish"
+    <div className="space-y-5">
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Finance Console"
           title="Finance workspace"
-          description="Run the practical finance foundation with linked supplier payment and petty cash transactions, filterable finance activity, and browser-side CSV exports."
-          meta="Overview + operations"
+          description="Run the practical finance foundation with linked supplier payment and petty cash transactions, clearer account groupings, and browser-side CSV exports."
+          meta="Overview, accounts, transactions, petty cash, and supplier payments"
+          actions={
+            <OpsActionButton
+              type="button"
+              variant="secondary"
+              onClick={() => void handleOverviewRefresh()}
+              disabled={isRefreshingOverview}
+            >
+              {isRefreshingOverview ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh overview
+            </OpsActionButton>
+          }
         />
       </section>
 
-      <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[var(--shadow-soft)]">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                  isActive ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <OpsTabs tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))} activeTab={activeTab} onChange={(id) => setActiveTab(id as TabId)} />
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? (
@@ -629,47 +624,35 @@ export default function FinancePage() {
 
       {activeTab === "overview" && summary ? (
         <div className="space-y-4">
-          <FormCard title="Summary filters" description="Filter income, expense, supplier payment totals, and net cash flow by date range.">
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-              <label className="block">
+          <OpsFilterBar title="Finance Filters" description="Filter income, expense, supplier payment totals, and net cash flow by date range before reviewing recent movement.">
+              <label className="block min-w-[220px] flex-1">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Date from</span>
                 <input type="datetime-local" value={summaryFilters.date_from} onChange={(event) => setSummaryFilters((current) => ({ ...current, date_from: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
               </label>
-              <label className="block">
+              <label className="block min-w-[220px] flex-1">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Date to</span>
                 <input type="datetime-local" value={summaryFilters.date_to} onChange={(event) => setSummaryFilters((current) => ({ ...current, date_to: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
               </label>
               <div className="flex items-end gap-2">
-                <button type="button" onClick={() => void handleOverviewRefresh()} disabled={isRefreshingOverview} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                <OpsActionButton type="button" variant="primary" onClick={() => void handleOverviewRefresh()} disabled={isRefreshingOverview}>
                   {isRefreshingOverview ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   Refresh
-                </button>
+                </OpsActionButton>
               </div>
-            </div>
-          </FormCard>
+          </OpsFilterBar>
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {[
-              { label: "Cash / Bank Balance", value: formatCurrency(summary.total_cash_bank_balance), icon: Wallet },
-              { label: "Total Income", value: formatCurrency(summary.total_income), icon: Landmark },
-              { label: "Total Expense", value: formatCurrency(summary.total_expense), icon: ReceiptText },
-              { label: "Net Cash Flow", value: formatCurrency(summary.net_cash_flow), icon: CreditCard },
-              { label: "Pending Petty Cash", value: String(summary.pending_petty_cash_count), icon: CreditCard },
-              { label: "Supplier Payments", value: formatCurrency(summary.supplier_payments_total), icon: Building2 },
-            ].map(({ label, value, icon: Icon }) => (
-              <article key={label} className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">{label}</p>
-                    <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
-                  </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                </div>
-              </article>
-            ))}
+            <OpsSummaryCard label="Cash / Bank Balance" value={formatCurrency(summary.total_cash_bank_balance)} icon={Wallet} eyebrow="Liquidity" />
+            <OpsSummaryCard label="Total Income" value={formatCurrency(summary.total_income)} icon={Landmark} eyebrow="Inflow" tone="success" />
+            <OpsSummaryCard label="Total Expense" value={formatCurrency(summary.total_expense)} icon={ReceiptText} eyebrow="Outflow" tone="warning" />
+            <OpsSummaryCard label="Net Cash Flow" value={formatCurrency(summary.net_cash_flow)} icon={CreditCard} eyebrow="Net Position" tone={Number(summary.net_cash_flow) >= 0 ? "info" : "danger"} />
+            <OpsSummaryCard label="Pending Petty Cash" value={String(summary.pending_petty_cash_count)} icon={CreditCard} eyebrow="Review Queue" tone="warning" helper="Pending requests still need finance review." />
+            <OpsSummaryCard label="Supplier Payments" value={formatCurrency(summary.supplier_payments_total)} icon={Building2} eyebrow="Procurement" helper="Supplier payment saves can create linked transactions." />
           </section>
+
+          <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-subtle)]">
+            Petty cash and supplier-payment actions can affect linked finance transactions. Double-check account and amount fields before saving.
+          </div>
 
           <FormCard title="Recent transactions" description="This list stays lightweight for day-to-day monitoring while the summary cards respect the selected date range.">
             <div className="space-y-3">

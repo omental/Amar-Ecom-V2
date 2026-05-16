@@ -387,6 +387,18 @@ Status:
 - Finance + HR + POS + Settings + Team polish
 - Bring lower-priority modules onto the shared design language
 
+Status:
+- completed for first-pass route-level polish on:
+  - `/dashboard/finance`
+  - `/dashboard/hr`
+  - `/dashboard/pos`
+  - `/dashboard/settings`
+  - `/dashboard/admin-tools`
+  - `/dashboard/woocommerce`
+  - `/dashboard/courier-integrations`
+- dashboard received a final small touch-up so the remaining module groups sit in the same v1-inspired visual language
+- remaining work is now mainly `14I` regression QA plus any optional exact-v1 recreation passes
+
 ### Phase 14I
 
 - UI regression QA
