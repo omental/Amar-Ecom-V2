@@ -76,6 +76,23 @@ Status labels:
   - `PATCH /api/v1/notifications/mark-all-read`
 - Remaining route parity work is now page-level rather than shell-foundation work.
 
+## Phase 15C Dashboard Clone Note
+
+- `15C` is now completed for `/dashboard`.
+- The route now follows the v1 dashboard structure instead of the broader Phase 14 summary-console layout.
+- Current v2 dashboard API mapping for the v1 clone uses:
+  - `/api/v1/settings/business`
+  - `/api/v1/reports/sales-summary`
+  - `/api/v1/reports/inventory`
+  - `/api/v1/reports/customers`
+  - `/api/v1/reports/top-products`
+  - `/api/v1/reports/low-stock-products`
+  - `/api/v1/reports/recent-order-activity`
+  - `/api/v1/reports/revenue-by-date`
+  - `/api/v1/orders`
+- No new backend endpoint was required for the dashboard pass.
+- Remaining dashboard deviation is mainly the `Staff Performance` data source, which stays visually cloned but backend-light for now.
+
 ## Exact Clone Priority Overrides
 
 - Highest structural mismatch routes are now:
@@ -86,6 +103,7 @@ Status labels:
   - `/dashboard/settings`
   - `/dashboard/users`
 - Shell/sidebar/topbar has moved from primary mismatch to near-match status, with only documented deviations remaining.
+- `/dashboard` has also moved to near-match status after the Phase `15C` pass.
 - Several currently separate v2 routes map to embedded tabs or modal loops inside v1 parent screens. That means route coverage alone is no longer enough to judge parity.
 
 ## Phase 14I Consistency Note

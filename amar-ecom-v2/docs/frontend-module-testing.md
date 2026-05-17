@@ -39,6 +39,47 @@
    - `New Order` and `Add Product` submenu entries map to the nearest existing v2 route
    - v2-only routes remain under a secondary nav group until later exact-clone phases
 
+## Phase 15C Dashboard Clone Checks
+
+1. Open `http://localhost:3000/dashboard` and confirm the Phase `15B` shell still loads correctly around the dashboard page.
+2. Confirm the page header now follows the v1 dashboard layout with:
+   - `Dashboard` title
+   - welcome subtitle
+   - month filter button
+   - list/grid toggle
+   - `New Order` CTA
+3. Open the month filter popover and confirm:
+   - `All Time` and `By Month` options render
+   - month chips render
+   - year adjusters render
+   - `Reset` and `Apply` work without breaking the layout
+4. Confirm the six KPI cards render in the v1 order:
+   - `TOTAL ORDERS`
+   - `TOTAL SALES`
+   - `TOTAL PRODUCTS`
+   - `TOTAL CUSTOMERS`
+   - `TOTAL COLLECTION`
+   - `OUTSTANDING`
+5. Confirm the middle three cards render in the v1 order:
+   - `Stock Alerts`
+   - `Top Sellers`
+   - `Recent Order`
+6. Confirm the bottom row renders in the v1 order:
+   - `Store Performance`
+   - `Staff Performance`
+7. Confirm the year toggle updates the `Store Performance` chart without causing shell overflow.
+8. Confirm `Stock Alerts` uses low-stock data from the backend and shows `Inventory healthy` when no rows are returned.
+9. Confirm `Top Sellers` uses top-product report data and `Recent Order` uses recent-order report data.
+10. Confirm `New Order` navigates safely to `/dashboard/orders` for now.
+11. Confirm `View All` links navigate safely to:
+   - `/dashboard/inventory`
+   - `/dashboard/products`
+   - `/dashboard/orders`
+   - `/dashboard/users`
+12. Confirm the `Staff Performance` card stays visually intact even when the widget shows `Awaiting Data`.
+13. Confirm loading state shows `Syncing Dashboard...` and that empty or sparse data does not break any card height or grid alignment.
+14. Confirm there is no full-page horizontal overflow at desktop or tablet widths.
+
 ## Prerequisites
 
 1. Start the backend:

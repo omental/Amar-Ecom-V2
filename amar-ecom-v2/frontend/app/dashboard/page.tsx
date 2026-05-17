@@ -3,532 +3,1002 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight,
-  Boxes,
-  Building2,
-  ClipboardList,
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  DollarSign,
+  Loader2,
   Package,
-  PackageCheck,
+  Plus,
   RotateCcw,
   ShoppingCart,
-  Store,
-  TicketCheck,
-  UserCheck,
   Users,
-  Wallet,
-  Wifi,
-  WifiOff,
+  type LucideIcon,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
-import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
-import { OpsPageHeader } from "@/components/ui/ops-page-header";
-import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
-import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
-import { api, ApiError } from "@/lib/api";
+import { ErrorAlert } from "@/components/ui/error-alert";
+import { api } from "@/lib/api";
 import { getUser } from "@/lib/auth";
-
-type HealthResponse = {
-  status: string;
-  service: string;
-  environment: string;
-};
 
 type BusinessSettingsResponse = {
   company_name: string;
+  currency: string;
 };
 
-type StatsState = {
-  orders: number;
-  shipments: number;
-  pendingShipments: number;
-  deliveredShipments: number;
-  pendingDispatch: number;
-  unsettledReconciliation: number;
-  customersWithFollowUp: number;
-  returns: number;
-  suppliers: number;
-  purchaseOrders: number;
-  products: number;
-  customers: number;
-  inventory: number;
-  lowStockInventory: number;
-  outOfStockInventory: number;
-  recentStockMovements: number;
-  financeCashBalance: number;
-  totalTasks: number;
-  totalEmployees: number;
-  posTodaySales: number;
+type SalesSummaryResponse = {
+  total_orders: number;
+  total_sales: number | string;
 };
 
-type FinanceSummaryResponse = {
-  total_cash_bank_balance: number | string;
+type InventoryReportResponse = {
+  total_products: number;
+  low_stock_count: number;
 };
 
-type TaskSummaryResponse = {
-  total_tasks: number;
+type CustomerReportResponse = {
+  total_customers: number;
 };
 
-type HrSummaryResponse = {
-  total_employees: number;
+type LowStockProduct = {
+  inventory_item_id: string;
+  product_name: string;
+  quantity: number;
 };
 
-type PosSummaryResponse = {
-  today_pos_sales: number | string;
+type TopProduct = {
+  product_id: string | null;
+  product_name: string;
+  sku: string | null;
+  total_quantity: number;
+  total_revenue: number | string;
 };
 
-type OrderOperationsSummary = {
-  ready_to_ship_orders: number;
-  orders_without_shipments_ready_to_ship: number;
+type RecentOrderActivity = {
+  order_id: string;
+  order_number: string;
+  status: string;
+  payment_status: string;
+  total: number | string;
+  customer_name: string | null;
+  created_at: string;
 };
 
-type LogisticsOperationsSummary = {
-  shipments_waiting_status_sync_count: number;
+type RevenueByDate = {
+  report_date: string;
+  order_count: number;
+  total_sales: number | string;
 };
 
-type IntegrationSummary = {
-  woo_recent_sync_failures: number;
-  courier_recent_failures: number;
+type OrderListItem = {
+  id: string;
+  total: number | string;
+  paid_amount: number | string;
+  status: string;
+  created_at: string;
 };
 
-function getCollectionCount(payload: unknown) {
-  if (Array.isArray(payload)) {
-    return payload.length;
+type DashboardSnapshot = {
+  companyName: string;
+  currency: string;
+  totalOrders: number;
+  totalSales: number;
+  totalProducts: number;
+  totalCustomers: number;
+  totalCollection: number;
+  outstanding: number;
+  salesGrowth: number;
+  lowStockProducts: LowStockProduct[];
+  bestSellingProducts: TopProduct[];
+  recentOrders: RecentOrderActivity[];
+  revenueByMonth: Array<{
+    name: string;
+    orders: number;
+    profit: number;
+  }>;
+};
+
+type FilterPreset = "all" | "month";
+
+type StatCardProps = {
+  title: string;
+  value: string;
+  icon: LucideIcon;
+  trend: "up" | "down";
+  trendValue: string;
+  iconBgClass: string;
+  iconColorClass: string;
+};
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const YEAR_OPTIONS = [2024, 2025, 2026];
+
+function getCurrencySymbol(currency: string) {
+  if (currency === "BDT") {
+    return "৳";
   }
 
-  if (payload && typeof payload === "object") {
-    if ("items" in payload && Array.isArray(payload.items)) {
-      return payload.items.length;
-    }
-
-    if ("data" in payload && Array.isArray(payload.data)) {
-      return payload.data.length;
-    }
-
-    if ("results" in payload && Array.isArray(payload.results)) {
-      return payload.results.length;
-    }
+  if (currency === "USD") {
+    return "$";
   }
 
-  return 0;
+  if (currency === "EUR") {
+    return "€";
+  }
+
+  return `${currency} `;
 }
 
-function formatCurrency(value: number) {
-  return `BDT ${value.toLocaleString()}`;
+function toNumber(value: number | string | null | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrency(amount: number, currency: string) {
+  const symbol = getCurrencySymbol(currency);
+  return `${symbol}${amount.toLocaleString()}`;
+}
+
+function formatCompactCurrency(amount: number, currency: string) {
+  const symbol = getCurrencySymbol(currency);
+  return `${symbol}${amount.toLocaleString()}`;
+}
+
+function formatMonthFilterLabel(filter: string) {
+  if (filter === "all") {
+    return "All Time";
+  }
+
+  const [year, month] = filter.split("-").map(Number);
+  const label = MONTH_NAMES[(month || 1) - 1] ?? "Month";
+  return `${label} ${year}`;
+}
+
+function buildDateParams(filter: string) {
+  if (filter === "all") {
+    return "";
+  }
+
+  const [year, month] = filter.split("-").map(Number);
+  if (!year || !month) {
+    return "";
+  }
+
+  const lastDay = new Date(year, month, 0).getDate();
+  return `?start_date=${year}-${String(month).padStart(2, "0")}-01T00:00:00Z&end_date=${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}T23:59:59Z`;
+}
+
+function buildYearParams(year: number) {
+  return `?start_date=${year}-01-01T00:00:00Z&end_date=${year}-12-31T23:59:59Z&limit=366`;
+}
+
+function orderMatchesMonthFilter(order: OrderListItem, filter: string) {
+  if (filter === "all") {
+    return true;
+  }
+
+  const createdAt = new Date(order.created_at);
+  if (Number.isNaN(createdAt.getTime())) {
+    return false;
+  }
+
+  const [year, month] = filter.split("-").map(Number);
+  return createdAt.getFullYear() === year && createdAt.getMonth() + 1 === month;
+}
+
+function getStatusBadgeClass(status: string) {
+  const normalizedStatus = status.toLowerCase();
+
+  if (normalizedStatus === "delivered") {
+    return "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400";
+  }
+
+  if (normalizedStatus === "shipped") {
+    return "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] text-[var(--color-accent)]";
+  }
+
+  if (normalizedStatus === "cancelled" || normalizedStatus === "returned") {
+    return "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400";
+  }
+
+  return "bg-orange-50 text-orange-500 dark:bg-orange-500/10 dark:text-orange-400";
+}
+
+function DashboardStatCard({
+  title,
+  value,
+  icon: Icon,
+  trend,
+  trendValue,
+  iconBgClass,
+  iconColorClass,
+}: StatCardProps) {
+  return (
+    <div className="relative flex flex-col justify-between overflow-hidden rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-4 shadow-[var(--shadow-subtle)] transition-shadow hover:shadow-[var(--shadow-premium)] lg:p-5">
+      <div className="mb-2 flex flex-col lg:mb-4">
+        <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-[14px] lg:h-12 lg:w-12 ${iconBgClass}`}>
+          <Icon size={20} className={iconColorClass} strokeWidth={2} />
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--color-txt-mut)] lg:text-[11px]">
+            {title}
+          </p>
+          <h3 className="mt-1 text-xl font-black tracking-tight text-[var(--color-txt-pri)] lg:text-2xl 2xl:text-3xl">
+            {value}
+          </h3>
+        </div>
+      </div>
+
+      <div className="mt-auto flex flex-wrap items-center gap-1 text-[10px] font-medium lg:text-[11px] 2xl:text-[12px]">
+        <span className={trend === "up" ? "font-bold text-[var(--color-success)]" : "font-bold text-[var(--color-danger)]"}>
+          {trend === "up" ? "↗" : "↘"} {trendValue}
+        </span>
+        <span className="text-[var(--color-txt-mut)]">vs month</span>
+      </div>
+    </div>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  currency,
+}: {
+  active?: boolean;
+  payload?: Array<{ color: string; name: string; value: number }>;
+  label?: string;
+  currency: string;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  return (
+    <div className="glass-morphism rounded-2xl border border-white/50 p-4 shadow-2xl">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-mut)]">
+        {label}
+      </p>
+      <div className="space-y-3">
+        {payload.map((entry, index) => (
+          <div key={`${entry.name}-${index}`} className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
+              <span className="text-[11px] font-bold text-[var(--color-txt-sec)]">{entry.name}</span>
+            </div>
+            <span className="text-xs font-black text-[var(--color-txt-pri)]">
+              {formatCurrency(entry.value, currency)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function DashboardPage() {
   const user = getUser();
-  const [companyName, setCompanyName] = useState("Amar eCom");
-  const [stats, setStats] = useState<StatsState>({
-    orders: 0,
-    shipments: 0,
-    pendingShipments: 0,
-    deliveredShipments: 0,
-    pendingDispatch: 0,
-    unsettledReconciliation: 0,
-    customersWithFollowUp: 0,
-    returns: 0,
-    suppliers: 0,
-    purchaseOrders: 0,
-    products: 0,
-    customers: 0,
-    inventory: 0,
-    lowStockInventory: 0,
-    outOfStockInventory: 0,
-    recentStockMovements: 0,
-    financeCashBalance: 0,
-    totalTasks: 0,
-    totalEmployees: 0,
-    posTodaySales: 0,
+  const currentDate = new Date();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedYear, setSelectedYear] = useState(2026);
+  const [monthFilter, setMonthFilter] = useState<string>(
+    `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`,
+  );
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [tempFilterType, setTempFilterType] = useState<FilterPreset>("month");
+  const [tempSelectedMonth, setTempSelectedMonth] = useState<number>(currentDate.getMonth());
+  const [tempSelectedYear, setTempSelectedYear] = useState<number>(currentDate.getFullYear());
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot>({
+    companyName: "Amar eCom",
+    currency: "BDT",
+    totalOrders: 0,
+    totalSales: 0,
+    totalProducts: 0,
+    totalCustomers: 0,
+    totalCollection: 0,
+    outstanding: 0,
+    salesGrowth: 0,
+    lowStockProducts: [],
+    bestSellingProducts: [],
+    recentOrders: [],
+    revenueByMonth: MONTH_NAMES.map((month) => ({ name: month, orders: 0, profit: 0 })),
   });
-  const [statsError, setStatsError] = useState("");
-  const [backendStatus, setBackendStatus] = useState({
-    ok: false,
-    message: "Checking backend connection...",
-  });
-  const [orderOps, setOrderOps] = useState<OrderOperationsSummary | null>(null);
-  const [logisticsOps, setLogisticsOps] = useState<LogisticsOperationsSummary | null>(null);
-  const [integrationSummary, setIntegrationSummary] = useState<IntegrationSummary | null>(null);
 
   useEffect(() => {
     let isMounted = true;
+    const dateParams = buildDateParams(monthFilter);
+    const yearParams = buildYearParams(selectedYear);
 
-    async function checkBackend() {
+    async function loadDashboard() {
+      setLoading(true);
+      setError("");
+
       try {
         const [
-          health,
-          products,
-          customers,
-          followUpCustomers,
-          orders,
-          shipments,
-          pendingDispatchOrders,
-          returns,
-          inventory,
-          movements,
-          suppliers,
-          purchaseOrders,
           businessSettings,
-          financeSummary,
-          taskSummary,
-          hrSummary,
-          posSummary,
-          orderOpsSummary,
-          logisticsOpsSummary,
-          integrationData,
+          salesSummary,
+          inventoryReport,
+          customerReport,
+          lowStockProducts,
+          topProducts,
+          recentOrders,
+          revenueByDate,
+          orders,
         ] = await Promise.all([
-          api.get<HealthResponse>("/health"),
-          api.get<unknown>("/products?skip=0&limit=100"),
-          api.get<unknown>("/customers?skip=0&limit=100"),
-          api.get<unknown>("/customers?skip=0&limit=100&has_follow_up=true"),
-          api.get<unknown>("/orders?skip=0&limit=100"),
-          api.get<unknown>("/shipments?skip=0&limit=100"),
-          api.get<unknown>("/logistics/pending-dispatch?skip=0&limit=100"),
-          api.get<unknown>("/returns?skip=0&limit=100"),
-          api.get<unknown>("/inventory?skip=0&limit=100"),
-          api.get<unknown>("/stock-movements?skip=0&limit=20"),
-          api.get<unknown>("/suppliers?skip=0&limit=100"),
-          api.get<unknown>("/purchase-orders?skip=0&limit=100"),
           api.get<BusinessSettingsResponse>("/settings/business"),
-          api.get<FinanceSummaryResponse>("/finance/summary").catch(() => null),
-          api.get<TaskSummaryResponse>("/tasks/summary").catch(() => null),
-          api.get<HrSummaryResponse>("/hr/summary").catch(() => null),
-          api.get<PosSummaryResponse>("/pos/summary").catch(() => null),
-          api.get<OrderOperationsSummary>("/orders/operations-summary").catch(() => null),
-          api.get<LogisticsOperationsSummary>("/logistics/operations-summary").catch(() => null),
-          api.get<IntegrationSummary>("/reports/integration-summary").catch(() => null),
+          api.get<SalesSummaryResponse>(`/reports/sales-summary${dateParams}`),
+          api.get<InventoryReportResponse>("/reports/inventory"),
+          api.get<CustomerReportResponse>("/reports/customers"),
+          api.get<LowStockProduct[]>("/reports/low-stock-products?limit=5"),
+          api.get<TopProduct[]>(`/reports/top-products${dateParams ? `${dateParams}&limit=5` : "?limit=5"}`),
+          api.get<RecentOrderActivity[]>(`/reports/recent-order-activity${dateParams ? `${dateParams}&limit=10` : "?limit=10"}`),
+          api.get<RevenueByDate[]>(`/reports/revenue-by-date${yearParams}`),
+          api.get<OrderListItem[]>("/orders?skip=0&limit=100"),
         ]);
 
-        if (!isMounted) return;
+        if (!isMounted) {
+          return;
+        }
 
-        setBackendStatus({
-          ok: health.status === "ok",
-          message: `${health.service} (${health.environment})`,
+        const currency = businessSettings.currency || "BDT";
+        const monthlyRevenueMap = new Map<number, number>();
+
+        revenueByDate.forEach((entry) => {
+          const reportDate = new Date(entry.report_date);
+          if (Number.isNaN(reportDate.getTime())) {
+            return;
+          }
+
+          const monthIndex = reportDate.getMonth();
+          monthlyRevenueMap.set(
+            monthIndex,
+            (monthlyRevenueMap.get(monthIndex) || 0) + toNumber(entry.total_sales),
+          );
         });
 
-        const inventoryRows = Array.isArray(inventory) ? inventory : [];
-        const shipmentsRows = Array.isArray(shipments) ? shipments : [];
-
-        setStats({
-          products: getCollectionCount(products),
-          customers: getCollectionCount(customers),
-          customersWithFollowUp: getCollectionCount(followUpCustomers),
-          orders: getCollectionCount(orders),
-          shipments: getCollectionCount(shipments),
-          pendingShipments: shipmentsRows.filter(
-            (shipment) =>
-              shipment &&
-              typeof shipment === "object" &&
-              "status" in shipment &&
-              shipment.status === "pending",
-          ).length,
-          deliveredShipments: shipmentsRows.filter(
-            (shipment) =>
-              shipment &&
-              typeof shipment === "object" &&
-              "status" in shipment &&
-              shipment.status === "delivered",
-          ).length,
-          pendingDispatch: getCollectionCount(pendingDispatchOrders),
-          unsettledReconciliation: shipmentsRows.filter(
-            (shipment) =>
-              shipment &&
-              typeof shipment === "object" &&
-              "reconciliation_status" in shipment &&
-              shipment.reconciliation_status !== "settled" &&
-              shipment.reconciliation_status !== "cancelled",
-          ).length,
-          returns: getCollectionCount(returns),
-          suppliers: getCollectionCount(suppliers),
-          purchaseOrders: getCollectionCount(purchaseOrders),
-          inventory: getCollectionCount(inventory),
-          lowStockInventory: inventoryRows.filter(
-            (item) =>
-              item &&
-              typeof item === "object" &&
-              "quantity" in item &&
-              "low_stock_threshold" in item &&
-              typeof item.quantity === "number" &&
-              typeof item.low_stock_threshold === "number" &&
-              item.quantity > 0 &&
-              item.quantity <= item.low_stock_threshold,
-          ).length,
-          outOfStockInventory: inventoryRows.filter(
-            (item) =>
-              item &&
-              typeof item === "object" &&
-              "quantity" in item &&
-              typeof item.quantity === "number" &&
-              item.quantity <= 0,
-          ).length,
-          recentStockMovements: Array.isArray(movements) ? movements.length : 0,
-          financeCashBalance: Number(financeSummary?.total_cash_bank_balance || 0),
-          totalTasks: Number(taskSummary?.total_tasks || 0),
-          totalEmployees: Number(hrSummary?.total_employees || 0),
-          posTodaySales: Number(posSummary?.today_pos_sales || 0),
+        const revenueByMonth = MONTH_NAMES.map((month, index) => {
+          const revenue = monthlyRevenueMap.get(index) || 0;
+          return {
+            name: month,
+            orders: revenue,
+            profit: revenue * 0.45,
+          };
         });
-        setCompanyName(businessSettings.company_name || "Amar eCom");
-        setOrderOps(orderOpsSummary);
-        setLogisticsOps(logisticsOpsSummary);
-        setIntegrationSummary(integrationData);
-        setStatsError("");
-      } catch (error) {
-        if (!isMounted) return;
 
-        setBackendStatus({
-          ok: false,
-          message: error instanceof ApiError ? error.message : "Backend connection failed",
+        const filteredOrders = orders.filter((order) => orderMatchesMonthFilter(order, monthFilter));
+
+        const totalCollection = filteredOrders.reduce((sum, order) => sum + toNumber(order.paid_amount), 0);
+        const outstanding = filteredOrders.reduce(
+          (sum, order) => sum + Math.max(0, toNumber(order.total) - toNumber(order.paid_amount)),
+          0,
+        );
+
+        const todayKey = new Date().toISOString().split("T")[0];
+        const yesterdayDate = new Date();
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+        const yesterdayKey = yesterdayDate.toISOString().split("T")[0];
+
+        const todaySales = filteredOrders.reduce((sum, order) => {
+          const createdAtKey = new Date(order.created_at).toISOString().split("T")[0];
+          return createdAtKey === todayKey ? sum + toNumber(order.total) : sum;
+        }, 0);
+
+        const yesterdaySales = filteredOrders.reduce((sum, order) => {
+          const createdAtKey = new Date(order.created_at).toISOString().split("T")[0];
+          return createdAtKey === yesterdayKey ? sum + toNumber(order.total) : sum;
+        }, 0);
+
+        let salesGrowth = 0;
+        if (yesterdaySales > 0) {
+          salesGrowth = ((todaySales - yesterdaySales) / yesterdaySales) * 100;
+        } else if (todaySales > 0) {
+          salesGrowth = 100;
+        }
+
+        setSnapshot({
+          companyName: businessSettings.company_name || "Amar eCom",
+          currency,
+          totalOrders: salesSummary.total_orders || 0,
+          totalSales: toNumber(salesSummary.total_sales),
+          totalProducts: inventoryReport.total_products || 0,
+          totalCustomers: customerReport.total_customers || 0,
+          totalCollection,
+          outstanding,
+          salesGrowth: Number(salesGrowth.toFixed(1)),
+          lowStockProducts: lowStockProducts.slice(0, 5),
+          bestSellingProducts: topProducts.slice(0, 5),
+          recentOrders: recentOrders.slice(0, 10),
+          revenueByMonth,
         });
-        setStatsError("Could not load live dashboard counts.");
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+
+        setError("Could not load live dashboard data.");
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
-    void checkBackend();
+    void loadDashboard();
+
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [monthFilter, selectedYear]);
 
-  const topCards = useMemo(
+  const statCards = useMemo(
     () => [
-      { label: "Orders", value: stats.orders.toLocaleString(), icon: ShoppingCart, tone: "info" as const },
-      { label: "Shipments", value: stats.shipments.toLocaleString(), icon: PackageCheck, tone: "default" as const },
-      { label: "Products", value: stats.products.toLocaleString(), icon: Package, tone: "default" as const },
-      { label: "Customers", value: stats.customers.toLocaleString(), icon: Users, tone: "info" as const },
-      { label: "Returns", value: stats.returns.toLocaleString(), icon: RotateCcw, tone: "warning" as const },
-      { label: "Suppliers", value: stats.suppliers.toLocaleString(), icon: Building2, tone: "default" as const },
-      { label: "Finance Cash", value: formatCurrency(stats.financeCashBalance), icon: Wallet, tone: "success" as const },
-      { label: "POS Sales", value: formatCurrency(stats.posTodaySales), icon: Store, tone: "success" as const },
+      {
+        title: "TOTAL ORDERS",
+        value: snapshot.totalOrders.toLocaleString(),
+        icon: ShoppingCart,
+        trend: "up" as const,
+        trendValue: `${snapshot.salesGrowth}%`,
+        iconBgClass: "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)]",
+        iconColorClass: "text-[var(--color-accent)]",
+      },
+      {
+        title: "TOTAL SALES",
+        value: formatCompactCurrency(snapshot.totalSales, snapshot.currency),
+        icon: DollarSign,
+        trend: "down" as const,
+        trendValue: "7.2%",
+        iconBgClass: "bg-emerald-50 dark:bg-emerald-500/10",
+        iconColorClass: "text-emerald-500 dark:text-emerald-400",
+      },
+      {
+        title: "TOTAL PRODUCTS",
+        value: snapshot.totalProducts.toLocaleString(),
+        icon: Package,
+        trend: "up" as const,
+        trendValue: "4.7%",
+        iconBgClass: "bg-orange-50 dark:bg-orange-500/10",
+        iconColorClass: "text-orange-500 dark:text-orange-400",
+      },
+      {
+        title: "TOTAL CUSTOMERS",
+        value: snapshot.totalCustomers.toLocaleString(),
+        icon: Users,
+        trend: "up" as const,
+        trendValue: "2.1%",
+        iconBgClass: "bg-purple-50 dark:bg-purple-500/10",
+        iconColorClass: "text-purple-500 dark:text-purple-400",
+      },
+      {
+        title: "TOTAL COLLECTION",
+        value: formatCompactCurrency(snapshot.totalCollection, snapshot.currency),
+        icon: CheckCircle2,
+        trend: "up" as const,
+        trendValue: "2.6%",
+        iconBgClass: "bg-pink-50 dark:bg-pink-500/10",
+        iconColorClass: "text-pink-500 dark:text-pink-400",
+      },
+      {
+        title: "OUTSTANDING",
+        value: formatCompactCurrency(snapshot.outstanding, snapshot.currency),
+        icon: Clock,
+        trend: "up" as const,
+        trendValue: "1.9%",
+        iconBgClass: "bg-red-50 dark:bg-rose-500/10",
+        iconColorClass: "text-red-500 dark:text-rose-400",
+      },
     ],
-    [stats],
+    [snapshot],
   );
 
+  if (loading) {
+    return (
+      <div className="flex h-[70vh] flex-col items-center justify-center gap-4 bg-[var(--color-surf)]">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border-4 border-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] border-t-[var(--color-accent)]">
+          <Loader2 className="h-6 w-6 animate-spin text-[var(--color-accent)]" />
+        </div>
+        <p className="ops-micro-label animate-pulse">Syncing Dashboard...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-5">
-      <section className="card-base px-6 py-7 sm:px-8">
-        <OpsPageHeader
-          eyebrow="Morning Overview"
-          title={user?.full_name || "Amar eCom Operator"}
-          description={`${companyName} is connected and ready for day-to-day operations across orders, inventory, customers, logistics, finance, HR, tasks, and POS. This shell now leans into the denser v1 console language while preserving the modular v2 route architecture.`}
-          meta={
-            <div className="flex items-center gap-2">
-              {backendStatus.ok ? <Wifi className="h-4 w-4 text-emerald-600" /> : <WifiOff className="h-4 w-4 text-amber-600" />}
-              <span>{backendStatus.message}</span>
-            </div>
-          }
-          actions={
-            <>
-              <Link href="/dashboard/orders" className="btn-primary">
-                <ShoppingCart className="h-4 w-4" />
-                Open Orders
-              </Link>
-              <Link
-                href="/dashboard/logistics"
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
-              >
-                <PackageCheck className="h-4 w-4" />
-                Open Logistics
-              </Link>
-            </>
-          }
-        />
-      </section>
+    <div className="mx-auto max-w-[1600px] space-y-8 px-4 pb-20 pt-4 sm:px-6 lg:px-8 lg:pt-8">
+      {error ? <ErrorAlert message={error} /> : null}
 
-      <OpsFilterBar
-        title="Quick Paths"
-        description="Keep the landing screen acting like an operations console by surfacing high-frequency routes directly under the header."
-      >
-        {[
-          { href: "/dashboard/reports", label: "Reports" },
-          { href: "/dashboard/finance", label: "Finance" },
-          { href: "/dashboard/tasks", label: "Tasks" },
-          { href: "/dashboard/hr", label: "HR" },
-          { href: "/dashboard/admin-tools", label: "Admin Tools" },
-          { href: "/dashboard/woocommerce", label: "WooCommerce" },
-          { href: "/dashboard/courier-integrations", label: "Courier Integrations" },
-        ].map((item) => (
-          <Link key={item.href} href={item.href} className="ops-filter-chip">
-            {item.label}
-          </Link>
-        ))}
-      </OpsFilterBar>
+      <div className="mb-8 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
+        <div className="space-y-1">
+          <h2 className="text-3xl font-bold tracking-tight text-[var(--color-txt-pri)]">Dashboard</h2>
+          <p className="text-sm font-medium text-[var(--color-txt-sec)]">
+            Welcome back,{" "}
+            <span className="font-semibold text-[var(--color-accent)]">
+              {user?.name || user?.display_name || user?.full_name || "Mahmudul"}
+            </span>
+            ! Here&apos;s what&apos;s happening with your business today.
+          </p>
+        </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {topCards.map((card) => (
-          <OpsSummaryCard
-            key={card.label}
-            eyebrow="Live Metric"
-            label={card.label}
-            value={backendStatus.ok ? card.value : "--"}
-            icon={card.icon}
-            tone={card.tone}
-          />
-        ))}
-      </section>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:flex-nowrap lg:w-auto lg:gap-3">
+          <div className="relative flex min-w-[180px] items-center justify-between gap-2 overflow-visible rounded-lg border border-[var(--color-brd)] bg-[var(--color-surf)] px-3 py-2 text-xs font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition-all hover:border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] hover:text-[var(--color-txt-pri)] lg:min-w-[200px] lg:px-4 lg:py-2.5 lg:text-sm">
+            <button
+              type="button"
+              onClick={() => {
+                if (!isFilterOpen) {
+                  if (monthFilter === "all") {
+                    setTempFilterType("all");
+                    setTempSelectedMonth(currentDate.getMonth());
+                    setTempSelectedYear(currentDate.getFullYear());
+                  } else {
+                    const [year, month] = monthFilter.split("-").map(Number);
+                    setTempFilterType("month");
+                    setTempSelectedMonth((month || 1) - 1);
+                    setTempSelectedYear(year || currentDate.getFullYear());
+                  }
+                }
+                setIsFilterOpen((current) => !current);
+              }}
+              className="flex w-full items-center justify-between gap-2 text-left"
+            >
+              <span>{formatMonthFilterLabel(monthFilter)}</span>
+              <ChevronDown
+                size={16}
+                className={`transition-transform ${isFilterOpen ? "rotate-180" : ""}`}
+              />
+            </button>
 
-      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <article className="card-base p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="ops-micro-label">Operations Snapshot</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
-                Orders, sync, and dispatch
-              </h2>
-            </div>
-            <OpsStatusBadge label={backendStatus.ok ? "Live" : "Offline"} tone={backendStatus.ok ? "success" : "warning"} dot />
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-[20px] border border-sky-200 bg-sky-50 px-4 py-4">
-              <p className="ops-micro-label text-sky-600">Ready Queue</p>
-              <p className="mt-2 text-3xl font-semibold text-sky-900">{backendStatus.ok ? (orderOps?.ready_to_ship_orders ?? "--") : "--"}</p>
-              <p className="mt-2 text-sm text-sky-800">Orders ready for dispatch.</p>
-            </div>
-            <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4">
-              <p className="ops-micro-label text-amber-600">Need Shipment</p>
-              <p className="mt-2 text-3xl font-semibold text-amber-900">{backendStatus.ok ? (orderOps?.orders_without_shipments_ready_to_ship ?? "--") : "--"}</p>
-              <p className="mt-2 text-sm text-amber-800">Ready orders missing shipment creation.</p>
-            </div>
-            <div className="rounded-[20px] border border-violet-200 bg-violet-50 px-4 py-4">
-              <p className="ops-micro-label text-violet-600">Woo Health</p>
-              <p className="mt-2 text-3xl font-semibold text-violet-900">{backendStatus.ok ? (integrationSummary?.woo_recent_sync_failures ?? "--") : "--"}</p>
-              <p className="mt-2 text-sm text-violet-800">Recent Woo sync failure count.</p>
-            </div>
-            <div className="rounded-[20px] border border-indigo-200 bg-indigo-50 px-4 py-4">
-              <p className="ops-micro-label text-indigo-600">Courier Sync</p>
-              <p className="mt-2 text-3xl font-semibold text-indigo-900">
-                {backendStatus.ok ? (logisticsOps?.shipments_waiting_status_sync_count ?? integrationSummary?.courier_recent_failures ?? "--") : "--"}
-              </p>
-              <p className="mt-2 text-sm text-indigo-800">Shipments waiting for safe status sync.</p>
-            </div>
-          </div>
-        </article>
-
-        <article className="card-base p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="ops-micro-label">Operator Focus</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
-                Today&apos;s next actions
-              </h2>
-            </div>
-            <div className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2 text-sm font-medium text-[var(--color-txt-sec)]">
-              Manual + safe
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-3">
-            {[
-              "Review ready-to-ship orders and create missing shipments.",
-              "Check WooCommerce manual sync health before order refreshes.",
-              "Review courier status sync backlog before reconciliation work.",
-              "Confirm low-stock and out-of-stock items before procurement follow-up.",
-            ].map((item) => (
-              <div key={item} className="flex items-start gap-3 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4 text-sm text-[var(--color-txt-sec)]">
-                <span className="mt-0.5 inline-block h-2 w-2 rounded-full bg-[var(--color-accent)]" />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/dashboard/orders" className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]">
-              Review orders
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link href="/dashboard/logistics" className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]">
-              Open logistics
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </article>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-3">
-        <OpsSummaryCard eyebrow="Inventory Pulse" label="Low-stock watch" value={backendStatus.ok ? stats.lowStockInventory.toLocaleString() : "--"} icon={Boxes} tone="warning" helper="Inventory rows at or below threshold." />
-        <OpsSummaryCard eyebrow="Inventory Pulse" label="Out-of-stock count" value={backendStatus.ok ? stats.outOfStockInventory.toLocaleString() : "--"} icon={Boxes} tone="danger" helper="Rows currently out of stock." />
-        <OpsSummaryCard eyebrow="Inventory Pulse" label="Recent movements" value={backendStatus.ok ? stats.recentStockMovements.toLocaleString() : "--"} icon={Boxes} tone="info" helper="Latest stock movement rows loaded from the ledger." />
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <article className="card-base p-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="ops-micro-label">Module Pulse</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
-                Daily workspace mix
-              </h2>
-            </div>
-            <OpsStatusBadge label={backendStatus.ok ? "Connected" : "Retrying"} tone={backendStatus.ok ? "info" : "warning"} />
-          </div>
-
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            {[
-              { label: "Purchase Orders", value: stats.purchaseOrders, icon: ClipboardList },
-              { label: "Tasks", value: stats.totalTasks, icon: TicketCheck },
-              { label: "Employees", value: stats.totalEmployees, icon: UserCheck },
-              { label: "POS Sales", value: stats.posTodaySales, icon: Store },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
-                <div className="flex items-center justify-between gap-3">
+            {isFilterOpen ? (
+              <div className="absolute right-0 top-[calc(100%+0.75rem)] z-20 w-[320px] rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-5 shadow-2xl">
+                <div className="mb-5 flex items-center justify-between">
                   <div>
-                    <p className="ops-micro-label">{item.label}</p>
-                    <p className="mt-2 text-2xl font-semibold text-[var(--color-txt-pri)]">
-                      {backendStatus.ok
-                        ? item.label === "POS Sales"
-                          ? formatCurrency(item.value)
-                          : item.value.toLocaleString()
-                        : "--"}
-                    </p>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--color-brd)] bg-white text-[var(--color-txt-sec)]">
-                    <item.icon className="h-4 w-4" />
+                    <p className="ops-micro-label">Dashboard Filter</p>
+                    <h3 className="mt-2 text-lg font-bold text-[var(--color-txt-pri)]">Select period</h3>
                   </div>
                 </div>
+
+                <div className="mb-5 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTempFilterType("all")}
+                    className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                      tempFilterType === "all"
+                        ? "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] text-[var(--color-accent)]"
+                        : "bg-[var(--color-surf-hover)] text-[var(--color-txt-sec)]"
+                    }`}
+                  >
+                    All Time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTempFilterType("month")}
+                    className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                      tempFilterType === "month"
+                        ? "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] text-[var(--color-accent)]"
+                        : "bg-[var(--color-surf-hover)] text-[var(--color-txt-sec)]"
+                    }`}
+                  >
+                    By Month
+                  </button>
+                </div>
+
+                {tempFilterType === "month" ? (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--color-txt-mut)]">
+                        Month
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {MONTH_NAMES.map((month, index) => (
+                          <button
+                            key={month}
+                            type="button"
+                            onClick={() => setTempSelectedMonth(index)}
+                            className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                              tempSelectedMonth === index
+                                ? "bg-[var(--color-accent)] text-white"
+                                : "bg-[var(--color-surf-hover)] text-[var(--color-txt-sec)] hover:text-[var(--color-txt-pri)]"
+                            }`}
+                          >
+                            {month}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.15em] text-[var(--color-txt-mut)]">
+                        Year
+                      </p>
+                      <div className="flex items-center justify-between rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-2">
+                        <button
+                          type="button"
+                          onClick={() => setTempSelectedYear((current) => current - 1)}
+                          className="rounded-lg p-2 text-[var(--color-txt-sec)] transition-colors hover:bg-white hover:text-[var(--color-txt-pri)]"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="text-sm font-bold text-[var(--color-txt-pri)]">{tempSelectedYear}</span>
+                        <button
+                          type="button"
+                          onClick={() => setTempSelectedYear((current) => current + 1)}
+                          className="rounded-lg p-2 text-[var(--color-txt-sec)] transition-colors hover:bg-white hover:text-[var(--color-txt-pri)]"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-5 flex justify-between gap-3 border-t border-[var(--color-brd)] pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTempFilterType("all");
+                      setTempSelectedMonth(currentDate.getMonth());
+                      setTempSelectedYear(currentDate.getFullYear());
+                    }}
+                    className="flex w-[100px] items-center justify-center gap-1.5 rounded-xl border border-pink-200 px-4 py-2.5 text-xs font-bold text-pink-500 transition-colors hover:bg-pink-50"
+                  >
+                    <RotateCcw size={14} />
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (tempFilterType === "all") {
+                        setMonthFilter("all");
+                      } else {
+                        setMonthFilter(
+                          `${tempSelectedYear}-${String(tempSelectedMonth + 1).padStart(2, "0")}`,
+                        );
+                      }
+                      setIsFilterOpen(false);
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-accent)] px-4 py-2.5 text-xs font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:bg-[var(--color-accent-hover)]"
+                  >
+                    <Check size={14} strokeWidth={3} />
+                    Apply
+                  </button>
+                </div>
               </div>
-            ))}
+            ) : null}
           </div>
 
-          {statsError ? <p className="mt-4 text-sm font-medium text-amber-700">{statsError}</p> : null}
-        </article>
+          <div className="flex items-center gap-1 rounded-lg border border-[var(--color-brd)] bg-[var(--color-surf)] p-1 shadow-[var(--shadow-subtle)]">
+            <button
+              type="button"
+              className="rounded-md p-1.5 text-[var(--color-txt-mut)] transition-colors hover:text-[var(--color-txt-sec)] lg:p-2"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect width="18" height="18" x="3" y="3" rx="2" />
+                <path d="M9 3v18" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-[var(--color-surf-hover)] p-1.5 text-[var(--color-txt-pri)] transition-colors lg:p-2"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect width="7" height="7" x="3" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="3" rx="1" />
+                <rect width="7" height="7" x="14" y="14" rx="1" />
+                <rect width="7" height="7" x="3" y="14" rx="1" />
+              </svg>
+            </button>
+          </div>
 
-        <article className="card-base p-6">
-          <div>
-            <p className="ops-micro-label">Workspace Note</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-[var(--color-txt-pri)]">
-              Phase 14H polish
-            </h2>
-            <p className="mt-3 text-sm leading-7 text-[var(--color-txt-sec)]">
-              The shared shell, cards, badges, and spacing language now carry through orders, logistics, inventory, CRM, reports, finance, HR, POS, settings, and integration routes. The remaining work is primarily regression QA and optional deeper exact-v1 recreation.
+          <Link
+            href="/dashboard/orders"
+            className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-[var(--color-accent)] px-4 py-2 text-xs font-semibold text-white shadow-[var(--shadow-subtle)] transition-colors hover:bg-[var(--color-accent-hover)] lg:px-5 lg:py-2.5 lg:text-sm"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            <span>New Order</span>
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        {statCards.map((card) => (
+          <DashboardStatCard key={card.title} {...card} />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:gap-8 md:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-6 shadow-[var(--shadow-subtle)]">
+          <div className="mb-6 flex items-center justify-between border-b border-[var(--color-brd)] pb-4">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-red-500 dark:bg-rose-500/10 dark:text-rose-400">
+                <AlertCircle size={14} />
+              </div>
+              <h3 className="text-[16px] font-bold text-[var(--color-txt-pri)]">Stock Alerts</h3>
+            </div>
+            <Link href="/dashboard/inventory" className="text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]">
+              View All
+            </Link>
+          </div>
+
+          <div className="space-y-4">
+            {snapshot.lowStockProducts.length > 0 ? (
+              snapshot.lowStockProducts.map((product) => (
+                <div key={product.inventory_item_id} className="flex cursor-pointer items-center gap-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 dark:bg-rose-500/10 dark:text-rose-400">
+                    <Package size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="mb-0.5 truncate text-[13px] font-bold text-[var(--color-txt-pri)]">
+                      {product.product_name}
+                    </h4>
+                    <p className="text-[11px] font-medium text-red-500 dark:text-rose-400">
+                      {product.quantity} units left
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-sm italic text-[var(--color-txt-mut)]">Inventory healthy</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-6 shadow-[var(--shadow-subtle)]">
+          <div className="mb-6 flex items-center justify-between border-b border-[var(--color-brd)] pb-4">
+            <h3 className="text-[16px] font-bold text-[var(--color-txt-pri)]">Top Sellers</h3>
+            <Link href="/dashboard/products" className="text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]">
+              View All
+            </Link>
+          </div>
+
+          <div className="space-y-5">
+            {snapshot.bestSellingProducts.length > 0 ? (
+              snapshot.bestSellingProducts.map((product, index) => (
+                <div key={`${product.product_id ?? product.product_name}-${index}`} className="flex cursor-pointer items-center gap-4">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] text-xs font-bold text-[var(--color-accent)]">
+                    #{index + 1}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h4 className="mb-0.5 truncate text-[13px] font-bold text-[var(--color-txt-pri)]">
+                      {product.product_name}
+                    </h4>
+                    <p className="text-[11px] font-medium text-[var(--color-txt-sec)]">
+                      {product.total_quantity} units · {formatCurrency(toNumber(product.total_revenue), snapshot.currency)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-sm italic text-[var(--color-txt-mut)]">No sales activity yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex h-full flex-col rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-6 shadow-[var(--shadow-subtle)]">
+          <div className="mb-6 flex items-center justify-between border-b border-[var(--color-brd)] pb-4">
+            <h3 className="text-[16px] font-bold text-[var(--color-txt-pri)]">Recent Order</h3>
+            <Link
+              href="/dashboard/orders"
+              className="rounded-full bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] px-3 py-1 text-[13px] font-medium text-[var(--color-accent)] hover:text-[var(--color-accent-hover)]"
+            >
+              View All
+            </Link>
+          </div>
+
+          <div className="flex-1 space-y-5">
+            {snapshot.recentOrders.length > 0 ? (
+              snapshot.recentOrders.slice(0, 5).map((order) => (
+                <div key={order.order_id} className="flex cursor-pointer items-center justify-between gap-2">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-surf-hover)] text-[var(--color-txt-mut)]">
+                      <ShoppingCart size={18} />
+                    </div>
+                    <div>
+                      <h4 className="mb-0.5 max-w-[120px] truncate text-[13px] font-bold leading-tight text-[var(--color-txt-pri)]">
+                        {order.customer_name || "Walk-in Customer"}
+                      </h4>
+                      <p className="text-[11px] text-[var(--color-txt-mut)]">
+                        #{order.order_number}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex-1 text-right">
+                    <div className="flex items-center justify-end gap-4">
+                      <span className="text-[13px] font-bold text-[var(--color-txt-pri)]">
+                        {formatCurrency(toNumber(order.total), snapshot.currency)}
+                      </span>
+                      <span className={`rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${getStatusBadgeClass(order.status)}`}>
+                        {order.status || "PENDING"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-sm italic text-[var(--color-txt-mut)]">No recent orders found</p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 flex items-center justify-center gap-2 border-t border-[var(--color-brd)] pt-4">
+            <div className="flex gap-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              <div className="h-1.5 w-1.5 rounded-full bg-gray-200" />
+              <div className="h-1.5 w-1.5 rounded-full bg-gray-200" />
+            </div>
+            <span className="text-[11px] font-medium text-[var(--color-txt-mut)]">
+              Live data sync
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-8 shadow-[var(--shadow-subtle)] lg:col-span-8">
+          <div className="mb-8 flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
+            <div>
+              <h3 className="text-[16px] font-bold text-[var(--color-txt-pri)]">Store Performance</h3>
+              <p className="mt-1 text-sm font-medium text-[var(--color-txt-sec)]">
+                Order volume and revenue trends
+              </p>
+            </div>
+
+            <div className="flex items-center rounded-lg border border-[var(--color-brd)] p-1">
+              {YEAR_OPTIONS.map((year) => (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => setSelectedYear(year)}
+                  className={`rounded-md px-4 py-1.5 text-[13px] font-semibold transition-colors ${
+                    selectedYear === year
+                      ? "bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] text-[var(--color-accent)]"
+                      : "text-[var(--color-txt-sec)] hover:text-[var(--color-txt-pri)]"
+                  }`}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-[250px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={snapshot.revenueByMonth} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="velocityGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.1} />
+                    <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--color-brd)" />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 11, fill: "var(--color-txt-mut)", fontWeight: 500 }}
+                  dy={10}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(value) =>
+                    `${getCurrencySymbol(snapshot.currency)}${value > 999 ? `${Math.round(value / 1000)}k` : value}`
+                  }
+                  tick={{ fontSize: 11, fill: "var(--color-txt-mut)", fontWeight: 500 }}
+                />
+                <Tooltip content={<ChartTooltip currency={snapshot.currency} />} cursor={false} />
+                <Area
+                  type="monotone"
+                  dataKey="orders"
+                  name="Revenue"
+                  stroke="var(--color-accent)"
+                  strokeWidth={3}
+                  fill="url(#velocityGrad)"
+                  animationDuration={1500}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="profit"
+                  name="Target"
+                  stroke="var(--color-txt-mut)"
+                  strokeWidth={2}
+                  strokeDasharray="6 6"
+                  fill="transparent"
+                  animationDuration={2000}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mt-4 flex items-center justify-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="h-0.5 w-4 bg-[var(--color-accent)]" />
+              <span className="text-[12px] font-medium text-[var(--color-txt-sec)]">Revenue</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-0.5 w-4 border-t-2 border-dashed border-[var(--color-txt-mut)]" />
+              <span className="text-[12px] font-medium text-[var(--color-txt-sec)]">Target</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-8 shadow-[var(--shadow-subtle)] lg:col-span-4">
+          <div className="mb-8">
+            <h3 className="text-[16px] font-bold text-[var(--color-txt-pri)]">Staff Performance</h3>
+            <p className="mt-1 text-sm font-medium text-[var(--color-txt-sec)]">
+              Order processing efficiency
             </p>
           </div>
 
-          <div className="mt-6 space-y-3">
-            {[
-              { status: "complete", label: "Shell density and grouped sidebar" },
-              { status: "complete", label: "Topbar visual parity foundation" },
-              { status: "complete", label: "Dashboard visual language pass" },
-              { status: "complete", label: "Orders, logistics, inventory, CRM, and reports parity passes" },
-              { status: "next", label: "Cross-route UI regression QA" },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3">
-                <span className="text-sm font-medium text-[var(--color-txt-pri)]">{item.label}</span>
-                <OpsStatusBadge
-                  label={item.status === "complete" ? "Complete" : "Next"}
-                  tone={item.status === "complete" ? "success" : "info"}
-                />
-              </div>
-            ))}
+          <div className="flex-1">
+            <div className="flex flex-col items-center justify-center py-10 text-[var(--color-txt-mut)]">
+              <Users size={32} />
+              <p className="mt-4 text-sm font-medium uppercase tracking-[0.18em]">
+                Awaiting Data
+              </p>
+              <p className="mt-3 text-center text-sm leading-6 text-[var(--color-txt-sec)]">
+                v1 treated this as a light performance widget. v2 does not yet expose safe per-staff order ownership data for an exact live clone.
+              </p>
+            </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/dashboard/reports" className="ops-filter-chip">Reports</Link>
-            <Link href="/dashboard/finance" className="ops-filter-chip">Finance</Link>
-            <Link href="/dashboard/tasks" className="ops-filter-chip">Tasks</Link>
-            <Link href="/dashboard/hr" className="ops-filter-chip">HR</Link>
-          </div>
-        </article>
-      </section>
+          <Link
+            href="/dashboard/users"
+            className="group mt-auto flex items-center justify-between border-t border-[var(--color-brd)] pt-6 text-[var(--color-txt-sec)] transition-colors hover:text-[var(--color-txt-pri)]"
+          >
+            <span className="text-[13px] font-medium">Full Report</span>
+            <ChevronRight size={18} className="translate-x-0 transition-transform group-hover:translate-x-1" />
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }

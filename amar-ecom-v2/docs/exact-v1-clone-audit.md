@@ -21,9 +21,11 @@ This document resets frontend parity planning around the client's updated requir
 ## Phase Status
 
 - `15B` is now implemented for the shell only.
+- `15C` is now implemented for the dashboard only.
 - The dashboard shell, sidebar, topbar, quick actions, notification popover, collapse behavior, and permission-gated nav have been realigned to the v1 `Layout.tsx` model.
 - Notification behavior is now backed by the v2 notification API rather than mocked frontend state.
 - v2-only routes remain available under a clearly secondary nav group until later exact-clone phases absorb or de-emphasize them.
+- The dashboard page now follows the v1 header, filter bar, six-KPI grid, stock-alerts card, top-sellers card, recent-order card, store-performance chart, and staff-performance panel structure.
 
 ## Match Scale
 
@@ -139,13 +141,13 @@ Match: `Near match`
 10. current v2 equivalent
    `/dashboard`
 11. exact gaps
-   v2 dashboard is functionally broad but structurally different. It lacks the exact v1 hero card composition, card ordering, chart treatment, recent orders presentation, and team activity framing.
+   Core dashboard structure now follows v1 closely. Remaining deviations are mostly data-shape limitations rather than layout mismatch: v1 `Staff Performance` was recreated visually, but v2 does not yet expose safe per-staff order ownership data, so that widget currently stays in an `Awaiting Data` state instead of showing live ranked staff progress. The v1 header also linked to `/orders/new`, while v2 still maps `New Order` to `/dashboard/orders`.
 12. implementation difficulty
    Medium
 13. recommended clone phase
    `15C`
 
-Match: `Partial`
+Match: `Near match`
 
 ### Orders List
 
@@ -934,13 +936,13 @@ Match: `Major mismatch`
 
 ## Recommended First Coding Phase
 
-`15C: Exact v1 Dashboard`
+`15D: Exact v1 Orders workflow`
 
 Reason:
 
-- The shell baseline is now close enough for page-level parity work.
-- Dashboard is the first full screen users land on after auth and will be the first side-by-side parity check after the shell.
-- Orders and inventory still depend on later deeper workflow reconstruction.
+- The shell and landing dashboard now establish the v1 visual and interaction baseline.
+- Orders remains the next highest-visibility operational workflow and still has the biggest modal-versus-route parity gap.
+- Inventory, CRM, logistics, and admin modules depend on the orders clone language that follows.
 
 ## Uncertainty Notes
 

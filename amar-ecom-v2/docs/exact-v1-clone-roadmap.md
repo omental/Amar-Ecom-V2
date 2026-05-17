@@ -48,6 +48,10 @@ Completion notes:
 
 ## Phase 15C: Exact v1 Dashboard
 
+Status:
+
+- Completed on `2026-05-17`
+
 Goals:
 
 - Recreate v1 dashboard card order, hero panel, chart hierarchy, low-stock section, best sellers, recent orders, and team activity
@@ -60,6 +64,13 @@ Primary targets:
 Exit condition:
 
 - Dashboard reads like the v1 landing screen, not a v2 summary console
+
+Completion notes:
+
+- The dashboard now mirrors the v1 structure with the same top header rhythm, month filter popover, list/grid toggle, `New Order` CTA, six KPI cards, `Stock Alerts`, `Top Sellers`, `Recent Order`, `Store Performance`, and `Staff Performance` sections.
+- v2 APIs now back the dashboard using existing report and order endpoints rather than new backend work.
+- The staff-performance widget remains visually present but data-light because v2 does not yet expose safe per-staff order ownership data in the same shape as v1.
+- `New Order` still maps to `/dashboard/orders` until the dedicated v1 workflow is restored in `15D`.
 
 ## Phase 15D: Exact v1 Orders Workflow
 
@@ -213,8 +224,8 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15C`
-- Focus: exact v1 dashboard composition on top of the completed shell baseline
+- Recommended next coding phase: `15D`
+- Focus: exact v1 orders cockpit, create flow, and modal-first order detail behavior
 
 ## Risk Notes
 
