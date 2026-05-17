@@ -74,6 +74,10 @@ Completion notes:
 
 ## Phase 15D: Exact v1 Orders Workflow
 
+Backend support status:
+
+- `15D-support` completed on `2026-05-17`
+
 Goals:
 
 - Restore v1 orders cockpit layout
@@ -90,6 +94,12 @@ Primary targets:
 Exit condition:
 
 - Orders list, create/edit flow, and detail inspection behave like v1
+
+Backend readiness notes:
+
+- Existing order APIs now expose dense v1-friendly list fields, modal-friendly detail helpers, duplicate-warning row data, and broader status-summary counts.
+- The frontend orders clone can build on the current `/api/v1/orders`, `/api/v1/orders/{id}`, `/api/v1/orders/duplicate-check`, and `/api/v1/orders/operations-summary` endpoints without requiring separate `v1-compatible` routes.
+- Remaining work is primarily frontend structure and workflow recreation, not missing backend order primitives.
 
 ## Phase 15E: Exact v1 Inventory Hub
 

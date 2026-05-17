@@ -4171,7 +4171,7 @@ def test_reports_foundation_endpoints() -> None:
                     "product_id": product["id"],
                     "variant_id": None,
                     "warehouse_id": warehouse["id"],
-                    "quantity": 12,
+                    "quantity": 60,
                     "low_stock_threshold": 3,
                 },
             )
@@ -4188,25 +4188,25 @@ def test_reports_foundation_endpoints() -> None:
                     "shipping_address": "Reports shipping address",
                     "notes": "Reports order",
                     "tags": "reports",
-                    "status": "confirmed",
-                    "payment_status": "paid",
-                    "source": "manual",
-                    "subtotal": 500,
-                    "discount": 20,
-                    "delivery_charge": 60,
-                    "total": 540,
-                    "items": [
-                        {
-                            "product_id": product["id"],
-                            "variant_id": None,
-                            "product_name": product["name"],
-                            "sku": product["sku"],
-                            "quantity": 2,
-                            "unit_price": 250,
-                            "total_price": 500,
-                        }
-                    ],
-                },
+                        "status": "confirmed",
+                        "payment_status": "paid",
+                        "source": "manual",
+                        "subtotal": 10000,
+                        "discount": 20,
+                        "delivery_charge": 60,
+                        "total": 10040,
+                        "items": [
+                            {
+                                "product_id": product["id"],
+                                "variant_id": None,
+                                "product_name": product["name"],
+                                "sku": product["sku"],
+                                "quantity": 40,
+                                "unit_price": 250,
+                                "total_price": 10000,
+                            }
+                        ],
+                    },
             )
             assert order_response.status_code == 201, order_response.text
             order = order_response.json()
@@ -4229,14 +4229,14 @@ def test_reports_foundation_endpoints() -> None:
                 f"/api/v1/orders/{order['id']}/create-shipment",
                 headers=headers,
                 json={
-                    "courier_id": courier["id"],
-                    "delivery_charge": 60,
-                    "courier_charge": 40,
-                    "cod_amount": 540,
-                    "collected_amount": 540,
-                    "notes": "Reports shipment",
-                    "order_status": "shipped",
-                },
+                        "courier_id": courier["id"],
+                        "delivery_charge": 60,
+                        "courier_charge": 40,
+                        "cod_amount": 10040,
+                        "collected_amount": 10040,
+                        "notes": "Reports shipment",
+                        "order_status": "shipped",
+                    },
             )
             assert shipment_response.status_code == 201, shipment_response.text
 
@@ -4291,7 +4291,7 @@ def test_reports_foundation_endpoints() -> None:
             assert logistics_report_response.status_code == 200, logistics_report_response.text
             logistics_report = logistics_report_response.json()
             assert logistics_report["total_shipments"] >= 1
-            assert float(logistics_report["total_cod_amount"]) >= 540
+            assert float(logistics_report["total_cod_amount"]) >= 10040
 
             top_products_response = client.get("/api/v1/reports/top-products?limit=50", headers=headers)
             assert top_products_response.status_code == 200, top_products_response.text
@@ -4307,6 +4307,411 @@ def test_reports_foundation_endpoints() -> None:
             pytest.skip("Apply the latest migrations before running this test.")
         if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_order_v1_compatibility_payloads_and_aliases() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Compat Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"compat-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Order compatibility test category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Compat Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"compat-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Order compatibility test brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Compatibility Order Product",
+                    "slug": f"compat-order-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"COMP-{uuid.uuid4().hex[:8]}",
+                    "description": "Compatibility order test product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 450.00,
+                    "cost_price": 300.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            customer_response = client.post(
+                "/api/v1/customers",
+                headers=headers,
+                json={
+                    "name": "Compatibility Customer",
+                    "phone": "01722223333",
+                    "email": "compat.customer@example.com",
+                    "address": "Primary customer address",
+                    "city": "Dhaka",
+                    "customer_type": "vip",
+                    "tags": "repeat,priority",
+                    "notes": "Long-time buyer",
+                },
+            )
+            assert customer_response.status_code == 201, customer_response.text
+            customer = customer_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Compat Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"CWH-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 12,
+                    "low_stock_threshold": 4,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            create_order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "orderNumber": f"ORD-COMP-{uuid.uuid4().hex[:8]}",
+                    "customerId": customer["id"],
+                    "warehouseId": warehouse["id"],
+                    "customerName": "Compatibility Customer",
+                    "customerPhone": "01722223333",
+                    "customerAddress": "House 10, Road 12, Dhaka",
+                    "customer_city": "Dhaka",
+                    "customer_zone": "North",
+                    "district": "Dhaka",
+                    "division": "Dhaka",
+                    "area": "Banani",
+                    "landmark": "Near Lake",
+                    "status": "confirmed",
+                    "payment_status": "partial",
+                    "paymentMethod": "cod",
+                    "channel": "Facebook",
+                    "subtotal": 900,
+                    "discountAmount": 50,
+                    "deliveryCharge": 60,
+                    "paidAmount": 300,
+                    "totalAmount": 910,
+                    "notes": "Call before delivery",
+                    "tags": "urgent,facebook",
+                    "courier_name": "Steadfast",
+                    "tracking_number": "TEMP-TRACKING",
+                    "custom_shipment_number": "TEMP-SHIP-1",
+                    "is_exchange": False,
+                    "items": [
+                        {
+                            "productId": product["id"],
+                            "variantId": None,
+                            "productName": "Compatibility Order Product",
+                            "sku": product["sku"],
+                            "quantity": 2,
+                            "unitPrice": 450,
+                        }
+                    ],
+                },
+            )
+            assert create_order_response.status_code == 201, create_order_response.text
+            created_order = create_order_response.json()
+            order_id = created_order["id"]
+
+            assert created_order["order_number"].startswith("ORD-COMP-")
+            assert created_order["orderNumber"] == created_order["order_number"]
+            assert created_order["customerName"] == "Compatibility Customer"
+            assert created_order["customerPhone"] == "01722223333"
+            assert created_order["customerAddress"] == "House 10, Road 12, Dhaka"
+            assert created_order["paymentMethod"] == "cod"
+            assert float(created_order["deliveryCharge"]) == 60
+            assert float(created_order["paidAmount"]) == 300
+            assert float(created_order["totalAmount"]) == 910
+            assert float(created_order["dueAmount"]) == 610
+            assert created_order["item_count"] == 1
+            assert created_order["first_item_summary"]["product_name"] == "Compatibility Order Product"
+            assert created_order["warehouse_summary"]["id"] == warehouse["id"]
+            assert created_order["courierName"] is None
+            assert created_order["trackingNumber"] is None
+            assert created_order["createdAt"] == created_order["created_at"]
+            assert created_order["updatedAt"] == created_order["updated_at"]
+            assert created_order["action_flags"]["can_create_shipment"] is True
+            assert created_order["action_flags"]["can_print"] is True
+            assert created_order["action_flags"]["can_refresh_woo"] is False
+
+            list_response = client.get(
+                "/api/v1/orders?status=confirmed&payment_status=partial&search=01722223333",
+                headers=headers,
+            )
+            assert list_response.status_code == 200, list_response.text
+            listed_orders = list_response.json()
+            compatibility_row = next(item for item in listed_orders if item["id"] == order_id)
+            assert compatibility_row["shipment_summary"] is None
+            assert compatibility_row["customerName"] == "Compatibility Customer"
+            assert compatibility_row["customerPhone"] == "01722223333"
+            assert compatibility_row["customerAddress"] == "House 10, Road 12, Dhaka"
+            assert compatibility_row["notes"] == "Call before delivery"
+            assert compatibility_row["tags"] == "urgent,facebook"
+
+            duplicate_response = client.get(
+                "/api/v1/orders/duplicate-check?phone=01722223333&limit=5",
+                headers=headers,
+            )
+            assert duplicate_response.status_code == 200, duplicate_response.text
+            duplicates = duplicate_response.json()
+            duplicate_row = next(item for item in duplicates if item["id"] == order_id)
+            assert duplicate_row["orderNumber"] == created_order["order_number"]
+            assert duplicate_row["customerName"] == "Compatibility Customer"
+            assert duplicate_row["customerPhone"] == "01722223333"
+            assert duplicate_row["customerAddress"] == "House 10, Road 12, Dhaka"
+            assert duplicate_row["createdAt"] == duplicate_row["created_at"]
+
+            courier_response = client.post(
+                "/api/v1/couriers",
+                headers=headers,
+                json={
+                    "name": f"Compat Courier {uuid.uuid4().hex[:8]}",
+                    "code": f"CCO-{uuid.uuid4().hex[:8]}",
+                    "contact_phone": "01755555555",
+                    "website": "https://courier.example.com",
+                    "is_active": True,
+                },
+            )
+            assert courier_response.status_code == 201, courier_response.text
+            courier = courier_response.json()
+
+            shipment_response = client.post(
+                f"/api/v1/orders/{order_id}/create-shipment",
+                headers=headers,
+                json={
+                    "courier_id": courier["id"],
+                    "tracking_number": "TRK-COMP-1001",
+                    "delivery_charge": 60,
+                    "courier_charge": 40,
+                    "cod_amount": 610,
+                    "collected_amount": 0,
+                    "notes": "Compatibility shipment",
+                    "order_status": "ready_to_ship",
+                },
+            )
+            assert shipment_response.status_code == 201, shipment_response.text
+
+            detail_response = client.get(f"/api/v1/orders/{order_id}", headers=headers)
+            assert detail_response.status_code == 200, detail_response.text
+            detail = detail_response.json()
+            assert detail["shipment_summary"] is not None
+            assert detail["shipment_summary"]["tracking_number"] == "TRK-COMP-1001"
+            assert detail["shipment_summary"]["courier_name"] == courier["name"]
+            assert detail["courierName"] == courier["name"]
+            assert detail["trackingNumber"] == "TRK-COMP-1001"
+            assert detail["customer_summary"]["name"] == "Compatibility Customer"
+            assert detail["customer_summary"]["phone"] == "01722223333"
+            assert detail["shipping_summary"]["address"] == "House 10, Road 12, Dhaka"
+            assert float(detail["totals_summary"]["due_amount"]) == 610
+            assert any(log["action"] == "order_created" for log in detail["logs"])
+            assert detail["action_flags"]["can_create_shipment"] is False
+            assert detail["action_flags"]["can_mark_delivered"] is False
+            assert detail["action_flags"]["can_cancel"] is True
+
+            printed_response = client.post(f"/api/v1/orders/{order_id}/mark-printed", headers=headers)
+            assert printed_response.status_code == 200, printed_response.text
+            printed_order = printed_response.json()
+            assert printed_order["printed_count"] == 1
+            assert printed_order["lastPrintedAt"] == printed_order["last_printed_at"]
+
+            fulfilled_response = client.patch(
+                f"/api/v1/orders/{order_id}",
+                headers=headers,
+                json={"status": "shipped"},
+            )
+            assert fulfilled_response.status_code == 200, fulfilled_response.text
+            fulfilled_order = fulfilled_response.json()
+            assert fulfilled_order["stock_deducted"] is True
+            assert fulfilled_order["action_flags"]["can_mark_delivered"] is True
+            assert fulfilled_order["action_flags"]["can_deduct_stock_by_status"] is False
+            assert any(event["event_type"] == "status_changed" for event in fulfilled_order["events"])
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["order_events", "shipments", "printed_count", "warehouse_id"]):
+            pytest.skip("Apply the latest order compatibility migrations before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_order_operations_summary_v1_status_counts() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Summary Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"summary-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Order summary test category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category_id = category_response.json()["id"]
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Summary Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"summary-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Order summary test brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand_id = brand_response.json()["id"]
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Summary Order Product",
+                    "slug": f"summary-order-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"SUM-{uuid.uuid4().hex[:8]}",
+                    "description": "Order summary test product",
+                    "category_id": category_id,
+                    "brand_id": brand_id,
+                    "price": 120.00,
+                    "cost_price": 90.00,
+                    "image_url": None,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Summary Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"SWH-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 30,
+                    "low_stock_threshold": 5,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            statuses = [
+                "pending",
+                "confirmed",
+                "processing",
+                "ready_to_ship",
+                "shipped",
+                "delivered",
+                "cancelled",
+                "returned",
+                "partial_delivered",
+                "urgent",
+                "hold",
+            ]
+
+            for status_value in statuses:
+                order_response = client.post(
+                    "/api/v1/orders",
+                    headers=headers,
+                    json={
+                        "order_number": f"ORD-SUM-{status_value}-{uuid.uuid4().hex[:6]}",
+                        "warehouse_id": warehouse["id"],
+                        "customer_phone": f"018{uuid.uuid4().hex[:8]}",
+                        "shipping_address": f"{status_value} address",
+                        "status": status_value,
+                        "payment_status": "unpaid",
+                        "source": "manual",
+                        "subtotal": 120,
+                        "discount": 0,
+                        "delivery_charge": 10,
+                        "total": 130,
+                        "items": [
+                            {
+                                "product_id": product["id"],
+                                "variant_id": None,
+                                "product_name": product["name"],
+                                "sku": product["sku"],
+                                "quantity": 1,
+                                "unit_price": 120,
+                                "total_price": 120,
+                            }
+                        ],
+                    },
+                )
+                assert order_response.status_code == 201, order_response.text
+
+            summary_response = client.get("/api/v1/orders/operations-summary", headers=headers)
+            assert summary_response.status_code == 200, summary_response.text
+            summary = summary_response.json()
+
+            assert summary["total_orders"] >= len(statuses)
+            assert summary["pending_orders"] >= 1
+            assert summary["confirmed_orders"] >= 1
+            assert summary["processing_orders"] >= 1
+            assert summary["ready_to_ship_orders_count"] >= 1
+            assert summary["shipped_orders_count"] >= 1
+            assert summary["delivered_orders_count"] >= 1
+            assert summary["cancelled_orders_count"] >= 1
+            assert summary["returned_orders_count"] >= 1
+            assert summary["partial_delivered_orders"] >= 1
+            assert summary["urgent_orders"] >= 1
+            assert summary["hold_orders"] >= 1
+            assert summary["orders_unprinted_count"] >= len(statuses)
+            assert summary["orders_stock_not_deducted"] >= 1
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["warehouse_id", "order_events", "printed_count"]):
+            pytest.skip("Apply the latest order compatibility migrations before running this test.")
         raise
 
     dispose_engine()

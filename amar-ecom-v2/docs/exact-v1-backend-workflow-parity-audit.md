@@ -24,6 +24,8 @@ This document resets backend parity planning around the client's updated require
 - v2 now exposes `/api/v1/auth/me` with a v1-shell-friendly payload and legacy permission map.
 - v2 now includes a notification backend with unread counts and mark-read actions for shell parity work.
 - Remaining shell limitations are now mostly social-auth parity and exact notification generation breadth, not missing shell support primitives.
+- `15D-support` is now implemented for orders backend compatibility.
+- Existing order endpoints now expose dense v1-friendly order row aliases, modal-friendly detail aliases, extra status-summary counts, month/date filters, and create-schema aliases without replacing the underlying v2 order model.
 
 ## Parity Scale
 
@@ -126,7 +128,7 @@ This document resets backend parity planning around the client's updated require
 5. parity status
    `Partial`
 6. gaps
-   Core order CRUD is strong, but exact v1 field names differ. Status vocabulary is not guaranteed to match v1 pills one-to-one. v1 expects denser list metadata and in-place actions. Duplicate-check support exists but is currently conservative and not clearly shaped around the full v1 duplicate workflow. Export and print foundations exist, but exact v1 dispatch/export field set and print semantics may still need mapping.
+   Core order CRUD is strong, but exact v1 field names differ. Phase `15D-support` closes most of the immediate clone blockers by extending `GET /api/v1/orders`, `GET /api/v1/orders/{id}`, `GET /api/v1/orders/operations-summary`, and `GET /api/v1/orders/duplicate-check` with v1-friendly aliases and denser metadata. `POST /api/v1/orders` now accepts camelCase and v1-form aliases such as `orderNumber`, `customerName`, `customerPhone`, `customerAddress`, `paymentMethod`, `deliveryCharge`, `paidAmount`, `totalAmount`, and item aliases like `productId`, `productName`, and `unitPrice`. Remaining gaps are mostly UI-side exact modal choreography plus non-persisted v1 helper inputs such as city, zone, district, division, area, landmark, courier-name, tracking-number, custom shipment number, and exchange hints, which are accepted for compatibility but not stored as first-class order columns.
 7. implementation risk
    `High`
 8. recommended backend phase
@@ -147,7 +149,7 @@ This document resets backend parity planning around the client's updated require
 5. parity status
    `Partial`
 6. gaps
-   Backend can support detail reads, but exact modal-first workflow likely needs a combined payload closer to v1. Order event history exists in v2, which is stronger than v1, but the frontend may still need field/status mapping and a one-call detail payload tuned for the modal.
+   Backend detail reads now expose v1-friendly modal payload helpers directly from `GET /api/v1/orders/{id}`: `customer_summary`, `shipping_summary`, `totals_summary`, `logs`, `shipment_summary`, `courierName`, `trackingNumber`, `dueAmount`, and safe `action_flags` including `can_print`, `can_edit`, `can_create_shipment`, `can_refresh_woo`, `can_deduct_stock_by_status`, `can_cancel`, and `can_mark_delivered`. Remaining gap is frontend modal-first presentation rather than missing backend detail data.
 7. implementation risk
    `Medium`
 8. recommended backend phase
@@ -168,11 +170,19 @@ This document resets backend parity planning around the client's updated require
 5. parity status
    `Partial`
 6. gaps
-   Exact create/edit field set is broader in v1 than the current v2 create schema. Duplicate checks likely need closer matching to v1 trigger logic. Courier-assisted create flow and address-specific helper data are not exposed in a dedicated support endpoint.
+   Exact create/edit field set is broader in v1 than the native v2 schema, but `15D-support` now accepts the main v1 form aliases safely on the existing create endpoint and keeps duplicate checks warning-only. The duplicate-check response now includes `orderNumber`, customer name, phone, address, total, status, and created-at aliases needed by the v1 warning panel. Courier-assisted create helpers still remain UI-side unless a later exact-clone pass proves a dedicated backend helper is necessary.
 7. implementation risk
    `High`
 8. recommended backend phase
    `15D-support`
+
+### Order Status Vocabulary Mapping
+
+- Native and counted directly: `pending`, `confirmed`, `processing`, `ready_to_ship`, `shipped`, `delivered`, `cancelled`, `returned`, `partial_delivered`, `urgent`, `hold`
+- Stock deduction behavior remains conservative and unchanged:
+  - deduction still occurs only when moving from pre-fulfillment states into `shipped` or `delivered`
+  - `urgent`, `hold`, and `partial_delivered` are exposed for exact v1 UI parity, but they do not bypass the existing v2 safety rules
+- `urgent` and `hold` should currently be treated as display or workflow states rather than special destructive fulfillment transitions
 
 ### Inventory Hub
 

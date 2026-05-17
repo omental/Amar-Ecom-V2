@@ -10,6 +10,7 @@ from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404
 from app.models.customer import Customer
 from app.models.inventory import InventoryItem
+from app.models.courier import Shipment
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product, ProductVariant
 from app.models.user import User
@@ -45,6 +46,7 @@ def _pos_order_query():
         selectinload(Order.items),
         selectinload(Order.customer),
         selectinload(Order.warehouse),
+        selectinload(Order.shipments).selectinload(Shipment.courier),
         selectinload(Order.events).selectinload(OrderEvent.created_by),
         selectinload(Order.stock_movements),
     )

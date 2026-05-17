@@ -45,11 +45,27 @@ Remaining:
 
 ### 15D-support: Orders
 
+Status: `Completed for backend compatibility foundation`
+
 - Align order status vocabulary with the v1 order workflow and badge labels.
 - Expand order create/update schemas where required for the v1 new-order and edit-order form.
 - Match duplicate-check behavior used by the v1 create flow.
 - Confirm print-related fields and event semantics needed by the v1 orders list and detail modal.
 - Expose any courier-ready order fields used directly from the v1 orders workflow.
+
+Completed in this phase:
+
+- `GET /api/v1/orders` now exposes dense v1-friendly row aliases and metadata for the orders cockpit.
+- `GET /api/v1/orders/{id}` now exposes modal-friendly detail aliases, summaries, logs, and safe action flags.
+- `GET /api/v1/orders/operations-summary` now includes v1 status-family counts such as `pending`, `confirmed`, `processing`, `ready_to_ship`, `shipped`, `delivered`, `cancelled`, `returned`, `partial_delivered`, `urgent`, and `hold`.
+- `POST /api/v1/orders` now accepts the main v1 create-flow aliases without changing the underlying v2 model.
+- `GET /api/v1/orders/duplicate-check` now returns the warning-panel row data needed by the v1 new-order flow.
+
+Remaining:
+
+- Some v1 helper inputs are accepted but intentionally not persisted as first-class columns.
+- The exact modal-first edit loop and dense frontend choreography are still part of frontend Phase `15D`.
+- Export and print presentation still need exact UI matching even though the backend print and event foundations are already in place.
 
 ### 15E-support: Inventory
 
@@ -123,15 +139,15 @@ Important:
 
 ## First Backend Support Phase
 
-`15B-support`
+`15D-support`
 
 Reason:
 
-- Auth, permissions, and notifications are foundational to the exact shell clone.
-- Every later screen depends on the shell and protected-route behavior feeling like v1.
-- If the shell is rebuilt before these backend expectations are settled, the next UI phases will inherit the wrong state model.
+- Orders is now the next major exact-clone frontend target.
+- The orders cockpit, modal detail loop, and dedicated new-order workflow depend on dense row data, duplicate warnings, action flags, and exact status vocabulary support.
+- This compatibility layer lets the frontend restore the v1 orders experience without regressing the safer v2 backend model.
 
 Status:
 
-- Backend support for `15B-support` is complete.
-- The next implementation dependency is frontend `15B` shell clone work on top of this compatibility layer.
+- Backend support for `15D-support` is complete.
+- The next implementation dependency is frontend `15D` orders cockpit, modal detail, and dedicated new-order clone work.

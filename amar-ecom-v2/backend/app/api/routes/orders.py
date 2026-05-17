@@ -37,6 +37,7 @@ from app.services.inventory_service import (
     get_fulfillment_inventory_item,
     get_inventory_item_for_fulfillment,
 )
+from app.services.notification_service import notify_admins
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -59,7 +60,7 @@ def _order_query():
         selectinload(Order.items),
         selectinload(Order.customer),
         selectinload(Order.warehouse),
-        selectinload(Order.shipments),
+        selectinload(Order.shipments).selectinload(Shipment.courier),
         selectinload(Order.events).selectinload(OrderEvent.created_by),
         selectinload(Order.stock_movements),
     )
@@ -71,6 +72,41 @@ def _generate_order_number() -> str:
 
 def _generate_shipment_number() -> str:
     return f"SHP-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+
+
+def _month_filter_bounds(month: str) -> tuple[datetime, datetime]:
+    try:
+        year, month_value = month.split("-")
+        start = datetime(int(year), int(month_value), 1, tzinfo=timezone.utc)
+        if int(month_value) == 12:
+            end = datetime(int(year) + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            end = datetime(int(year), int(month_value) + 1, 1, tzinfo=timezone.utc)
+        return start, end
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Month filter must use YYYY-MM format.",
+        ) from exc
+
+
+def _apply_created_at_filters(
+    stmt,
+    *,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    month: str | None = None,
+):
+    if month:
+        month_start, month_end = _month_filter_bounds(month)
+        stmt = stmt.where(Order.created_at >= month_start, Order.created_at < month_end)
+
+    if date_from is not None:
+        stmt = stmt.where(Order.created_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Order.created_at <= date_to)
+
+    return stmt
 
 
 def _should_deduct_stock(previous_status: str, next_status: str, stock_deducted: bool) -> bool:
@@ -198,6 +234,9 @@ async def list_orders(
     payment_status: str | None = Query(default=None),
     status_value: str | None = Query(default=None, alias="status"),
     search: str | None = Query(default=None),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    month: str | None = Query(default=None),
 ) -> list[Order]:
     skip, limit = normalize_pagination(skip, limit)
     stmt = _order_query().order_by(Order.created_at.desc())
@@ -233,6 +272,8 @@ async def list_orders(
             )
         )
 
+    stmt = _apply_created_at_filters(stmt, date_from=date_from, date_to=date_to, month=month)
+
     result = await db.execute(stmt.offset(skip).limit(limit))
     return list(result.scalars().unique().all())
 
@@ -261,6 +302,18 @@ async def get_order_operations_summary(db: DBSession) -> OrderOperationsSummaryR
 
     counts_result = await db.execute(
         select(
+            func.count(Order.id),
+            func.count(Order.id).filter(Order.status == "pending"),
+            func.count(Order.id).filter(Order.status == "confirmed"),
+            func.count(Order.id).filter(Order.status == "processing"),
+            func.count(Order.id).filter(Order.status == "ready_to_ship"),
+            func.count(Order.id).filter(Order.status == "shipped"),
+            func.count(Order.id).filter(Order.status == "delivered"),
+            func.count(Order.id).filter(Order.status == "cancelled"),
+            func.count(Order.id).filter(Order.status == "returned"),
+            func.count(Order.id).filter(Order.status == "partial_delivered"),
+            func.count(Order.id).filter(Order.status == "urgent"),
+            func.count(Order.id).filter(Order.status == "hold"),
             func.count(Order.id).filter(Order.status.in_(open_statuses)),
             func.count(Order.id).filter(Order.status.in_(ready_statuses)),
             func.count(Order.id).filter(Order.status == "shipped"),
@@ -277,18 +330,30 @@ async def get_order_operations_summary(db: DBSession) -> OrderOperationsSummaryR
     )
     row = counts_result.one()
     return OrderOperationsSummaryRead(
-        total_open_orders=row[0] or 0,
-        ready_to_ship_orders=row[1] or 0,
-        shipped_orders=row[2] or 0,
-        delivered_orders=row[3] or 0,
-        cancelled_orders=row[4] or 0,
-        orders_with_woo_source=row[5] or 0,
-        orders_needing_woo_refresh=row[6] or 0,
-        orders_with_shipments=row[7] or 0,
-        orders_without_shipments_ready_to_ship=row[8] or 0,
-        orders_stock_not_deducted=row[9] or 0,
-        orders_printed_count=row[10] or 0,
-        orders_unprinted_count=row[11] or 0,
+        total_orders=row[0] or 0,
+        pending_orders=row[1] or 0,
+        confirmed_orders=row[2] or 0,
+        processing_orders=row[3] or 0,
+        ready_to_ship_orders_count=row[4] or 0,
+        shipped_orders_count=row[5] or 0,
+        delivered_orders_count=row[6] or 0,
+        cancelled_orders_count=row[7] or 0,
+        returned_orders_count=row[8] or 0,
+        partial_delivered_orders=row[9] or 0,
+        urgent_orders=row[10] or 0,
+        hold_orders=row[11] or 0,
+        total_open_orders=row[12] or 0,
+        ready_to_ship_orders=row[13] or 0,
+        shipped_orders=row[14] or 0,
+        delivered_orders=row[15] or 0,
+        cancelled_orders=row[16] or 0,
+        orders_with_woo_source=row[17] or 0,
+        orders_needing_woo_refresh=row[18] or 0,
+        orders_with_shipments=row[19] or 0,
+        orders_without_shipments_ready_to_ship=row[20] or 0,
+        orders_stock_not_deducted=row[21] or 0,
+        orders_printed_count=row[22] or 0,
+        orders_unprinted_count=row[23] or 0,
     )
 
 
@@ -585,6 +650,15 @@ async def mark_order_printed(
         message=f"Marked order {order.order_number} as printed.",
         request=request,
     )
+    await notify_admins(
+        db,
+        title="Order printed",
+        message=f"Order {order.order_number} invoice was printed.",
+        notification_type="order",
+        link=f"/dashboard/orders/{order.id}",
+        module="orders",
+        metadata={"order_id": str(order.id), "event_type": "order_printed"},
+    )
     await commit_or_409(db, "Could not mark order as printed")
     await db.refresh(order)
     return await fetch_one_or_404(db, _order_query().where(Order.id == order.id), "Order not found")
@@ -698,6 +772,15 @@ async def create_shipment_from_order(
                 message=f"Changed order {order.order_number} from {previous_status} to {order.status}.",
                 request=request,
             )
+            await notify_admins(
+                db,
+                title="Order status changed",
+                message=f"Order {order.order_number} moved from {previous_status} to {order.status}.",
+                notification_type="order",
+                link=f"/dashboard/orders/{order.id}",
+                module="orders",
+                metadata={"order_id": str(order.id), "previous_status": previous_status, "status": order.status},
+            )
 
     await log_activity(
         db,
@@ -708,6 +791,15 @@ async def create_shipment_from_order(
         entity_id=shipment.id,
         message=f"Created shipment {shipment_number} from order {order.order_number}.",
         request=request,
+    )
+    await notify_admins(
+        db,
+        title="Shipment created from order",
+        message=f"Shipment {shipment_number} was created from order {order.order_number}.",
+        notification_type="logistics",
+        link=f"/dashboard/orders/{order.id}",
+        module="orders",
+        metadata={"order_id": str(order.id), "shipment_id": str(shipment.id)},
     )
     await commit_or_409(db, "Could not create shipment from order")
     await db.refresh(shipment)
@@ -744,7 +836,22 @@ async def create_order(
             select(Warehouse).where(Warehouse.id == order_in.warehouse_id),
             "Warehouse not found",
         )
-    payload = order_in.model_dump(exclude={"items", "order_number"})
+    payload = order_in.model_dump(
+        exclude={
+            "items",
+            "order_number",
+            "customer_city",
+            "customer_zone",
+            "district",
+            "division",
+            "area",
+            "landmark",
+            "courier_name",
+            "tracking_number",
+            "custom_shipment_number",
+            "is_exchange",
+        }
+    )
     order = Order(
         **payload,
         order_number=order_number,
@@ -787,6 +894,16 @@ async def create_order(
                 note=f"Stock deducted for order {order.order_number}",
             )
         order.stock_deducted = True
+
+    await notify_admins(
+        db,
+        title="New order created",
+        message=f"Order {order.order_number} was created with status {order.status}.",
+        notification_type="order",
+        link=f"/dashboard/orders/{order.id}",
+        module="orders",
+        metadata={"order_id": str(order.id), "status": order.status},
+    )
 
     await commit_or_409(db, "Could not create order")
     await db.refresh(order)
@@ -859,6 +976,15 @@ async def update_order(
             entity_id=order.id,
             message=f"Changed order {order.order_number} from {previous_status} to {order.status}.",
             request=request,
+        )
+        await notify_admins(
+            db,
+            title="Order status changed",
+            message=f"Order {order.order_number} moved from {previous_status} to {order.status}.",
+            notification_type="order",
+            link=f"/dashboard/orders/{order.id}",
+            module="orders",
+            metadata={"order_id": str(order.id), "previous_status": previous_status, "status": order.status},
         )
 
     await commit_or_409(db, "Could not update order")

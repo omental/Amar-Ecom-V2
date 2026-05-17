@@ -241,6 +241,171 @@ Expected result:
 - response contains `computed_invoice_metadata`
 - selected or default template values override invoice title/footer/terms/payment instructions when applicable
 
+## Orders Compatibility List Payload
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/orders?status=confirmed&payment_status=partial&month=2026-05&search=01722223333" `
+  -Headers $headers
+```
+
+Expected result:
+
+- each row still contains the native v2 order fields
+- each row also includes compatibility aliases such as:
+  - `orderNumber`
+  - `customerName`
+  - `customerPhone`
+  - `customerAddress`
+  - `paymentMethod`
+  - `deliveryCharge`
+  - `paidAmount`
+  - `totalAmount`
+  - `dueAmount`
+  - `lastPrintedAt`
+  - `createdAt`
+  - `updatedAt`
+- each row includes dense cockpit helpers such as:
+  - `item_count`
+  - `first_item_summary`
+  - `warehouse_summary`
+  - `shipment_summary`
+  - `courierName`
+  - `trackingNumber`
+
+## Create Order With V1-Compatible Field Aliases
+
+```powershell
+$compatOrderBody = @{
+  orderNumber = "ORD-COMP-1001"
+  customerName = "Compatibility Buyer"
+  customerPhone = "01722223333"
+  customerAddress = "House 10, Road 12, Dhaka"
+  warehouseId = "{warehouseId}"
+  paymentMethod = "cod"
+  channel = "Facebook"
+  subtotal = 900
+  discountAmount = 50
+  deliveryCharge = 60
+  paidAmount = 300
+  totalAmount = 910
+  notes = "Call before delivery"
+  tags = "urgent,facebook"
+  customer_city = "Dhaka"
+  customer_zone = "North"
+  district = "Dhaka"
+  division = "Dhaka"
+  area = "Banani"
+  landmark = "Near Lake"
+  courier_name = "Steadfast"
+  tracking_number = "TEMP-TRACKING"
+  custom_shipment_number = "TEMP-SHIP-1"
+  is_exchange = $false
+  items = @(
+    @{
+      productId = "{productId}"
+      productName = "Compatibility Product"
+      sku = "COMP-1001"
+      quantity = 2
+      unitPrice = 450
+    }
+  )
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/orders `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $compatOrderBody
+```
+
+Expected result:
+
+- the order is created successfully using the alias fields
+- the response still returns native v2 fields
+- the response also returns compatibility aliases such as `orderNumber`, `customerName`, `customerPhone`, `customerAddress`, and `dueAmount`
+- compatibility-only helper inputs are accepted safely without requiring schema-breaking backend changes
+
+## Order Detail Compatibility Payload
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/orders/{orderId} `
+  -Headers $headers
+```
+
+Expected result:
+
+- the response still contains the existing order detail payload
+- the response also includes:
+  - `customer_summary`
+  - `shipping_summary`
+  - `totals_summary`
+  - `logs`
+  - `action_flags`
+  - `shipment_summary`
+  - `courierName`
+  - `trackingNumber`
+- `action_flags` exposes:
+  - `can_print`
+  - `can_edit`
+  - `can_create_shipment`
+  - `can_refresh_woo`
+  - `can_deduct_stock_by_status`
+  - `can_cancel`
+  - `can_mark_delivered`
+
+## Duplicate Check Compatibility
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/orders/duplicate-check?phone=01722223333&limit=5" `
+  -Headers $headers
+```
+
+Expected result:
+
+- the endpoint remains warning-only
+- each row includes:
+  - `order_number`
+  - `orderNumber`
+  - `customer_name`
+  - `customerName`
+  - `customer_phone`
+  - `customerPhone`
+  - `customer_address`
+  - `customerAddress`
+  - `total`
+  - `status`
+  - `created_at`
+  - `createdAt`
+
+## Orders Operations Summary Compatibility
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/orders/operations-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- existing summary fields still work
+- the response now also includes v1-oriented status counts such as:
+  - `total_orders`
+  - `pending_orders`
+  - `confirmed_orders`
+  - `processing_orders`
+  - `ready_to_ship_orders_count`
+  - `shipped_orders_count`
+  - `delivered_orders_count`
+  - `cancelled_orders_count`
+  - `returned_orders_count`
+  - `partial_delivered_orders`
+  - `urgent_orders`
+  - `hold_orders`
+
 ## Create Finance Account
 
 ```powershell

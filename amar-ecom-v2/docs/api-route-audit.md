@@ -39,7 +39,7 @@ Scope:
 | Stock Movements | `/api/v1/stock-movements` | `GET /`, `GET /{id}` | Protected | Read-only ledger surface for adjustments, transfers, returns, orders, and POS. |
 | Stock Transfers | `/api/v1/stock-transfers` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Internal warehouse transfer workflow. |
 | Wastage Logs | `/api/v1/wastage-logs` | `GET /`, `GET /{id}`, `POST /` | Protected | No delete route; acts as an operational log. |
-| Orders | `/api/v1/orders` | `GET /`, `GET /operations-summary`, `GET /dispatch-export`, `GET /duplicate-check`, `POST /batch-actions`, `GET /{id}`, `POST /`, `PATCH /{id}`, `GET /{id}/invoice-data`, `POST /{id}/mark-printed`, `POST /{id}/create-shipment` | Protected | Includes invoice payload, shipment creation handoff, operator-focused summary counts, dispatch CSV export, and safe batch actions. The list endpoint supports safe operational filters such as source, warehouse, stock deducted, has shipment, printed, external status, payment status, status, and search. Batch actions stay conservative and preserve the existing stock-deduction rules. |
+| Orders | `/api/v1/orders` | `GET /`, `GET /operations-summary`, `GET /dispatch-export`, `GET /duplicate-check`, `POST /batch-actions`, `GET /{id}`, `POST /`, `PATCH /{id}`, `GET /{id}/invoice-data`, `POST /{id}/mark-printed`, `POST /{id}/create-shipment` | Protected | Includes invoice payload, shipment creation handoff, operator-focused summary counts, dispatch CSV export, and safe batch actions. Phase `15D-support` extends the existing endpoints for the v1 orders cockpit instead of adding parallel routes: the list endpoint now includes dense row aliases plus month and date filters, the detail endpoint now includes modal-friendly summaries and action flags, the create endpoint accepts v1-style aliases, the duplicate-check endpoint returns warning-panel fields, and the operations summary now includes broader v1 status counts. Batch actions stay conservative and preserve the existing stock-deduction rules. |
 | Returns | `/api/v1/returns` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Restock behavior depends on status/action flags. |
 | Couriers | `/api/v1/couriers` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Internal courier master-data only. |
 | Shipments | `/api/v1/shipments` | `GET /`, `POST /batch-status-update`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Shipment lifecycle and reconciliation surface plus safe batch local-status updates. Batch updates preserve existing timestamp behavior and do not trigger courier API calls. |
@@ -68,5 +68,5 @@ Scope:
 - Fresh migration path was validated against a temporary PostgreSQL database using `alembic upgrade head`.
 - App import succeeded after migration completion.
 - `GET /api/v1/health` returned `200 OK`.
-- Release-candidate backend test pass on 2026-05-16 completed with `30 passed` and `0 skipped`.
+- Release-candidate backend test pass on 2026-05-17 includes the Phase `15D-support` order compatibility coverage.
 - Registered `/api/v1/*` route count at validation time: `157`.
