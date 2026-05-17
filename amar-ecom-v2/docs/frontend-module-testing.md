@@ -1,5 +1,44 @@
 # Frontend Module Testing
 
+## Phase 15B Shell Clone Checks
+
+1. Open `http://localhost:3000/login` and confirm login succeeds without breaking the existing token flow.
+2. After login, confirm the dashboard shell loads using `/api/v1/auth/me` and that the sidebar visibility follows `legacy_permissions`.
+3. Confirm the sidebar groups now follow the v1 order:
+   - `Overview`
+   - `Operations`
+4. Confirm the `Orders` and `Inventory` parent nav items expand and collapse correctly and auto-open when visiting matching routes.
+5. Confirm the desktop sidebar collapse toggle switches between the v1-like `240px` expanded rail and compact icon rail without causing page overflow.
+6. Open `http://localhost:3000/dashboard/pos` and confirm the sidebar auto-minimizes in the v1 style.
+7. Confirm the topbar shows:
+   - search input
+   - quick POS action
+   - quick actions button
+   - theme toggle
+   - notifications button with unread badge
+   - user profile summary
+8. Open the notifications panel and confirm:
+   - notifications load from the backend
+   - unread count loads
+   - filter chips render
+   - `mark read` updates a single row
+   - `mark all read` updates the full list and unread badge
+9. Open the quick actions panel and confirm it overlays cleanly, supports search, and does not cause horizontal overflow.
+10. Open the mobile view and confirm:
+   - the mobile menu button opens the drawer
+   - the overlay closes the drawer
+   - the drawer keeps the same grouped nav order
+   - navigation closes the drawer after selection
+11. Confirm the sidebar footer still exposes the profile block and logout action.
+12. Confirm there is no full-page horizontal overflow on:
+   - `/dashboard`
+   - `/dashboard/orders`
+   - `/dashboard/inventory`
+13. Note these intentional deviations:
+   - `Inbox` is still excluded
+   - `New Order` and `Add Product` submenu entries map to the nearest existing v2 route
+   - v2-only routes remain under a secondary nav group until later exact-clone phases
+
 ## Prerequisites
 
 1. Start the backend:

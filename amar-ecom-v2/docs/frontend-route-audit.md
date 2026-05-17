@@ -8,6 +8,7 @@ Last reviewed: 2026-05-17
 - The client now requires `exact v1 clone behavior`.
 - The exact clone roadmap in [exact-v1-clone-roadmap.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-roadmap.md) supersedes the previous visual roadmap where they conflict.
 - Route health in this file still matters, but a `Working` route does not imply acceptable v1 parity anymore.
+- Backend routes remain functionally strong, but exact shell parity now also depends on `/api/v1/auth/me` and notification endpoints for v1-compatible user context and topbar behavior.
 
 Status labels:
 - `Working`
@@ -63,16 +64,28 @@ Status labels:
   - [exact-v1-clone-audit.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-audit.md)
   - [exact-v1-clone-roadmap.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-roadmap.md)
 
+## Phase 15B Shell Clone Note
+
+- `15B` is now completed for the global dashboard shell.
+- `frontend/app/dashboard/layout.tsx`, `frontend/components/dashboard/sidebar.tsx`, and `frontend/components/dashboard/topbar.tsx` now follow the v1 shell model much more closely.
+- Shell behavior now consumes:
+  - `GET /api/v1/auth/me`
+  - `GET /api/v1/notifications`
+  - `GET /api/v1/notifications/unread-count`
+  - `PATCH /api/v1/notifications/{id}/read`
+  - `PATCH /api/v1/notifications/mark-all-read`
+- Remaining route parity work is now page-level rather than shell-foundation work.
+
 ## Exact Clone Priority Overrides
 
 - Highest structural mismatch routes are now:
-  - shell/sidebar/topbar
   - `/dashboard/orders`
   - `/dashboard/inventory`
   - `/dashboard/customers`
   - `/dashboard/logistics`
   - `/dashboard/settings`
   - `/dashboard/users`
+- Shell/sidebar/topbar has moved from primary mismatch to near-match status, with only documented deviations remaining.
 - Several currently separate v2 routes map to embedded tabs or modal loops inside v1 parent screens. That means route coverage alone is no longer enough to judge parity.
 
 ## Phase 14I Consistency Note

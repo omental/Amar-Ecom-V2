@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, Mail } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
-import { saveToken, saveUser } from "@/lib/auth";
+import { fetchCurrentUser, saveToken, saveUser } from "@/lib/auth";
 
 type LoginResponse = {
   access_token: string;
@@ -42,10 +42,12 @@ export default function LoginPage() {
       });
 
       saveToken(response.access_token);
-      saveUser({
+      const fallbackUser = {
         ...response.user,
         permissions: response.permissions,
-      });
+      };
+      saveUser(fallbackUser);
+      await fetchCurrentUser().catch(() => fallbackUser);
       router.replace("/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {

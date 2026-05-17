@@ -18,6 +18,13 @@ This document resets frontend parity planning around the client's updated requir
 - The client now requires `exact v1 clone behavior`.
 - This exact-clone roadmap supersedes the previous visual roadmap wherever they conflict.
 
+## Phase Status
+
+- `15B` is now implemented for the shell only.
+- The dashboard shell, sidebar, topbar, quick actions, notification popover, collapse behavior, and permission-gated nav have been realigned to the v1 `Layout.tsx` model.
+- Notification behavior is now backed by the v2 notification API rather than mocked frontend state.
+- v2-only routes remain available under a clearly secondary nav group until later exact-clone phases absorb or de-emphasize them.
+
 ## Match Scale
 
 - `Near match`: small visual or workflow differences only
@@ -101,13 +108,13 @@ Match: `Partial`
 10. current v2 equivalent
    `frontend/app/dashboard/layout.tsx`, `frontend/components/dashboard/sidebar.tsx`, `frontend/components/dashboard/topbar.tsx`
 11. exact gaps
-   v2 shell title system, sidebar grouping, logo treatment, active states, submenu behavior, quick actions, notification experience, mobile drawer styling, profile block, and search behavior all differ materially. v2 is flatter and cleaner; v1 is denser and more operational.
+   Core shell parity is now in place, but a few intentional deviations remain: the v1 `Inbox` route is still excluded, v2-only routes are preserved under a secondary group, and `New Order` / `Add Product` submenu entries currently map to the nearest existing v2 route rather than dedicated v1-style standalone screens.
 12. implementation difficulty
    High
 13. recommended clone phase
    `15B`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### Dashboard
 
@@ -917,23 +924,23 @@ Match: `Major mismatch`
 
 ## Highest Mismatch Screens
 
-1. App shell / sidebar / topbar
-2. Inventory hub
-3. Orders list + order detail modal flow
-4. CRM split-pane workspace
-5. Logistics unified command center
-6. Settings center
-7. Team/users plus embedded activity logs
+1. Inventory hub
+2. Orders list + order detail modal flow
+3. CRM split-pane workspace
+4. Logistics unified command center
+5. Settings center
+6. Team/users plus embedded activity logs
+7. Reports taxonomy and composition
 
 ## Recommended First Coding Phase
 
-`15B: Restore exact v1 shell/sidebar/topbar`
+`15C: Exact v1 Dashboard`
 
 Reason:
 
-- Every dashboard screen sits inside the shell
-- v1 navigation grouping and header behavior drive how the rest of the clone should feel
-- orders, inventory, CRM, logistics, settings, and team all inherit the shell language
+- The shell baseline is now close enough for page-level parity work.
+- Dashboard is the first full screen users land on after auth and will be the first side-by-side parity check after the shell.
+- Orders and inventory still depend on later deeper workflow reconstruction.
 
 ## Uncertainty Notes
 

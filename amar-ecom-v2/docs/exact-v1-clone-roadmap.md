@@ -18,6 +18,10 @@ Last reviewed: 2026-05-17
 
 ## Phase 15B: Restore Exact v1 Shell / Sidebar / Topbar
 
+Status:
+
+- Completed on `2026-05-17`
+
 Goals:
 
 - Clone `src/components/Layout.tsx` behavior and look
@@ -34,6 +38,13 @@ Primary targets:
 Exit condition:
 
 - Shell screenshots and interaction flow match v1 closely before page-level module work continues
+
+Completion notes:
+
+- v1 grouped sidebar sections, active states, collapse behavior, mobile drawer, topbar search, quick actions, notifications, theme toggle, and profile block are now cloned onto the v2 shell structure.
+- Shell permission filtering now reads `legacy_permissions` from `/api/v1/auth/me`.
+- Notifications now use live v2 API endpoints for list, unread count, mark-one-read, and mark-all-read behavior.
+- Known deviations remain for the excluded `Inbox` route and for submenu entries that must currently map to existing v2 paths.
 
 ## Phase 15C: Exact v1 Dashboard
 
@@ -199,6 +210,11 @@ Exit condition:
 7. `15H`
 8. `15I`
 9. `15J`
+
+## Current Next Phase
+
+- Recommended next coding phase: `15C`
+- Focus: exact v1 dashboard composition on top of the completed shell baseline
 
 ## Risk Notes
 
