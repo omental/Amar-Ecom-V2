@@ -1,5 +1,13 @@
 # Backend API Testing
 
+## Requirement Reset Note
+
+- These validation steps confirm that the v2 backend is broad and operationally strong.
+- They do not, by themselves, prove exact parity with the v1 Firebase app's field names, statuses, modal workflows, or side effects.
+- Exact v1 backend/workflow parity is now tracked separately in:
+  - `docs/exact-v1-backend-workflow-parity-audit.md`
+  - `docs/exact-v1-backend-gap-roadmap.md`
+
 ## Prerequisites
 
 - Backend path: `D:\Amar-eCom\amar-ecom-v2\backend`
@@ -1187,6 +1195,134 @@ $loginResponse = Invoke-RestMethod `
   -ContentType "application/json" `
   -Body $loginBody
 ```
+
+Expected result:
+
+- login returns the existing token payload without breaking prior consumers
+- successful login updates `last_login` for the user when the new compatibility field is available
+
+## Auth Me Compatibility Payload
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/auth/me `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns `id` and `uid`
+- returns `name`, `full_name`, `display_name`, `email`, `role`
+- returns both `active` and `is_active`
+- returns normalized `permissions`
+- returns v1-style `legacy_permissions`
+- returns `has_full_access`
+- returns `last_login` and `lastLogin`
+- returns `created_at` and `createdAt`
+- returns nullable `photo_url` and `photoURL`
+
+## Create Broadcast Notification
+
+```powershell
+$notificationBody = @{
+  title = "System notice"
+  message = "Visible in the shell notification drawer"
+  type = "info"
+  module = "dashboard"
+  link = "/dashboard"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/notifications `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $notificationBody
+```
+
+Expected result:
+
+- admin can create a broadcast notification
+- response includes `read = false`
+- notification is visible to authenticated users through the list endpoint
+
+## Create User Notification
+
+```powershell
+$targetedNotificationBody = @{
+  user_id = "{userId}"
+  title = "Permission updated"
+  message = "Your module access changed"
+  type = "warning"
+  module = "team"
+  link = "/dashboard/team"
+  metadata = @{
+    source = "manual-test"
+  }
+} | ConvertTo-Json -Depth 4
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/notifications `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $targetedNotificationBody
+```
+
+## List Visible Notifications
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/notifications?unread_only=false&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- current user sees their targeted notifications
+- current user also sees broadcast notifications where `user_id` is null
+- users do not see notifications targeted to other users
+
+## Get Notification Unread Count
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/notifications/unread-count `
+  -Headers $headers
+```
+
+Expected result:
+
+- response returns `unread_count`
+- count includes targeted plus broadcast unread notifications visible to the current user
+
+## Mark One Notification Read
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/notifications/{notificationId}/read" `
+  -Method Patch `
+  -Headers $headers
+```
+
+Expected result:
+
+- selected visible notification returns with `read = true`
+- unread count decreases on the next unread-count request
+
+## Mark All Notifications Read
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/notifications/mark-all-read `
+  -Method Patch `
+  -Headers $headers
+```
+
+Expected result:
+
+- all visible unread notifications become read
+- response returns `unread_count = 0`
 
 ## Store Token in PowerShell Variable
 

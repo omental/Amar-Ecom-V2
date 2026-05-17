@@ -34,17 +34,24 @@ def dispose_engine() -> None:
     asyncio.run(engine.dispose())
 
 
-def register_user(email: str, password: str = "StrongPass123") -> dict:
+def register_user(
+    email: str,
+    password: str = "StrongPass123",
+    *,
+    role: str = "admin",
+    is_active: bool = True,
+    full_name: str = "Test User",
+) -> dict:
     try:
         with TestClient(app) as client:
             response = client.post(
                 "/api/v1/auth/register",
                 json={
-                    "full_name": "Test User",
+                    "full_name": full_name,
                     "email": email,
                     "password": password,
-                    "role": "admin",
-                    "is_active": True,
+                    "role": role,
+                    "is_active": is_active,
                 },
             )
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
@@ -128,6 +135,186 @@ def test_login() -> None:
     assert body["token_type"] == "bearer"
     assert body["user"]["email"] == email
     assert body["access_token"]
+
+
+def test_auth_me_compatibility_payload_and_login_last_login() -> None:
+    admin_email = unique_email()
+    staff_email = unique_email()
+
+    try:
+        register_user(admin_email, full_name="Admin Compatibility")
+        admin_login = login_user(admin_email)
+        admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+
+        created_staff = register_user(
+            staff_email,
+            role="staff",
+            is_active=True,
+            full_name="Staff Compatibility",
+        )
+
+        with TestClient(app) as client:
+            seed_response = client.post("/api/v1/permissions/seed-defaults", headers=admin_headers)
+            assert seed_response.status_code == 201, seed_response.text
+
+            assign_response = client.patch(
+                f"/api/v1/users/{created_staff['id']}/permissions",
+                headers=admin_headers,
+                json={
+                    "permission_keys": [
+                        "orders.view",
+                        "products.view",
+                        "customers.view",
+                        "pos.view",
+                    ]
+                },
+            )
+            assert assign_response.status_code == 200, assign_response.text
+
+            admin_me_response = client.get("/api/v1/auth/me", headers=admin_headers)
+            assert admin_me_response.status_code == 200, admin_me_response.text
+            admin_me = admin_me_response.json()
+            assert admin_me["email"] == admin_email
+            assert admin_me["uid"] == admin_me["id"]
+            assert admin_me["active"] is True
+            assert admin_me["is_active"] is True
+            assert admin_me["has_full_access"] is True
+            assert all(admin_me["legacy_permissions"].values()) is True
+            assert admin_me["display_name"] == "Admin Compatibility"
+            assert admin_me["photo_url"] is None
+            assert admin_me["photoURL"] is None
+
+            staff_login_response = client.post(
+                "/api/v1/auth/login",
+                json={"email": staff_email, "password": "StrongPass123"},
+            )
+            assert staff_login_response.status_code == 200, staff_login_response.text
+            staff_token = staff_login_response.json()["access_token"]
+            staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+            staff_me_response = client.get("/api/v1/auth/me", headers=staff_headers)
+            assert staff_me_response.status_code == 200, staff_me_response.text
+            staff_me = staff_me_response.json()
+            assert staff_me["name"] == "Staff Compatibility"
+            assert staff_me["full_name"] == "Staff Compatibility"
+            assert set(staff_me["permissions"]) == {"orders.view", "products.view", "customers.view", "pos.view"}
+            assert staff_me["legacy_permissions"]["dashboard"] is False
+            assert staff_me["legacy_permissions"]["orders"] is True
+            assert staff_me["legacy_permissions"]["inventory"] is True
+            assert staff_me["legacy_permissions"]["crm"] is True
+            assert staff_me["legacy_permissions"]["pos"] is True
+            assert staff_me["legacy_permissions"]["logistics"] is False
+            assert staff_me["legacy_permissions"]["settings"] is False
+            assert staff_me["has_full_access"] is False
+            assert staff_me["last_login"] is not None
+            assert staff_me["lastLogin"] == staff_me["last_login"]
+            assert staff_me["createdAt"] == staff_me["created_at"]
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["last_login", "notifications", "permissions", "user_permissions"]):
+            pytest.skip("Apply the latest auth compatibility migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_notifications_visibility_and_read_flow() -> None:
+    admin_email = unique_email()
+    target_email = unique_email()
+    other_email = unique_email()
+
+    try:
+        register_user(admin_email, full_name="Notification Admin")
+        admin_login = login_user(admin_email)
+        admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+
+        target_user = register_user(target_email, role="staff", is_active=True, full_name="Target User")
+        register_user(other_email, role="staff", is_active=True, full_name="Other User")
+
+        target_login = login_user(target_email)
+        other_login = login_user(other_email)
+        target_headers = {"Authorization": f"Bearer {target_login['access_token']}"}
+        other_headers = {"Authorization": f"Bearer {other_login['access_token']}"}
+
+        with TestClient(app) as client:
+            broadcast_response = client.post(
+                "/api/v1/notifications",
+                headers=admin_headers,
+                json={
+                    "title": "Broadcast notice",
+                    "message": "Visible to everyone in the shell.",
+                    "type": "info",
+                    "module": "dashboard",
+                    "link": "/dashboard",
+                },
+            )
+            assert broadcast_response.status_code == 201, broadcast_response.text
+            broadcast_notification = broadcast_response.json()
+
+            targeted_response = client.post(
+                "/api/v1/notifications",
+                headers=admin_headers,
+                json={
+                    "user_id": target_user["id"],
+                    "title": "Targeted notice",
+                    "message": "Visible only to the targeted user.",
+                    "type": "warning",
+                    "module": "team",
+                    "link": "/dashboard/team",
+                    "metadata": {"source": "test"},
+                },
+            )
+            assert targeted_response.status_code == 201, targeted_response.text
+            targeted_notification = targeted_response.json()
+            assert targeted_notification["metadata"]["source"] == "test"
+
+            target_list_response = client.get("/api/v1/notifications", headers=target_headers)
+            assert target_list_response.status_code == 200, target_list_response.text
+            target_notifications = target_list_response.json()
+            target_ids = {item["id"] for item in target_notifications}
+            assert broadcast_notification["id"] in target_ids
+            assert targeted_notification["id"] in target_ids
+
+            other_list_response = client.get("/api/v1/notifications", headers=other_headers)
+            assert other_list_response.status_code == 200, other_list_response.text
+            other_notifications = other_list_response.json()
+            other_ids = {item["id"] for item in other_notifications}
+            assert broadcast_notification["id"] in other_ids
+            assert targeted_notification["id"] not in other_ids
+
+            unread_target_response = client.get("/api/v1/notifications/unread-count", headers=target_headers)
+            assert unread_target_response.status_code == 200, unread_target_response.text
+            assert unread_target_response.json()["unread_count"] >= 2
+
+            mark_one_response = client.patch(
+                f"/api/v1/notifications/{targeted_notification['id']}/read",
+                headers=target_headers,
+            )
+            assert mark_one_response.status_code == 200, mark_one_response.text
+            assert mark_one_response.json()["read"] is True
+
+            unread_filtered_response = client.get(
+                "/api/v1/notifications?unread_only=true",
+                headers=target_headers,
+            )
+            assert unread_filtered_response.status_code == 200, unread_filtered_response.text
+            unread_filtered = unread_filtered_response.json()
+            unread_filtered_ids = {item["id"] for item in unread_filtered}
+            assert broadcast_notification["id"] in unread_filtered_ids
+            assert targeted_notification["id"] not in unread_filtered_ids
+
+            mark_all_response = client.patch("/api/v1/notifications/mark-all-read", headers=target_headers)
+            assert mark_all_response.status_code == 200, mark_all_response.text
+            assert mark_all_response.json()["unread_count"] == 0
+
+            unread_after_response = client.get("/api/v1/notifications/unread-count", headers=target_headers)
+            assert unread_after_response.status_code == 200, unread_after_response.text
+            assert unread_after_response.json()["unread_count"] == 0
+    except ProgrammingError as exc:
+        if any(token in str(exc) for token in ["last_login", "notifications"]):
+            pytest.skip("Apply the latest auth compatibility migration before running this test.")
+        raise
+
+    dispose_engine()
 
 
 def test_protected_route_rejects_without_token() -> None:

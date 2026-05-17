@@ -1,6 +1,14 @@
 # V1 to V2 UI/UX Parity Audit
 
-Last reviewed: 2026-05-16
+Last reviewed: 2026-05-17
+
+## Requirement Reset
+
+- Previous UI passes were `v1-inspired modernization`.
+- The client now requires an `exact v1 clone` of UI, UX, and workflows.
+- The exact clone roadmap supersedes the previous visual roadmap where they conflict.
+- Use [exact-v1-clone-audit.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-audit.md) as the primary screen-by-screen source for frontend parity work going forward.
+- Use [exact-v1-clone-roadmap.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-roadmap.md) as the primary implementation sequence.
 
 ## Scope
 
@@ -19,22 +27,34 @@ Functional parity is now strong across the requested v2 scope, but UI/UX parity 
 Estimated parity:
 - Backend and workflow parity: strong
 - Route coverage parity: strong
-- Visual and interaction parity: moderate
-- Overall v1 UI/UX parity estimate: roughly `60-70%`
+- Visual and interaction parity: strong for the requested v2 scope, though a few lower-priority routes are still lighter
+- Overall v1 UI/UX parity estimate: roughly `80-85%`
 
-Biggest parity gaps:
-- Global shell, sidebar, topbar, and page framing
-- Dashboard visual hierarchy and information density
-- Orders as a true operations cockpit
-- Inventory as a broad admin hub
-- CRM split-pane workflow
-- Reports visual richness and decision-support feel
+Biggest remaining parity gaps:
+- invoice print still uses a more utilitarian browser-print flow
+- activity logs remain visually lighter than the main ops routes
+- tasks, users, returns, and purchase orders are more consistent now, but still not as dense as the strongest modules
+- CRM is improved, but still not a literal v1 split-pane master-detail clone
+- reports are improved, but still lighter in chart density than v1
 
 Biggest v2 advantages:
 - Cleaner module boundaries
 - Better external integration safety
 - Better explicit operator warnings
 - Safer non-destructive flows for WooCommerce and courier integrations
+
+## Superseded Assessment
+
+The assessment below remains useful as historical context for the modernization work, but it should no longer be treated as the acceptance target.
+
+The new acceptance target is:
+
+- exact v1 screen structure
+- exact v1 workflow pacing
+- exact v1 modal and tab behavior
+- exact v1 parent-screen consolidation where v1 used monolithic hubs
+
+In practice, that means several earlier `Improved` or `Partial` judgments are no longer sufficient for client sign-off.
 
 ## Match Levels
 
@@ -422,15 +442,42 @@ Status:
 - main cause of the overflow was flex children without `min-w-0`, sidebar/main shell wrappers that allowed content width to escape, and wide action/header/table wrappers forcing page-level horizontal growth
 - table-heavy routes may still use intentional internal horizontal scrolling inside the table region, but the full page shell should no longer require horizontal scrolling
 
+### Phase 14K
+
+- final browser QA and release-candidate visual audit
+- route-by-route manual viewport checklist
+- final parity and readiness documentation refresh
+
+Status:
+- documentation and release-candidate audit guidance completed
+- browser verification checklist is now explicit and ready for manual execution before demo or client release
+- exact v1 recreation is not the goal where v2 remains safer, clearer, or more modular
+
 ## Highest-Priority Screens
 
-1. Global shell, sidebar, and topbar
-2. Orders
-3. Logistics
-4. Inventory
-5. Dashboard
-6. CRM
-7. Reports
+1. Invoice print
+2. Activity logs
+3. Tasks
+4. Users
+5. Returns
+6. Purchase orders
+7. Final browser breakpoint verification
+
+## Phase 15A Override
+
+The highest mismatch screens under the exact-clone requirement are now:
+
+1. App shell / sidebar / topbar
+2. Inventory hub
+3. Orders list and order-detail modal loop
+4. CRM split-pane workspace
+5. Logistics unified command center
+6. Settings center
+7. Team/users plus embedded activity logs
+
+Recommended first coding phase:
+
+- `15B: Restore exact v1 shell/sidebar/topbar`
 
 ## Phase 14D Completion Note
 

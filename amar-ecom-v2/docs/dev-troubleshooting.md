@@ -213,3 +213,6 @@ Notes:
   - main content uses `min-w-0` and `max-w-full`
   - dense tables may still scroll horizontally inside their own table container
 - If only a single table is wide, treat that as a local table-scroll case rather than a shell-layout regression.
+- Final RC note:
+  - after `14J`, no full-page horizontal scroll should remain on the main dashboard routes
+  - if overflow still appears, verify whether it comes from a single table region before treating it as a shell regression

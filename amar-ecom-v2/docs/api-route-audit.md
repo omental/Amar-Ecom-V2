@@ -1,6 +1,11 @@
 # API Route Audit
 
-Last reviewed: 2026-05-16
+Last reviewed: 2026-05-17
+
+Requirement reset note:
+- Backend routes remain functionally strong, but exact v1 workflow parity now requires a separate backend/workflow audit.
+- Previous route expansion focused on safe operational coverage, not literal v1 Firebase workflow matching.
+- See `docs/exact-v1-backend-workflow-parity-audit.md` and `docs/exact-v1-backend-gap-roadmap.md` for exact-clone planning.
 
 Scope:
 - app import validated after full Alembic migration chain
@@ -12,7 +17,7 @@ Scope:
 | Group | Base path | Main endpoints | Access | Notes |
 | --- | --- | --- | --- | --- |
 | Health | `/api/v1/health` | `GET /health` | Public | Basic API smoke endpoint returning service status. |
-| Auth | `/api/v1/auth` | `POST /register`, `POST /login` | Public | Main user bootstrap and token issuance entrypoints. |
+| Auth | `/api/v1/auth` | `POST /register`, `POST /login`, `GET /me` | Mixed | Main user bootstrap and token issuance entrypoints. `/me` exposes the v1-shell-compatible current-user context. |
 
 ## Protected Route Groups
 
@@ -20,6 +25,7 @@ Scope:
 | --- | --- | --- | --- | --- |
 | Users | `/api/v1/users` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Team/user CRUD; permission assignment endpoints live separately. |
 | Permissions | `/api/v1` | `GET /permissions`, `POST /permissions/seed-defaults`, `GET/PATCH /users/{id}/permissions` | Protected | Permission matrix exists, but frontend enforcement is still partial. |
+| Notifications | `/api/v1/notifications` | `GET /`, `GET /unread-count`, `PATCH /{id}/read`, `PATCH /mark-all-read`, `POST /` | Protected | Phase 15B-support adds shell notification persistence with broadcast plus per-user visibility and a v1-friendly unread workflow. Create is admin-only for now. |
 | Activity Logs | `/api/v1/activity-logs` | `GET /` | Protected | Filtered audit feed across implemented modules. |
 | Admin Tools | `/api/v1/admin` | `GET /system-health`, `GET /backup-guidance`, `GET /maintenance-checklist`, `GET /exports/*` | Protected | Admin and super-admin focused release-readiness surface for health checks, exports, and backup guidance. |
 | Settings | `/api/v1/settings` | `GET /business`, `PATCH /business` | Protected | Business and invoice display settings live here. |

@@ -1,14 +1,19 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession
+from app.api.deps import DBSession, get_current_user
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import User
-from app.schemas.user import LoginRequest, TokenResponse, UserCreate, UserRead
-from app.services.permission_service import get_default_permission_keys, get_user_permissions
+from app.schemas.user import AuthMeResponse, LoginRequest, TokenResponse, UserCreate, UserRead
+from app.services.permission_service import (
+    build_legacy_permissions_map,
+    get_default_permission_keys,
+    get_user_permissions,
+)
+from app.services.notification_service import notify_admins
 
 
 router = APIRouter()
@@ -30,6 +35,19 @@ async def register(user_in: UserCreate, db: DBSession) -> User:
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    if not user.is_active:
+        await notify_admins(
+            db,
+            title="New user pending approval",
+            message=f"{user.full_name} registered and is waiting for approval.",
+            notification_type="info",
+            link="/dashboard/users",
+            module="team",
+            metadata={"user_id": str(user.id), "email": user.email, "role": user.role},
+        )
+        await db.commit()
+
     return user
 
 
@@ -48,4 +66,42 @@ async def login(login_in: LoginRequest, db: DBSession) -> TokenResponse:
         permissions = get_default_permission_keys()
     else:
         permissions = await get_user_permissions(db, user.id)
+    user.last_login = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(user)
     return TokenResponse(access_token=access_token, user=user, permissions=permissions)
+
+
+@router.get("/me", response_model=AuthMeResponse)
+async def auth_me(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> AuthMeResponse:
+    if current_user.role in {"admin", "super_admin"}:
+        permissions = get_default_permission_keys()
+    else:
+        permissions = await get_user_permissions(db, current_user.id)
+
+    legacy_permissions = build_legacy_permissions_map(permissions, current_user.role)
+    user_id = str(current_user.id)
+
+    return AuthMeResponse(
+        id=current_user.id,
+        uid=user_id,
+        name=current_user.full_name,
+        full_name=current_user.full_name,
+        email=current_user.email,
+        role=current_user.role,
+        active=current_user.is_active,
+        is_active=current_user.is_active,
+        permissions=permissions,
+        legacy_permissions=legacy_permissions,
+        has_full_access=current_user.role in {"admin", "super_admin"},
+        last_login=current_user.last_login,
+        lastLogin=current_user.last_login,
+        created_at=current_user.created_at,
+        createdAt=current_user.created_at,
+        display_name=current_user.full_name,
+        photo_url=None,
+        photoURL=None,
+    )

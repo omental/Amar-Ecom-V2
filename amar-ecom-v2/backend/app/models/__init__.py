@@ -10,6 +10,7 @@ from app.models.hr import AttendanceRecord, Designation, Employee, SalaryAdvance
 from app.models.invoice_template import InvoiceTemplate
 from app.models.inventory import InventoryItem
 from app.models.inventory_ops import StockTransfer, StockTransferItem, WastageLog
+from app.models.notification import Notification
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product, ProductVariant
 from app.models.return_request import ReturnItem, ReturnRequest
@@ -39,6 +40,7 @@ __all__ = [
     "Transaction",
     "InvoiceTemplate",
     "InventoryItem",
+    "Notification",
     "Order",
     "OrderEvent",
     "OrderItem",

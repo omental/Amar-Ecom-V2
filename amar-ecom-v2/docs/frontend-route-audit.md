@@ -1,6 +1,13 @@
 # Frontend Route Audit
 
-Last reviewed: 2026-05-16
+Last reviewed: 2026-05-17
+
+## Requirement Reset
+
+- Previous UI passes were `v1-inspired modernization`.
+- The client now requires `exact v1 clone behavior`.
+- The exact clone roadmap in [exact-v1-clone-roadmap.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-roadmap.md) supersedes the previous visual roadmap where they conflict.
+- Route health in this file still matters, but a `Working` route does not imply acceptable v1 parity anymore.
 
 Status labels:
 - `Working`
@@ -48,6 +55,26 @@ Status labels:
 - This phase is visual polish only; backend behavior, sync safety rules, and existing data-fetching patterns were not changed.
 - Remaining frontend parity work is primarily `14I` regression QA and any optional exact-v1 recreation passes.
 
+## Phase 15A Exact Clone Note
+
+- `15A` changes the success criteria from `v1-inspired modernization` to `exact v1 clone`.
+- Existing route status in this document should now be read as `functional readiness`, not `client-acceptable frontend parity`.
+- For screen-level clone requirements, use:
+  - [exact-v1-clone-audit.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-audit.md)
+  - [exact-v1-clone-roadmap.md](/d:/Amar-eCom/amar-ecom-v2/docs/exact-v1-clone-roadmap.md)
+
+## Exact Clone Priority Overrides
+
+- Highest structural mismatch routes are now:
+  - shell/sidebar/topbar
+  - `/dashboard/orders`
+  - `/dashboard/inventory`
+  - `/dashboard/customers`
+  - `/dashboard/logistics`
+  - `/dashboard/settings`
+  - `/dashboard/users`
+- Several currently separate v2 routes map to embedded tabs or modal loops inside v1 parent screens. That means route coverage alone is no longer enough to judge parity.
+
 ## Phase 14I Consistency Note
 
 - Shared primitives now give lower-priority routes more consistent page-header, badge, loading, empty, error, and batch-action treatment.
@@ -59,6 +86,27 @@ Status labels:
 - The dashboard shell now uses stricter `min-w-0`, `max-w-full`, and `overflow-x-hidden` containment across the root layout, sidebar, topbar, and main content wrappers.
 - Sidebar width is now treated as a proper non-shrinking column, while the main content column is explicitly allowed to shrink without pushing the page wider than the viewport.
 - Table-heavy pages may still use intentional internal horizontal scrolling inside the table container. This is expected for dense data views and is not considered a shell overflow regression.
+
+## Final UI Parity Status
+
+- shell: improved
+- orders and logistics: improved
+- inventory and products: improved
+- CRM and reports: improved
+- finance, HR, POS, settings, admin, WooCommerce, and courier integrations: improved
+- responsive containment: completed at code level in `14J`
+- browser verification: still manual unless explicitly executed in a live browser session
+
+## Remaining Lower-Parity Routes
+
+- `/dashboard/orders/[id]/invoice`
+- `/dashboard/activity-logs`
+- `/dashboard/tasks`
+- `/dashboard/users`
+- `/dashboard/returns`
+- `/dashboard/purchase-orders`
+
+These routes are stable and visually aligned better than before, but they are still lighter than the strongest ops modules.
 
 ## Present But Outside Requested List
 
@@ -72,37 +120,29 @@ These are active supporting routes used by the broader inventory and product wor
 
 - Current route validation remains clean for the requested v2 scope.
 - Frontend lint and TypeScript checks passed during the 2026-05-16 release-candidate audit.
-- Production build failure in this environment was caused by Google Fonts fetch restrictions, not by dashboard route regressions.
+- Current local build failure in this environment is the Windows `.next` file-lock issue, not a dashboard route regression.
+- Use [ui-release-candidate-checklist.md](/d:/Amar-eCom/amar-ecom-v2/docs/ui-release-candidate-checklist.md) for the final manual viewport/browser pass.
 
 ## UI Parity Notes
 
 These notes track legacy v1 React UI parity only. They are planning markers for phased redesign work and do not imply backend gaps.
 
-Phase `14D` status:
-- global shell and dashboard design foundation completed
-- grouped sidebar, richer topbar, shared ops components, and v1-inspired tokens are now in place
-
-Phase `14E` status:
-- Orders + Logistics first-pass UI match completed
-- the shared ops shell now covers orders, order detail, logistics, shipments, and shipment detail
-- remaining work is module-level parity for inventory, products, CRM, reports, and lower-priority admin screens
-
 | Route / Module | Current UI parity status | Priority | Target phase |
 | --- | --- | --- | --- |
-| `/dashboard` shell and landing page | Partial. Functional summaries are strong, but shell chrome, dashboard hierarchy, and visual density are still behind v1. | High | `14D` then `14G` |
-| `/dashboard/orders` and `/dashboard/orders/[id]` | Partial. The first-pass cockpit redesign is now in place, but there is still room for deeper v1-style density, especially around detail-page timeline and print-workflow refinement. | High | `14E` completed, then `14I` QA |
-| `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Partial. The shared ops visual language now covers the main logistics routes, but courier-integrations and reconciliation analytics can still be made denser later. | High | `14E` completed, then `14I` QA |
-| `/dashboard/products`, `/dashboard/products/[id]` | Partial. The first-pass product-admin redesign is now in place, but deeper merchandising density and tighter adjacency to the full inventory hub can still improve later. | High | `14F` completed, then `14I` QA |
-| `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Partial. The first-pass hub redesign is now in place, but the broader v1 all-in-one admin breadth is still not fully matched. | High | `14F` completed, then `14I` QA |
-| `/dashboard/customers`, `/dashboard/customers/[id]` | Partial. Phase 14G completed the first-pass CRM visual parity lift, but the full v1 split-pane master-detail experience is still not rebuilt. | High | `14G` completed, then `14I` QA |
-| `/dashboard/returns` and `/dashboard/returns/[id]` | Partial. Safe and usable, but not yet integrated into a denser v1-style operations surface. | Medium | `14F` |
-| `/dashboard/suppliers`, `/dashboard/purchase-orders`, `/dashboard/purchase-orders/[id]` | Partial. Procurement works, but UI parity with the v1 inventory/procurement hub is still limited. | Medium | `14F` |
-| `/dashboard/reports` | Partial. Phase 14G completed the first-pass visual reporting parity lift with stronger management framing and integration health presentation, but deeper chart density and executive analytics still lag v1. | High | `14G` completed, then `14I` QA |
-| `/dashboard/finance` | Partial. Good foundation, but lacks the richer v1 finance workspace treatment. | Medium | `14H` |
-| `/dashboard/hr` | Partial. Practical module, but still lighter than the v1 tabbed HR management surface. | Medium | `14H` |
-| `/dashboard/tasks` | Partial. Task workflow exists, but the board/list polish and collaboration feel lag v1. | Medium | `14H` |
-| `/dashboard/pos` | Partial. Checkout flow is solid, but the retail workspace styling and speed cues are behind v1. | Medium | `14H` |
-| `/dashboard/settings` | Partial. Business/invoice settings work, but broader admin/settings shell parity is incomplete. | Medium | `14H` |
-| `/dashboard/users` | Partial. Team and permissions are functional, but the admin control surface is less polished than v1. | Medium | `14H` |
-| `/dashboard/activity-logs` | Better in v2 functionally, but still should inherit the final shared visual language. | Low | `14H` |
-| Cross-app regression pass | Not started. Shared component convergence and responsive QA still need a dedicated pass. | High | `14I` |
+| `/dashboard` shell and landing page | Improved. The shell, cards, topbar, and responsive containment are much closer to the intended ops-console feel, though final browser verification is still manual. | High | `14D-14J` completed |
+| `/dashboard/orders` and `/dashboard/orders/[id]` | Improved. Strong first-pass cockpit parity is now in place, with only refinement-level QA remaining. | High | `14E` completed |
+| `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Improved. The shared ops visual language and responsive containment now cover the main logistics surfaces. | High | `14E` completed |
+| `/dashboard/products`, `/dashboard/products/[id]` | Improved. Product-admin parity is much closer, though still not a literal v1 recreation. | High | `14F` completed |
+| `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Improved. The inventory hub now behaves much more like the v1 admin hub while keeping v2 route boundaries. | High | `14F` completed |
+| `/dashboard/customers`, `/dashboard/customers/[id]` | Improved. CRM is much closer visually, though still not a true split-pane v1 master-detail clone. | High | `14G` completed |
+| `/dashboard/returns` and `/dashboard/returns/[id]` | Partial. Stable and visually aligned better, but still lighter than the top-priority ops modules. | Medium | post-`14K` optional |
+| `/dashboard/suppliers`, `/dashboard/purchase-orders`, `/dashboard/purchase-orders/[id]` | Partial. Procurement remains functional but visually lighter than the stronger ops modules. | Medium | post-`14K` optional |
+| `/dashboard/reports` | Improved. Management framing and visual hierarchy are much stronger now, though chart density is still lighter than v1. | High | `14G` completed |
+| `/dashboard/finance` | Improved. Finance now sits inside the same ops-shell language and feels materially closer to v1. | Medium | `14H` completed |
+| `/dashboard/hr` | Improved. HR now uses the same stronger header, KPI, and tab shell language. | Medium | `14H` completed |
+| `/dashboard/tasks` | Partial. Functional and more consistent, but still lighter than the most polished routes. | Medium | post-`14K` optional |
+| `/dashboard/pos` | Improved. POS now reads more like a dense selling workspace while keeping the same behavior. | Medium | `14H` completed |
+| `/dashboard/settings` | Improved. The settings/admin shell is much closer to the intended v1-inspired control-center feel. | Medium | `14H` completed |
+| `/dashboard/users` | Partial. More consistent now, but still lighter than the strongest ops routes. | Medium | post-`14K` optional |
+| `/dashboard/activity-logs` | Partial / Better in v2 functionally. The route is useful, but still visually lighter than the main parity targets. | Low | post-`14K` optional |
+| Cross-app regression pass | Completed at code level for consistency and responsive containment; browser viewport verification remains a manual checklist step. | High | `14I-14K` completed |

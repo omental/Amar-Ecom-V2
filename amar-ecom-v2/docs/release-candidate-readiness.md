@@ -71,6 +71,23 @@ npm run build
 npm run start
 ```
 
+## Current Validation Commands
+
+Backend:
+
+```powershell
+venv\Scripts\alembic.exe upgrade head
+venv\Scripts\pytest.exe -q
+```
+
+Frontend:
+
+```powershell
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
 ## Fresh Migration Validation
 
 Validated on 2026-05-16 with a temporary PostgreSQL database:
@@ -111,6 +128,11 @@ In restricted or offline environments, `npm run build` can fail with font downlo
 
 Treat that as an environment limitation unless you intentionally decide to replace remote font usage later.
 
+Current local known issue:
+
+- recent validation is failing on the Windows `.next` file-lock path:
+  - `EPERM: operation not permitted, unlink 'D:\Amar-eCom\amar-ecom-v2\frontend\.next\build\chunks\node_modules_13sb.px._.js'`
+
 ## Do Not Commit
 
 Keep these out of commits:
@@ -138,6 +160,12 @@ The root `.gitignore` already covers these, and it now also ignores `backend/pyt
 - No background workers, cron jobs, or queue consumers are bundled yet.
 - No local-to-WooCommerce push-back exists.
 - No destructive courier-driven shipment or order mutation exists by default.
+
+## UI Status
+
+- The v1-inspired redesign has been applied across the main dashboard shell and the highest-value module pages.
+- Responsive shell and content containment were fixed at code level in Phase `14J`.
+- Final browser viewport verification should still be executed with [ui-release-candidate-checklist.md](/d:/Amar-eCom/amar-ecom-v2/docs/ui-release-candidate-checklist.md) before client or demo release.
 
 ## Integration Safety Notes
 

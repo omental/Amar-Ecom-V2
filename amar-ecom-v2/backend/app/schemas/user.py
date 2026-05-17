@@ -44,3 +44,24 @@ class TokenResponse(BaseModel):
     permissions: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AuthMeResponse(BaseModel):
+    id: UUID
+    uid: str
+    name: str
+    full_name: str
+    email: EmailStr
+    role: str
+    active: bool
+    is_active: bool
+    permissions: list[str]
+    legacy_permissions: dict[str, bool]
+    has_full_access: bool
+    last_login: datetime | None
+    lastLogin: datetime | None
+    created_at: datetime
+    createdAt: datetime
+    display_name: str | None
+    photo_url: str | None
+    photoURL: str | None

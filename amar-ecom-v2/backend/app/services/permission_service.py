@@ -10,6 +10,7 @@ from app.models.user import User
 
 DEFAULT_PERMISSION_DEFINITIONS = [
     ("dashboard", "view"),
+    ("reports", "view"),
     ("orders", "view"),
     ("orders", "create"),
     ("orders", "update"),
@@ -26,6 +27,8 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("customers", "create"),
     ("customers", "update"),
     ("customers", "delete"),
+    ("logistics", "view"),
+    ("couriers", "view"),
     ("woocommerce", "view"),
     ("woocommerce", "import"),
     ("pos", "view"),
@@ -39,12 +42,44 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("shipments", "create"),
     ("shipments", "update"),
     ("shipments", "delete"),
+    ("finance", "view"),
+    ("hr", "view"),
     ("settings", "view"),
     ("settings", "update"),
     ("team", "view"),
     ("team", "create"),
     ("team", "update"),
+    ("users", "view"),
+    ("permissions", "view"),
 ]
+
+LEGACY_PERMISSION_MODULES = (
+    "dashboard",
+    "orders",
+    "inventory",
+    "crm",
+    "logistics",
+    "reports",
+    "finance",
+    "hr",
+    "settings",
+    "team",
+    "pos",
+)
+
+LEGACY_PERMISSION_KEY_MAP = {
+    "dashboard": {"dashboard.view"},
+    "orders": {"orders.view"},
+    "inventory": {"inventory.view", "products.view"},
+    "crm": {"customers.view"},
+    "logistics": {"logistics.view", "shipments.view", "couriers.view"},
+    "reports": {"reports.view"},
+    "finance": {"finance.view"},
+    "hr": {"hr.view"},
+    "settings": {"settings.view"},
+    "team": {"team.view", "users.view", "permissions.view"},
+    "pos": {"pos.view"},
+}
 
 
 def permission_key(module: str, action: str) -> str:
@@ -53,6 +88,17 @@ def permission_key(module: str, action: str) -> str:
 
 def get_default_permission_keys() -> list[str]:
     return [permission_key(module, action) for module, action in DEFAULT_PERMISSION_DEFINITIONS]
+
+
+def build_legacy_permissions_map(permission_keys: list[str], role: str | None = None) -> dict[str, bool]:
+    if role in {"admin", "super_admin"}:
+        return {module: True for module in LEGACY_PERMISSION_MODULES}
+
+    permission_key_set = set(permission_keys)
+    return {
+        module: any(required_key in permission_key_set for required_key in LEGACY_PERMISSION_KEY_MAP.get(module, set()))
+        for module in LEGACY_PERMISSION_MODULES
+    }
 
 
 async def ensure_default_permissions(db: AsyncSession) -> list[Permission]:
@@ -95,11 +141,13 @@ async def get_user_permissions(db: AsyncSession, user_id: UUID) -> list[str]:
         .options(selectinload(UserPermission.permission))
     )
     assignments = list(result.scalars().all())
-    return [
+    return sorted(
+        [
         permission_key(assignment.permission.module, assignment.permission.action)
         for assignment in assignments
         if assignment.permission is not None
-    ]
+        ]
+    )
 
 
 async def set_user_permissions(

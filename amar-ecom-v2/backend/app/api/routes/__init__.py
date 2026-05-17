@@ -15,6 +15,7 @@ from app.api.routes import (
     invoice_templates,
     inventory,
     logistics,
+    notifications,
     orders,
     petty_cash,
     permissions,
@@ -63,6 +64,7 @@ api_router.include_router(finance.router, prefix="/finance", tags=["finance"])
 api_router.include_router(hr.router, prefix="/hr", tags=["hr"])
 api_router.include_router(invoice_templates.router, prefix="/invoice-templates", tags=["invoice-templates"])
 api_router.include_router(logistics.router, prefix="/logistics", tags=["logistics"])
+api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(permissions.router, tags=["permissions"])
 api_router.include_router(pos.router, prefix="/pos", tags=["pos"])
 api_router.include_router(employees.router, prefix="/employees", tags=["employees"])

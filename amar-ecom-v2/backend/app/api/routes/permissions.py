@@ -12,7 +12,9 @@ from app.schemas.permission import (
     UserPermissionUpdate,
 )
 from app.services.activity_log_service import log_activity
+from app.services.notification_service import notify_user
 from app.services.permission_service import (
+    build_legacy_permissions_map,
     ensure_default_permissions,
     get_all_permissions,
     get_user_permissions,
@@ -99,6 +101,20 @@ async def update_user_permissions(
         entity_id=user.id,
         message=f"Updated permissions for {user.full_name}.",
         request=request,
+    )
+    await notify_user(
+        db,
+        user_id=user.id,
+        title="Permissions updated",
+        message=f"Your module access was updated by {current_user.full_name}.",
+        notification_type="info",
+        link="/dashboard/team",
+        module="team",
+        metadata={
+            "user_id": str(user.id),
+            "updated_by_id": str(current_user.id),
+            "legacy_permissions": build_legacy_permissions_map(assigned_permission_keys, user.role),
+        },
     )
     await commit_or_409(db, "Could not update user permissions")
 
