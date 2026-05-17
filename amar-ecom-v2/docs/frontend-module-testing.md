@@ -80,6 +80,94 @@
 13. Confirm loading state shows `Syncing Dashboard...` and that empty or sparse data does not break any card height or grid alignment.
 14. Confirm there is no full-page horizontal overflow at desktop or tablet widths.
 
+## Phase 15D Orders Clone Checks
+
+1. Open `http://localhost:3000/dashboard/orders` and confirm the Phase `15B` shell still loads correctly around the orders page.
+2. Confirm the header now follows the v1 orders cockpit with:
+   - `Order Flows` title
+   - v1 subtitle
+   - date filter control
+   - export button
+   - table/grid toggle
+   - `New Order` CTA
+3. Confirm the four top summary cards render in the v1 order:
+   - `Total Orders`
+   - `Completed Orders`
+   - `Pending Orders`
+   - `Cancelled Orders`
+4. Confirm the status tabs render in the v1 order:
+   - `All Orders`
+   - `Urgent`
+   - `Hold`
+   - `Pending`
+   - `Confirmed`
+   - `Processing`
+   - `Shipped`
+   - `Delivered`
+   - `Partial Delivered`
+   - `Cancelled`
+   - `Returned`
+5. Confirm the search-first filter rhythm works without breaking layout:
+   - search input
+   - payment filter
+   - source filter
+   - warehouse filter
+   - print-state filter
+   - shipment-state filter
+6. Toggle between table and grid view and confirm both modes show v1-style dense order metadata without horizontal shell overflow.
+7. In table view, confirm rows show the v1-style dense fields:
+   - order number
+   - date
+   - customer name
+   - customer phone
+   - item count
+   - first item summary
+   - total and due
+   - status and payment state
+   - shipment number or tracking context
+8. Confirm row actions surface the v1 workflow loop safely:
+   - `View`
+   - `A5 Invoice`
+   - `Ship Order`
+   - `Edit`
+9. Click an order number or `View` and confirm a modal opens instead of forcing the primary workflow onto `/dashboard/orders/{id}`.
+10. In the detail modal, confirm the v1-style sections appear:
+   - order header with order number and status
+   - status stepper
+   - item list
+   - logistics block
+   - customer details
+   - totals summary
+   - recent history
+   - action cluster
+11. In the detail modal action cluster, confirm these appear safely when allowed:
+   - `Close`
+   - `A5 Invoice`
+   - `Print Label`
+   - `Edit`
+   - `Ship Order`
+   - `Refresh Woo`
+12. Confirm `Open Full Page` still exists only as a fallback path, not the primary workflow.
+13. Click `New Order` and confirm a dedicated v1-style create workflow overlay opens from `/dashboard/orders` rather than a small embedded card.
+14. In the create flow, confirm these v1-style sections are present:
+   - customer and phone block
+   - address and location fields
+   - duplicate-warning area
+   - product/items section
+   - workflow fields for status, payment, and channel
+   - courier and dispatch helper fields
+   - totals, notes, tags, and save actions
+15. Enter an 11-digit phone number and confirm the duplicate-warning panel appears when matching rows exist, but does not block order creation.
+16. Create a new order and confirm:
+   - the row appears in the orders list
+   - totals and status render correctly
+   - the shell does not overflow
+17. Open an editable non-Woo order and confirm edit mode uses the same dedicated workflow overlay.
+18. Confirm edit mode clearly warns that item mutation is still limited to safe backend-supported fields in this pass.
+19. Create a shipment from the row action or modal action and confirm it still uses the safe internal shipment-creation path rather than destructive external courier automation.
+20. For WooCommerce-sourced orders, confirm any refresh action remains guarded and manual, and that no automatic stock deduction or push-back behavior is introduced.
+21. Confirm there is no full-page horizontal overflow on `/dashboard/orders` while the table itself may still scroll locally when needed.
+
 ## Prerequisites
 
 1. Start the backend:

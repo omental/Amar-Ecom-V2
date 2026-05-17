@@ -78,6 +78,10 @@ Backend support status:
 
 - `15D-support` completed on `2026-05-17`
 
+Status:
+
+- Completed on `2026-05-17`
+
 Goals:
 
 - Restore v1 orders cockpit layout
@@ -100,6 +104,14 @@ Backend readiness notes:
 - Existing order APIs now expose dense v1-friendly list fields, modal-friendly detail helpers, duplicate-warning row data, and broader status-summary counts.
 - The frontend orders clone can build on the current `/api/v1/orders`, `/api/v1/orders/{id}`, `/api/v1/orders/duplicate-check`, and `/api/v1/orders/operations-summary` endpoints without requiring separate `v1-compatible` routes.
 - Remaining work is primarily frontend structure and workflow recreation, not missing backend order primitives.
+
+Completion notes:
+
+- `/dashboard/orders` now follows the v1 `Orders.tsx` cockpit more closely, with the v1 four-card summary strip, v1 status-tab order, search-first filter rhythm, table/grid toggle, denser row fields, and in-place action placement.
+- Order inspection is now modal-first again, using `GET /api/v1/orders/{id}` for the primary UX while keeping `/dashboard/orders/[id]` as a fallback route.
+- The dedicated create/edit workflow now opens as a v1-style full workflow overlay from the orders cockpit instead of acting like a simple embedded v2 card.
+- Duplicate warnings, shipment creation, print actions, and guarded Woo refresh all stay inside the orders loop while preserving v2 backend safety rules.
+- Known deviations remain for the lack of a distinct v1 print-label backend path and for edit-mode item mutation, which still stays limited to safe backend-supported fields.
 
 ## Phase 15E: Exact v1 Inventory Hub
 
@@ -234,8 +246,8 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15D`
-- Focus: exact v1 orders cockpit, create flow, and modal-first order detail behavior
+- Recommended next coding phase: `15E`
+- Focus: exact v1 inventory hub reconstruction and tab consolidation
 
 ## Risk Notes
 

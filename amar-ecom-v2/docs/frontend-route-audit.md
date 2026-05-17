@@ -21,8 +21,8 @@ Status labels:
 | `/dashboard/pos` | Working | `/api/v1/pos/products`, `/api/v1/pos/checkout`, `/api/v1/pos/summary`, `/api/v1/customers`, `/api/v1/accounts`, `/api/v1/warehouses` | No barcode hardware, offline mode, or refund workflow yet. |
 | `/dashboard/finance` | Working | `/api/v1/finance/summary`, `/api/v1/accounts`, `/api/v1/transactions`, `/api/v1/petty-cash`, `/api/v1/supplier-payments`, `/api/v1/suppliers` | Phase 14H brings the finance route onto the denser v1-inspired shell with a stronger header, KPI strip, shared tab shell, grouped filters, and clearer petty-cash or supplier-payment warning text while preserving all existing finance behavior. |
 | `/dashboard/hr` | Working | `/api/v1/hr/summary`, `/api/v1/designations`, `/api/v1/employees`, `/api/v1/attendance`, `/api/v1/salary-advances`, `/api/v1/salary-records`, `/api/v1/users` | Phase 14H upgrades the HR route with a stronger header, KPI strip, and shared tab shell so the people-ops workspace feels denser and closer to v1 without changing existing attendance or salary flows. |
-| `/dashboard/orders` | Working | `/api/v1/orders`, `/api/v1/orders/operations-summary`, `/api/v1/orders/dispatch-export`, `/api/v1/orders/duplicate-check`, `/api/v1/orders/batch-actions`, supporting customer/warehouse/shipment data | Phase 14E now brings the v1-inspired shell language directly into the orders cockpit with richer ops headers, KPI strips, quick chips, grouped filters, denser row metadata, and clearer print or dispatch actions while keeping Woo refresh manual and safe. |
-| `/dashboard/orders/[id]` | Working | `/api/v1/orders/{id}`, `/api/v1/orders/{id}/create-shipment`, `/api/v1/orders/{id}/mark-printed` | Detail readability is now stronger and more operation-focused, with a richer badge cluster, denser summary framing, shipment visibility, Woo refresh controls, and timeline emphasis, though workflow still spans related modules intentionally. |
+| `/dashboard/orders` | Working | `/api/v1/orders`, `/api/v1/orders/operations-summary`, `/api/v1/orders/dispatch-export`, `/api/v1/orders/duplicate-check`, `/api/v1/orders/batch-actions`, `/api/v1/orders/{id}`, `/api/v1/orders/{id}/create-shipment`, supporting customer/warehouse/shipment data | Phase 15D shifts the primary UX much closer to the v1 Firebase orders cockpit: v1 status-tab order, four-card strip, search-first filter flow, table/grid toggle, modal-first detail inspection, dedicated create/edit workflow overlay, duplicate-warning panel, and guarded print or courier actions. Remaining deviations are mostly backend-safety driven, such as the lack of a distinct print-label backend path and limited item mutation during edit mode. |
+| `/dashboard/orders/[id]` | Working | `/api/v1/orders/{id}`, `/api/v1/orders/{id}/create-shipment`, `/api/v1/orders/{id}/mark-printed` | This route now acts as a fallback detail page rather than the primary interaction loop. The main v1-style behavior happens inside the `/dashboard/orders` modal flow. |
 | `/dashboard/orders/[id]/invoice` | Working | `/api/v1/orders/{id}/invoice-data`, `/api/v1/orders/{id}/mark-printed` | Browser print only; no PDF generation and no advanced live template preview. |
 | `/dashboard/products` | Working | `/api/v1/products`, `/api/v1/categories`, `/api/v1/brands` | Phase 14F adds a denser product-admin header, KPI strip, local filter bar, richer Woo/source row metadata, and clearer direct actions while preserving the same product CRUD behavior. |
 | `/dashboard/products/[id]` | Working | `/api/v1/products/{id}`, `/api/v1/products/{id}/variants/*` | Detail depth is practical and now visually denser, with a stronger header, badge cluster, safer Woo refresh framing, and clearer inventory/variant summary blocks. |
@@ -93,17 +93,48 @@ Status labels:
 - No new backend endpoint was required for the dashboard pass.
 - Remaining dashboard deviation is mainly the `Staff Performance` data source, which stays visually cloned but backend-light for now.
 
+## Phase 15D Orders Clone Note
+
+- `15D` is now completed for `/dashboard/orders`.
+- The route now consumes the dense order compatibility aliases and helpers added in `15D-support`, including:
+  - `orderNumber`
+  - `customerName`
+  - `customerPhone`
+  - `customerAddress`
+  - `paymentMethod`
+  - `deliveryCharge`
+  - `paidAmount`
+  - `totalAmount`
+  - `dueAmount`
+  - `createdAt`
+  - `updatedAt`
+  - `lastPrintedAt`
+  - `item_count`
+  - `first_item_summary`
+  - `warehouse_summary`
+  - `shipment_summary`
+  - `courierName`
+  - `trackingNumber`
+- Order detail inspection is now modal-first again and uses:
+  - `customer_summary`
+  - `shipping_summary`
+  - `totals_summary`
+  - `logs`
+  - `action_flags`
+- The fallback `/dashboard/orders/[id]` route remains available, but it is no longer the primary UX target for exact-v1 parity.
+
 ## Exact Clone Priority Overrides
 
 - Highest structural mismatch routes are now:
-  - `/dashboard/orders`
-  - `/dashboard/inventory`
-  - `/dashboard/customers`
-  - `/dashboard/logistics`
-  - `/dashboard/settings`
-  - `/dashboard/users`
+- `/dashboard/orders`
+- `/dashboard/inventory`
+- `/dashboard/customers`
+- `/dashboard/logistics`
+- `/dashboard/settings`
+- `/dashboard/users`
 - Shell/sidebar/topbar has moved from primary mismatch to near-match status, with only documented deviations remaining.
 - `/dashboard` has also moved to near-match status after the Phase `15C` pass.
+- `/dashboard/orders` has now also moved to near-match status after the Phase `15D` pass.
 - Several currently separate v2 routes map to embedded tabs or modal loops inside v1 parent screens. That means route coverage alone is no longer enough to judge parity.
 
 ## Phase 14I Consistency Note
@@ -161,7 +192,7 @@ These notes track legacy v1 React UI parity only. They are planning markers for 
 | Route / Module | Current UI parity status | Priority | Target phase |
 | --- | --- | --- | --- |
 | `/dashboard` shell and landing page | Improved. The shell, cards, topbar, and responsive containment are much closer to the intended ops-console feel, though final browser verification is still manual. | High | `14D-14J` completed |
-| `/dashboard/orders` and `/dashboard/orders/[id]` | Improved. Strong first-pass cockpit parity is now in place, with only refinement-level QA remaining. | High | `14E` completed |
+| `/dashboard/orders` and `/dashboard/orders/[id]` | Near match. The orders cockpit now follows the v1 table/grid, modal-first detail loop, duplicate-warning workflow, and dedicated create/edit overlay much more closely. | High | `15D` completed |
 | `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Improved. The shared ops visual language and responsive containment now cover the main logistics surfaces. | High | `14E` completed |
 | `/dashboard/products`, `/dashboard/products/[id]` | Improved. Product-admin parity is much closer, though still not a literal v1 recreation. | High | `14F` completed |
 | `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Improved. The inventory hub now behaves much more like the v1 admin hub while keeping v2 route boundaries. | High | `14F` completed |

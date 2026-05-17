@@ -22,10 +22,12 @@ This document resets frontend parity planning around the client's updated requir
 
 - `15B` is now implemented for the shell only.
 - `15C` is now implemented for the dashboard only.
+- `15D` is now implemented for the primary orders cockpit, modal-first detail workflow, and dedicated create/edit overlay.
 - The dashboard shell, sidebar, topbar, quick actions, notification popover, collapse behavior, and permission-gated nav have been realigned to the v1 `Layout.tsx` model.
 - Notification behavior is now backed by the v2 notification API rather than mocked frontend state.
 - v2-only routes remain available under a clearly secondary nav group until later exact-clone phases absorb or de-emphasize them.
 - The dashboard page now follows the v1 header, filter bar, six-KPI grid, stock-alerts card, top-sellers card, recent-order card, store-performance chart, and staff-performance panel structure.
+- Orders now uses the v1 four-card summary strip, v1 status-tab order, search-first cockpit flow, modal-first detail inspection, duplicate-warning panel, and a dedicated v1-style create/edit workflow overlay on `/dashboard/orders`.
 
 ## Match Scale
 
@@ -172,13 +174,13 @@ Match: `Near match`
 10. current v2 equivalent
    `/dashboard/orders`
 11. exact gaps
-   v2 has a strong list but is still route-split and form-card based. v1 uses embedded modal loops, table/grid switching, denser row meta, and different status/filter choreography. Exact v1 order list behavior is not yet present.
+   Core cockpit parity is now in place. Remaining deviations are mostly edge-case workflow differences: `ready_to_ship` remains a supported backend filter but is not a primary top-level v1 tab, batch actions remain present only where the safer v2 backend already supports them, and a few v2-only export/selection utilities still exist as secondary helpers rather than the main interaction path.
 12. implementation difficulty
    High
 13. recommended clone phase
    `15D`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### Order Detail / Modal
 
@@ -203,13 +205,13 @@ Match: `Major mismatch`
 10. current v2 equivalent
    `/dashboard/orders/[id]`
 11. exact gaps
-   v2 uses a dedicated page instead of the v1 details modal. That is a foundational behavior mismatch. The v1 modal-first inspection loop likely needs to be restored or faithfully emulated.
+   The primary UX is now restored as a modal-first loop inside `/dashboard/orders`, with `/dashboard/orders/[id]` left in place only as a secondary fallback route. Remaining deviations are mostly action-level: the modal still exposes a guarded status-update block to preserve v2 safety behavior, and `Print Label` currently maps to print-tracking rather than a distinct label-rendering backend.
 12. implementation difficulty
    High
 13. recommended clone phase
    `15D`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### New Order
 
@@ -234,13 +236,13 @@ Match: `Major mismatch`
 10. current v2 equivalent
    Embedded new-order form inside `/dashboard/orders`
 11. exact gaps
-   v2 folds new-order creation into a card on the orders page. v1 treats it as a dedicated full workflow surface and also reuses it for edit flows. Must restore the exact screen structure and operator pacing.
+   The create/edit path now opens as a dedicated v1-style workflow overlay launched from `/dashboard/orders`, which restores the intended pacing much more closely. Remaining deviations are backend-safety driven: edit mode still limits item mutation to safe supported fields, and some legacy courier/address helper fields are compatibility inputs rather than deeply automated v1 side effects.
 12. implementation difficulty
    High
 13. recommended clone phase
    `15D`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### Inventory Hub
 
@@ -927,22 +929,22 @@ Match: `Major mismatch`
 ## Highest Mismatch Screens
 
 1. Inventory hub
-2. Orders list + order detail modal flow
-3. CRM split-pane workspace
-4. Logistics unified command center
-5. Settings center
-6. Team/users plus embedded activity logs
-7. Reports taxonomy and composition
+2. CRM split-pane workspace
+3. Logistics unified command center
+4. Settings center
+5. Team/users plus embedded activity logs
+6. Reports taxonomy and composition
+7. Supplier and procurement consolidation
 
 ## Recommended First Coding Phase
 
-`15D: Exact v1 Orders workflow`
+`15E: Exact v1 Inventory hub`
 
 Reason:
 
-- The shell and landing dashboard now establish the v1 visual and interaction baseline.
-- Orders remains the next highest-visibility operational workflow and still has the biggest modal-versus-route parity gap.
-- Inventory, CRM, logistics, and admin modules depend on the orders clone language that follows.
+- The shell, dashboard, and orders workflow now establish the v1 visual and interaction baseline.
+- Inventory is now the biggest remaining structural mismatch because the v1 monolithic hub is still split across many v2 routes.
+- CRM, logistics, and admin modules continue to depend on the denser modal-first interaction language restored in the orders phase.
 
 ## Uncertainty Notes
 
