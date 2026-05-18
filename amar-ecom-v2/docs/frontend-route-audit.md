@@ -26,8 +26,8 @@ Status labels:
 | `/dashboard/orders/[id]/invoice` | Working | `/api/v1/orders/{id}/invoice-data`, `/api/v1/orders/{id}/mark-printed` | Browser print only; no PDF generation and no advanced live template preview. |
 | `/dashboard/products` | Working | `/api/v1/products`, `/api/v1/categories`, `/api/v1/brands` | Phase 14F adds a denser product-admin header, KPI strip, local filter bar, richer Woo/source row metadata, and clearer direct actions while preserving the same product CRUD behavior. |
 | `/dashboard/products/[id]` | Working | `/api/v1/products/{id}`, `/api/v1/products/{id}/variants/*` | Detail depth is practical and now visually denser, with a stronger header, badge cluster, safer Woo refresh framing, and clearer inventory/variant summary blocks. |
-| `/dashboard/customers` | Working | `/api/v1/customers` | Phase 14G brings the shared ops shell into the CRM directory with a richer operations header, KPI strip, grouped search/filter bar, quick segment chips, and denser customer rows. It is still not a full v1 split-pane CRM. |
-| `/dashboard/customers/[id]` | Working | `/api/v1/customers/{id}`, `/api/v1/customers/{id}/activities` | Phase 14G upgrades the CRM detail route with a stronger profile header, denser info cards, clearer activity timeline hierarchy, and a more obvious operator edit panel while keeping the same API behavior. |
+| `/dashboard/customers` | Working | `/api/v1/customers/crm-summary`, `/api/v1/customers`, `/api/v1/customers/{id}`, `/api/v1/customers/{id}/activities` | Phase 15F restores the v1 split-pane CRM as the primary UX: left customer directory, right selected-customer detail pane, v1-style four-card summary strip, client-side CSV export, modal add/edit flow, and in-pane activity actions. Known deviations remain for placeholder-only points/chat areas and the fallback detail route. |
+| `/dashboard/customers/[id]` | Working | `/api/v1/customers/{id}`, `/api/v1/customers/{id}/activities` | This route now acts as a fallback detail page rather than the primary CRM loop. The main exact-v1 behavior now lives inside `/dashboard/customers`. |
 | `/dashboard/inventory` | Working | `/api/v1/inventory/hub-summary`, `/api/v1/inventory`, `/api/v1/products`, `/api/v1/categories`, `/api/v1/brands`, `/api/v1/warehouses`, `/api/v1/stock-transfers`, `/api/v1/wastage-logs`, `/api/v1/purchase-orders`, `/api/v1/suppliers`, `/api/v1/returns`, `/api/v1/stock-movements`, `/api/v1/reports/inventory`, `/api/v1/reports/stock-movements-summary`, `/api/v1/reports/low-stock-products` | Phase 15E replaces the older v2 five-tab inventory console with the v1-style monolithic inventory hub. The route now restores the 13-tab control center, v1 header and summary rhythm, context-sensitive add CTA behavior, modal CRUD loops, embedded procurement and returns adjacency, logs filtering, and report cards. Known deviations remain for frontend-local attributes, URL-based image input, and frontend-generated barcode/label output. |
 | `/dashboard/stock-movements` | Working | `/api/v1/stock-movements` | Read-only ledger; export/reporting depth is still basic. |
 | `/dashboard/returns` | Working | `/api/v1/returns`, `/api/v1/orders`, `/api/v1/customers` | Practical RMA flow, but not a full service-desk style returns workspace. |
@@ -123,6 +123,16 @@ Status labels:
   - `action_flags`
 - The fallback `/dashboard/orders/[id]` route remains available, but it is no longer the primary UX target for exact-v1 parity.
 
+## Phase 15F CRM Clone Note
+
+- `15F` is now completed for `/dashboard/customers`.
+- The route now consumes the CRM compatibility fields added in `15F-support`, including:
+  - `/api/v1/customers/crm-summary`
+  - customer list aliases such as `customerName`, `customerPhone`, `customerType`, `segment`, `tagList`, `totalOrderCount`, `totalSpend`, `lastOrderAt`, `lastOrderNumber`, `activityCount`, and `openActivityCount`
+  - customer detail fields such as `averageOrderValue`, `followUpState`, `stats`, order-history aliases, and activity timeline aliases
+  - alias-based customer/activity writes for the v1-style modal and activity form flows
+- `/dashboard/customers` is now the primary exact-v1 CRM workspace again, while `/dashboard/customers/[id]` remains fallback-only.
+
 ## Phase 15E Inventory Clone Note
 
 - `15E` is now completed for `/dashboard/inventory`.
@@ -207,7 +217,7 @@ These notes track legacy v1 React UI parity only. They are planning markers for 
 | `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Improved. The shared ops visual language and responsive containment now cover the main logistics surfaces. | High | `14E` completed |
 | `/dashboard/products`, `/dashboard/products/[id]` | Improved. Product-admin parity is much closer, though still not a literal v1 recreation. | High | `14F` completed |
 | `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Near match. The inventory workspace now restores the v1 monolithic hub and uses the new backend compatibility aliases directly. | High | `15E` completed |
-| `/dashboard/customers`, `/dashboard/customers/[id]` | Improved. CRM is much closer visually, though still not a true split-pane v1 master-detail clone. | High | `14G` completed |
+| `/dashboard/customers`, `/dashboard/customers/[id]` | Near match. CRM now restores the v1 split-pane master-detail workspace and consumes the new CRM compatibility surface directly. | High | `15F` completed |
 | `/dashboard/returns` and `/dashboard/returns/[id]` | Partial. Stable and visually aligned better, but still lighter than the top-priority ops modules. | Medium | post-`14K` optional |
 | `/dashboard/suppliers`, `/dashboard/purchase-orders`, `/dashboard/purchase-orders/[id]` | Partial. Procurement remains functional but visually lighter than the stronger ops modules. | Medium | post-`14K` optional |
 | `/dashboard/reports` | Improved. Management framing and visual hierarchy are much stronger now, though chart density is still lighter than v1. | High | `14G` completed |

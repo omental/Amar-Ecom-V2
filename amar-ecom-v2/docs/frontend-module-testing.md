@@ -251,6 +251,84 @@
    - image input remains URL-based
    - barcode or label output remains frontend-generated
 
+## Phase 15F CRM Clone Checks
+
+1. Open `http://localhost:3000/dashboard/customers` and confirm the Phase `15B` shell still loads correctly around the CRM page.
+2. Confirm the page header now follows the v1 CRM layout with:
+   - `Customer CRM` title
+   - v1 subtitle
+   - `Export CRM` button
+   - `Add Customer` button
+3. Confirm the four top summary cards render in the v1 rhythm:
+   - `Total Customers`
+   - `Repeat Customers`
+   - `Avg. Customer Value`
+   - `Active Chats`
+4. Confirm any extra CRM readiness metrics remain secondary rather than replacing the v1 primary four-card strip.
+5. Confirm the main body uses the v1 split-pane structure:
+   - left customer list pane
+   - right selected customer detail pane
+6. In the left pane, confirm the top controls match the v1 feel:
+   - `All Customers` heading
+   - small search field
+   - `All`
+   - `New`
+   - `Regular`
+7. Confirm the selected customer row gets the v1-style highlighted state with stronger active emphasis.
+8. Confirm customer rows show the denser v1 context:
+   - initials/avatar circle
+   - name
+   - email or fallback contact line
+   - created date
+   - segment badge
+9. Confirm additional CRM filters work without breaking the v1 layout feel:
+   - segment
+   - follow-up due
+   - tag
+   - city
+10. Select a customer and confirm the right pane updates in place without requiring route navigation.
+11. In the right pane profile header, confirm these v1-style areas are present:
+   - customer name
+   - segment badge
+   - email
+   - address
+   - member-since text
+   - phone/contact block
+   - edit and delete actions
+12. Confirm the stats strip in the right pane shows:
+   - total orders
+   - total spend
+   - average order value
+   - follow-up state
+13. Confirm the detail blocks show:
+   - contact
+   - location
+   - follow-up state
+   - tags
+   - notes
+14. Confirm `Bills` and `Order History` sections render and consume the CRM-compatible order aliases from the customer detail payload.
+15. Confirm the `CRM Activities` section allows:
+   - add note
+   - add follow-up
+   - add call
+   - add message
+   - mark complete
+16. Confirm `Export CRM` generates frontend CSV from the currently loaded customer rows.
+17. Open the add/edit customer modal and confirm it follows the v1 modal loop with fields for:
+   - full name
+   - phone
+   - email
+   - segment
+   - follow-up date
+   - tags
+   - notes
+   - address
+   - city
+18. Confirm the modal saves through the existing customer endpoints and that the split-pane list updates afterward.
+19. Confirm the `Messages` area is visibly placeholder-only and does not imply a real backend inbox workflow.
+20. Confirm `/dashboard/customers/[id]` still works as a fallback detail route, but the main CRM workflow stays on `/dashboard/customers`.
+21. Confirm there is no full-page horizontal overflow on `/dashboard/customers`, while local table scrolling remains acceptable.
+
 ## Prerequisites
 
 1. Start the backend:

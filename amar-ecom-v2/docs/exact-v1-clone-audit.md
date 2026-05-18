@@ -29,6 +29,7 @@ This document resets frontend parity planning around the client's updated requir
 - The dashboard page now follows the v1 header, filter bar, six-KPI grid, stock-alerts card, top-sellers card, recent-order card, store-performance chart, and staff-performance panel structure.
 - Orders now uses the v1 four-card summary strip, v1 status-tab order, search-first cockpit flow, modal-first detail inspection, duplicate-warning panel, and a dedicated v1-style create/edit workflow overlay on `/dashboard/orders`.
 - Inventory now uses the v1 monolithic hub pattern again on `/dashboard/inventory`, with the restored 13-tab control-center structure, v1-style summary/header framing, context-sensitive add actions, modal-first maintenance loops, embedded stock workflows, logs filtering, and inventory reports fed by the Phase `15E-support` backend aliases.
+- CRM now uses the v1 split-pane workspace pattern again on `/dashboard/customers`, with the restored left customer directory, right selected-customer detail pane, v1-style four-card header summary, client-side CSV export, modal add/edit customer flow, and in-pane order/history activity context powered by the Phase `15F-support` backend aliases.
 
 ## Match Scale
 
@@ -118,6 +119,37 @@ Match: `Partial`
    High
 13. recommended clone phase
    `15B`
+
+Match: `Near match`
+
+### CRM
+
+1. v1 route/component
+   `src/components/CRM.tsx`
+2. v1 layout structure
+   Single-screen CRM workspace with header, four summary cards, a left customer-list pane, and a right selected-customer detail pane.
+3. v1 tabs/sections
+   No route tabs. The main sections are header, summary strip, customer list, selected profile, bills, items bought, messages, and add/edit modal.
+4. v1 filters/search
+   Search input plus lightweight customer chips for `All`, `New`, and `Regular`. Export is client-side CSV from the current CRM list.
+5. v1 tables/cards
+   Total customers, repeat percentage, average customer value, active chats placeholder; customer list rows; selected profile header; bill/order tables; message placeholder.
+6. v1 modals/drawers
+   Add/edit customer modal. No separate route-first detail workflow.
+7. v1 buttons/actions
+   `Export CRM`, `Add Customer`, select row, WhatsApp/contact shortcut, edit customer, delete customer.
+8. v1 status badges
+   Segment badges use `New`, `Repeat`, `VIP`, and `At Risk`.
+9. v1 workflow behavior
+   Operators browse customers in the left pane and inspect or act on the selected customer in the right pane without leaving the CRM screen.
+10. current v2 equivalent
+   `/dashboard/customers`
+11. exact gaps
+   Core split-pane parity is now restored closely enough for Phase `15F`. Known deviations remain documented: `points` and active chat/message blocks remain visual placeholders because they are not backed by real workflow data in current v2 scope, and `/dashboard/customers/[id]` remains available only as a fallback route rather than the primary UX.
+12. implementation difficulty
+   High
+13. recommended clone phase
+   `15F`
 
 Match: `Near match`
 

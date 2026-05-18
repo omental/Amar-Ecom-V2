@@ -164,6 +164,10 @@ Backend support status:
 
 - `15F-support` completed on `2026-05-18`
 
+Status:
+
+- Completed on `2026-05-18`
+
 Goals:
 
 - Recreate the v1 split-pane CRM
@@ -186,6 +190,16 @@ Backend readiness notes:
 - `/api/v1/customers/{id}` now exposes richer profile aliases, order-history aliases, activity timeline aliases, `averageOrderValue`, `followUpState`, and a `stats` summary block for the right pane.
 - Customer and activity create/update endpoints now accept the main v1-style alias inputs without requiring a new backend model or migration.
 - CRM export remains frontend-generated because that matches the v1 implementation; no new backend export route was required in `15F-support`.
+
+Completion notes:
+
+- `/dashboard/customers` now follows the v1 `CRM.tsx` split-pane workspace with the restored left customer directory, right selected-customer detail pane, v1 header copy, four-card summary strip, row-selection loop, and modal-first add or edit customer flow.
+- The page now consumes the CRM compatibility surface added in `15F-support`, including `/api/v1/customers/crm-summary`, enriched `/api/v1/customers` list rows, enriched `/api/v1/customers/{id}` profile and timeline payloads, and aliased customer/activity writes.
+- CRM export remains frontend-generated CSV because that matches the v1 behavior.
+- Known intentional deviations remain:
+  points remain visual-only
+  chat/message blocks remain placeholder-only
+  `/dashboard/customers/[id]` remains a fallback detail route instead of the primary CRM interaction path
 
 ## Phase 15G: Exact v1 Logistics
 
@@ -285,7 +299,7 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15F`
+- Recommended next coding phase: `15G-support`
 - Focus: exact v1 inventory hub reconstruction and tab consolidation
 
 ## Risk Notes
