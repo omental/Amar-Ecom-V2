@@ -1,6 +1,6 @@
 # Exact V1 Clone Roadmap
 
-Last reviewed: 2026-05-17
+Last reviewed: 2026-05-18
 
 ## Requirement Reset
 
@@ -115,6 +115,10 @@ Completion notes:
 
 ## Phase 15E: Exact v1 Inventory Hub
 
+Backend support status:
+
+- `15E-support` completed on `2026-05-18`
+
 Goals:
 
 - Rebuild the v1 all-in-one inventory hub as the primary operator experience
@@ -130,6 +134,13 @@ Primary targets:
 Exit condition:
 
 - Inventory is once again a monolithic control center like v1
+
+Backend readiness notes:
+
+- `/api/v1/inventory/hub-summary` now provides the cross-tab counts needed by the v1 control-center header and summary cards.
+- Existing inventory, product, stock-movement, supplier, purchase-order, transfer, wastage, return, category, brand, and warehouse APIs now expose the flatter alias fields needed by the v1 hub without forking into parallel legacy routes.
+- No backend migration was required for Phase `15E-support`.
+- Known backend deviations remain for exact attribute persistence, Firebase Storage-style image upload, and barcode/label printing, which are still either undecided or frontend-side flows.
 
 ## Phase 15F: Exact v1 CRM
 

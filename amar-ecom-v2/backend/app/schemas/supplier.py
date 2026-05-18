@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 
 from app.schemas.common import ORMBaseSchema
 from app.schemas.warehouse import WarehouseRead
@@ -39,6 +39,26 @@ class SupplierRead(ORMBaseSchema):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+    @computed_field(return_type=str | None)
+    @property
+    def contactPerson(self) -> str | None:
+        return self.contact_person
+
+    @computed_field(return_type=str)
+    @property
+    def status(self) -> str:
+        return "Active" if self.is_active else "Inactive"
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def updatedAt(self) -> datetime:
+        return self.updated_at
 
 
 class PurchaseOrderItemCreate(BaseModel):
@@ -110,3 +130,33 @@ class PurchaseOrderRead(ORMBaseSchema):
     supplier: SupplierRead | None = None
     warehouse: WarehouseRead | None = None
     items: list[PurchaseOrderItemRead] = []
+
+    @computed_field(return_type=str)
+    @property
+    def poNumber(self) -> str:
+        return self.po_number
+
+    @computed_field(return_type=str | None)
+    @property
+    def supplierName(self) -> str | None:
+        return self.supplier.name if self.supplier else None
+
+    @computed_field(return_type=str | None)
+    @property
+    def warehouseName(self) -> str | None:
+        return self.warehouse.name if self.warehouse else None
+
+    @computed_field(return_type=bool)
+    @property
+    def receivedState(self) -> bool:
+        return self.stock_received
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def updatedAt(self) -> datetime:
+        return self.updated_at

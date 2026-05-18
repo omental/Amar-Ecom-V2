@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field, model_validator
 
 from app.schemas.brand import BrandRead
 from app.schemas.category import CategoryRead
@@ -32,6 +32,21 @@ class ProductVariantRead(ORMBaseSchema):
     stock_quantity: int
     created_at: datetime
     updated_at: datetime
+
+    @computed_field(return_type=str | None)
+    @property
+    def barcode(self) -> str | None:
+        return self.sku
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def updatedAt(self) -> datetime:
+        return self.updated_at
 
 
 class ProductCreate(BaseModel):
@@ -85,3 +100,72 @@ class ProductRead(ORMBaseSchema):
     category: CategoryRead | None = None
     brand: BrandRead | None = None
     variants: list[ProductVariantRead] = []
+    productName: str | None = None
+    barcode: str | None = None
+    categoryName: str | None = None
+    brandName: str | None = None
+    salePrice: Decimal | None = None
+    costPrice: Decimal | None = None
+    stockLevel: int = 0
+    reorderPoint: int = 5
+    lowStockThreshold: int = 5
+    image: str | None = None
+    imageUrl: str | None = None
+    hasVariants: bool = False
+    variantsCount: int = 0
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_compat_fields(cls, value):
+        if isinstance(value, dict):
+            return value
+
+        inventory_items = getattr(value, "inventory_items", []) or []
+        category = getattr(value, "category", None)
+        brand = getattr(value, "brand", None)
+        variants = getattr(value, "variants", []) or []
+        thresholds = [item.low_stock_threshold for item in inventory_items]
+        reorder_point = min(thresholds) if thresholds else 5
+
+        return {
+            "id": value.id,
+            "name": value.name,
+            "slug": value.slug,
+            "sku": value.sku,
+            "description": value.description,
+            "source": value.source,
+            "external_id": value.external_id,
+            "external_slug": value.external_slug,
+            "external_status": value.external_status,
+            "external_synced_at": value.external_synced_at,
+            "external_payload_snapshot": value.external_payload_snapshot,
+            "external_stock_quantity": value.external_stock_quantity,
+            "category_id": value.category_id,
+            "brand_id": value.brand_id,
+            "price": value.price,
+            "cost_price": value.cost_price,
+            "image_url": value.image_url,
+            "status": value.status,
+            "created_at": value.created_at,
+            "updated_at": value.updated_at,
+            "category": category,
+            "brand": brand,
+            "variants": variants,
+            "productName": value.name,
+            "barcode": value.sku,
+            "categoryName": getattr(category, "name", None),
+            "brandName": getattr(brand, "name", None),
+            "salePrice": value.price,
+            "costPrice": value.cost_price,
+            "stockLevel": sum(item.quantity for item in inventory_items),
+            "reorderPoint": reorder_point,
+            "lowStockThreshold": reorder_point,
+            "image": value.image_url,
+            "imageUrl": value.image_url,
+            "hasVariants": len(variants) > 0,
+            "variantsCount": len(variants),
+            "createdAt": value.created_at,
+            "updatedAt": value.updated_at,
+        }

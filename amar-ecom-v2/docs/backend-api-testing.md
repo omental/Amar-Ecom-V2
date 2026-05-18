@@ -67,6 +67,8 @@ This phase adds the inventory operations hub migration:
 
 - `c7e8f9a0b1c2_add_stock_transfers_and_wastage_logs`
 
+Phase `15E-support` adds no new migration.
+
 This phase adds the logistics workflow completion migration:
 
 - `d8f9a0b1c2d3_add_logistics_shipment_events_and_reconciliation`
@@ -2564,6 +2566,112 @@ Expected result:
 - quantity increases by `received_quantity` if it is greater than `0`
 - otherwise quantity increases by the line `quantity`
 
+## Inventory Hub Summary Compatibility
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/inventory/hub-summary" `
+  -Headers $headers
+```
+
+Expected result:
+
+- returns:
+  - `total_products`
+  - `active_products`
+  - `categories`
+  - `brands`
+  - `warehouses`
+  - `stock_rows`
+  - `low_stock`
+  - `out_of_stock`
+  - `pending_transfers`
+  - `completed_transfers`
+  - `wastage_count`
+  - `purchase_orders`
+  - `suppliers`
+  - `returns`
+  - `stock_movement_count`
+  - `inventory_value`
+
+## Inventory List V1 Compatibility Aliases
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/inventory?skip=0&limit=100" `
+  -Headers $headers
+```
+
+Expected result:
+
+- each inventory row still includes native fields such as `product_id`, `variant_id`, `warehouse_id`, `quantity`, and `low_stock_threshold`
+- each inventory row also includes:
+  - `productName`
+  - `sku`
+  - `image_url`
+  - `imageUrl`
+  - `categoryName`
+  - `brandName`
+  - `warehouseName`
+  - `warehouseCode`
+  - `variantSummary`
+  - `stockStatus`
+  - `costPrice`
+  - `salePrice`
+  - `inventoryValue`
+  - `lastMovementSummary`
+  - `createdAt`
+  - `updatedAt`
+
+## Product Inventory-Hub Compatibility Aliases
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/products?skip=0&limit=100" `
+  -Headers $headers
+```
+
+Expected result:
+
+- each product row still includes native v2 fields
+- each product row also includes:
+  - `productName`
+  - `barcode`
+  - `categoryName`
+  - `brandName`
+  - `salePrice`
+  - `costPrice`
+  - `stockLevel`
+  - `reorderPoint`
+  - `lowStockThreshold`
+  - `image`
+  - `imageUrl`
+  - `hasVariants`
+  - `variantsCount`
+  - `createdAt`
+  - `updatedAt`
+
+## Stock Movement Compatibility Aliases
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/stock-movements?product_id={productId}&warehouse_id={warehouseId}&variant_id={variantId}" `
+  -Headers $headers
+```
+
+Expected result:
+
+- list filtering supports `product_id`, `variant_id`, `warehouse_id`, `order_id`, `movement_type`, `date_from`, and `date_to`
+- each row still includes native movement fields
+- each row also includes:
+  - `productName`
+  - `warehouseName`
+  - `warehouseCode`
+  - `sku`
+  - `reason`
+  - `user`
+  - `createdAt`
+
 ## Verify Purchase Received Stock Movement
 
 ```powershell
@@ -2594,10 +2702,14 @@ Invoke-RestMethod `
 venv\Scripts\pytest.exe -q
 ```
 
-Release-candidate audit result on 2026-05-16:
+Inventory compatibility validation result on 2026-05-18:
 
-- `30 passed`
-- `0 skipped`
+- targeted Phase `15E-support` run: `3 passed`, `32 deselected`
+- command used:
+
+```powershell
+venv\Scripts\python.exe -m pytest -q tests\test_api.py -k "inventory_adjustment_transfer_and_wastage_flow or inventory_hub_summary_and_v1_compatibility_aliases or purchase_order_receiving_updates_stock_and_records_movements or return_request_restock_flow"
+```
 
 That result was re-validated after running:
 

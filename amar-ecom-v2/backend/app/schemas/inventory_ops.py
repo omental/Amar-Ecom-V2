@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from app.schemas.common import ORMBaseSchema
 from app.schemas.warehouse import WarehouseRead
@@ -54,6 +54,31 @@ class StockTransferRead(ORMBaseSchema):
     to_warehouse: WarehouseRead | None = None
     items: list[StockTransferItemRead] = []
 
+    @computed_field(return_type=str)
+    @property
+    def transferNumber(self) -> str:
+        return self.transfer_number
+
+    @computed_field(return_type=str | None)
+    @property
+    def fromWarehouseName(self) -> str | None:
+        return self.from_warehouse.name if self.from_warehouse else None
+
+    @computed_field(return_type=str | None)
+    @property
+    def toWarehouseName(self) -> str | None:
+        return self.to_warehouse.name if self.to_warehouse else None
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def updatedAt(self) -> datetime:
+        return self.updated_at
+
 
 class WastageLogCreate(BaseModel):
     wastage_number: str
@@ -78,3 +103,23 @@ class WastageLogRead(ORMBaseSchema):
     created_at: datetime
     updated_at: datetime
     warehouse: WarehouseRead | None = None
+
+    @computed_field(return_type=str)
+    @property
+    def wastageNumber(self) -> str:
+        return self.wastage_number
+
+    @computed_field(return_type=str | None)
+    @property
+    def warehouseName(self) -> str | None:
+        return self.warehouse.name if self.warehouse else None
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def updatedAt(self) -> datetime:
+        return self.updated_at

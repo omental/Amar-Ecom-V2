@@ -1,6 +1,6 @@
 # Exact V1 Backend + Workflow Parity Audit
 
-Last reviewed: 2026-05-17
+Last reviewed: 2026-05-18
 
 ## Scope
 
@@ -26,6 +26,8 @@ This document resets backend parity planning around the client's updated require
 - Remaining shell limitations are now mostly social-auth parity and exact notification generation breadth, not missing shell support primitives.
 - `15D-support` is now implemented for orders backend compatibility.
 - Existing order endpoints now expose dense v1-friendly order row aliases, modal-friendly detail aliases, extra status-summary counts, month/date filters, and create-schema aliases without replacing the underlying v2 order model.
+- `15E-support` is now implemented for inventory backend compatibility.
+- v2 now exposes an inventory hub summary endpoint plus v1-style aliases on inventory, product, stock movement, supplier, purchase-order, transfer, wastage, return, category, brand, and warehouse responses where the upcoming exact v1 Inventory Hub needs flatter data.
 
 ## Parity Scale
 
@@ -198,9 +200,9 @@ This document resets backend parity planning around the client's updated require
    Schemas: corresponding inventory/product/supplier/return schemas
    Service: `inventory_service.py`
 5. parity status
-   `Better in v2`
+   `Partial`
 6. gaps
-   v2 backend is stronger and normalized, but the exact v1 hub needs compatibility data across many subdomains from one screen. No dedicated `attributes` backend module was found. Storage/file upload parity is not present in v2 backend. Some v1 tab concepts map to multiple v2 endpoints and may need aggregation support.
+   Phase `15E-support` closes the main backend blocker by adding `GET /api/v1/inventory/hub-summary`, enriching `GET /api/v1/inventory` with v1-friendly stock-row aliases, and extending adjacent schemas so the monolithic v1-style hub can load flatter tab payloads without destructive model changes. Remaining gaps are limited to the `attributes` tab persistence decision, Firebase Storage image-upload parity, and exact v1 barcode/label UX, which is frontend-side unless later scope proves otherwise.
 7. implementation risk
    `High`
 8. recommended backend phase
@@ -221,7 +223,7 @@ This document resets backend parity planning around the client's updated require
 5. parity status
    `Partial`
 6. gaps
-   Core product CRUD exists, but exact v1 field names and image-upload flow differ. Barcode-print support appears UI-first in v1 and may need backend-free emulation unless the current v2 product payload is missing required print data.
+   Core product CRUD now exposes v1-friendly aliases such as `productName`, `barcode`, `categoryName`, `brandName`, `salePrice`, `costPrice`, `stockLevel`, `reorderPoint`, `lowStockThreshold`, `image`, `imageUrl`, `hasVariants`, `variantsCount`, `createdAt`, and `updatedAt`. Remaining gap is real storage-backed upload parity; the backend still exposes URL-based image fields only.
 7. implementation risk
    `Medium`
 8. recommended backend phase
@@ -282,9 +284,9 @@ This document resets backend parity planning around the client's updated require
    Route: `warehouses.py`
    Schema: `warehouse.py`
 5. parity status
-   `Exact`
+   `Partial`
 6. gaps
-   No significant backend gap beyond label/status mapping if the UI requires exact wording.
+   Backend CRUD remains sufficient, and v2 now exposes `location`, `status`, `createdAt`, and `updatedAt` aliases to support the v1 warehouse cards and modals. Exact v1 freeform warehouse description behavior still needs frontend-only handling because v2 does not add a separate warehouse description column.
 7. implementation risk
    `Low`
 8. recommended backend phase
@@ -303,9 +305,9 @@ This document resets backend parity planning around the client's updated require
    Routes: `inventory.py`, `stock_movements.py`, `stock_transfers.py`, `wastage_logs.py`, `purchase_orders.py`
    Service: `inventory_service.py`
 5. parity status
-   `Better in v2`
+   `Partial`
 6. gaps
-   v2 has safer canonical stock movement tracking, but exact v1 log labels and tab-specific summaries may need response shaping. If the v1 UI expects one combined log list, the backend may need a convenience aggregation endpoint or frontend merge strategy.
+   v2 keeps the safer canonical movement model and now exposes v1-friendly log aliases plus product, warehouse, SKU, reason, and `createdAt` helpers. Product, warehouse, movement-type, variant, and date filtering are available on `GET /api/v1/stock-movements`. A single merged v1-style log feed across transfers, wastage, and inventory logs is still a frontend composition choice rather than a required new backend route.
 7. implementation risk
    `Medium`
 8. recommended backend phase
@@ -682,7 +684,7 @@ This document resets backend parity planning around the client's updated require
 3. Orders create/edit parity: v2 order APIs are strong, but exact v1 fields, status names, duplicate checks, and courier-assisted create flow are not fully aligned.
 4. Returns status model: v1 RMA progression labels differ materially from the stronger normalized v2 return workflow.
 5. CRM summaries and segmentation: v1 master-detail flow expects customer summary data and segments in a legacy shape.
-6. Inventory hub aggregation: v2 backend is stronger, but the v1 all-in-one hub needs cross-module payload shaping, image-upload parity decisions, and possibly attributes support.
+6. Inventory hub remaining gaps: backend aggregation and response shaping are now in place, but attributes persistence, storage-backed image upload, and exact barcode/label UX decisions remain.
 7. Supplier ledger and settings-center breadth: v1 expects embedded supplier balances/payments and broader settings/account preferences than current route shapes expose.
 
 ## Must Fix Before Exact UI Clone

@@ -31,6 +31,7 @@ def _product_query():
         selectinload(Product.category),
         selectinload(Product.brand),
         selectinload(Product.variants),
+        selectinload(Product.inventory_items),
     )
 
 

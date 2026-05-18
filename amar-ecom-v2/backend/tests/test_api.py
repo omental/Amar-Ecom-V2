@@ -2181,6 +2181,432 @@ def test_inventory_adjustment_transfer_and_wastage_flow() -> None:
     dispose_engine()
 
 
+def test_inventory_hub_summary_and_v1_compatibility_aliases() -> None:
+    try:
+        headers = auth_headers()
+
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Inventory Compat Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"inventory-compat-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Inventory compatibility category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category = category_response.json()
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Inventory Compat Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"inventory-compat-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Inventory compatibility brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand = brand_response.json()
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Inventory Compatibility Product",
+                    "slug": f"inventory-compat-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"IC-{uuid.uuid4().hex[:8]}",
+                    "description": "Inventory compatibility product",
+                    "category_id": category["id"],
+                    "brand_id": brand["id"],
+                    "price": 350.00,
+                    "cost_price": 210.00,
+                    "image_url": "https://example.com/compat-product.jpg",
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Inventory Compat Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"ICW-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka compatibility zone",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 9,
+                    "low_stock_threshold": 4,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+            inventory_item = inventory_response.json()
+            assert inventory_item["productName"] == product["name"]
+            assert inventory_item["sku"] == product["sku"]
+            assert inventory_item["warehouseName"] == warehouse["name"]
+            assert inventory_item["warehouseCode"] == warehouse["code"]
+            assert inventory_item["categoryName"] == category["name"]
+            assert inventory_item["brandName"] == brand["name"]
+            assert inventory_item["stockStatus"] == "In Stock"
+            assert inventory_item["costPrice"] == "210.00"
+            assert inventory_item["salePrice"] == "350.00"
+            assert inventory_item["inventoryValue"] == "1890.00"
+            assert inventory_item["image_url"] == "https://example.com/compat-product.jpg"
+            assert inventory_item["imageUrl"] == inventory_item["image_url"]
+            assert inventory_item["createdAt"] == inventory_item["created_at"]
+            assert inventory_item["updatedAt"] == inventory_item["updated_at"]
+
+            adjust_response = client.post(
+                f"/api/v1/inventory/{inventory_item['id']}/adjust",
+                headers=headers,
+                json={
+                    "quantity_delta": 2,
+                    "note": "Compatibility adjustment",
+                },
+            )
+            assert adjust_response.status_code == 200, adjust_response.text
+            adjusted_inventory = adjust_response.json()
+            assert adjusted_inventory["quantity"] == 11
+            assert adjusted_inventory["lastMovementSummary"] == "adjustment:2"
+
+            supplier_response = client.post(
+                "/api/v1/suppliers",
+                headers=headers,
+                json={
+                    "name": f"Compat Supplier {uuid.uuid4().hex[:8]}",
+                    "contact_person": "Supplier Contact",
+                    "phone": "01700000001",
+                    "email": unique_email(),
+                    "address": "Supplier address",
+                    "notes": "Compatibility supplier",
+                    "is_active": True,
+                },
+            )
+            assert supplier_response.status_code == 201, supplier_response.text
+            supplier = supplier_response.json()
+            assert supplier["contactPerson"] == "Supplier Contact"
+            assert supplier["status"] == "Active"
+            assert supplier["createdAt"] == supplier["created_at"]
+
+            purchase_order_response = client.post(
+                "/api/v1/purchase-orders",
+                headers=headers,
+                json={
+                    "po_number": f"PO-COMPAT-{uuid.uuid4().hex[:8]}",
+                    "supplier_id": supplier["id"],
+                    "warehouse_id": warehouse["id"],
+                    "status": "ordered",
+                    "order_date": "2026-05-18",
+                    "expected_date": "2026-05-20",
+                    "discount": 0,
+                    "notes": "Compatibility purchase order",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 3,
+                            "received_quantity": 0,
+                            "unit_cost": 210,
+                            "total_cost": 630,
+                        }
+                    ],
+                },
+            )
+            assert purchase_order_response.status_code == 201, purchase_order_response.text
+            purchase_order = purchase_order_response.json()
+            assert purchase_order["poNumber"] == purchase_order["po_number"]
+            assert purchase_order["supplierName"] == supplier["name"]
+            assert purchase_order["warehouseName"] == warehouse["name"]
+            assert purchase_order["receivedState"] is False
+            assert purchase_order["createdAt"] == purchase_order["created_at"]
+
+            same_warehouse_transfer_response = client.post(
+                "/api/v1/stock-transfers",
+                headers=headers,
+                json={
+                    "transfer_number": f"TRF-BLOCK-{uuid.uuid4().hex[:8]}",
+                    "from_warehouse_id": warehouse["id"],
+                    "to_warehouse_id": warehouse["id"],
+                    "status": "pending",
+                    "notes": "This should fail",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                        }
+                    ],
+                },
+            )
+            assert same_warehouse_transfer_response.status_code == 400, same_warehouse_transfer_response.text
+
+            second_warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Inventory Compat Warehouse B {uuid.uuid4().hex[:8]}",
+                    "code": f"ICWB-{uuid.uuid4().hex[:8]}",
+                    "address": "Chattogram compatibility zone",
+                    "is_active": True,
+                },
+            )
+            assert second_warehouse_response.status_code == 201, second_warehouse_response.text
+            second_warehouse = second_warehouse_response.json()
+
+            pending_transfer_response = client.post(
+                "/api/v1/stock-transfers",
+                headers=headers,
+                json={
+                    "transfer_number": f"TRF-PENDING-{uuid.uuid4().hex[:8]}",
+                    "from_warehouse_id": warehouse["id"],
+                    "to_warehouse_id": second_warehouse["id"],
+                    "status": "pending",
+                    "notes": "Pending compatibility transfer",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                        }
+                    ],
+                },
+            )
+            assert pending_transfer_response.status_code == 201, pending_transfer_response.text
+
+            completed_transfer_response = client.post(
+                "/api/v1/stock-transfers",
+                headers=headers,
+                json={
+                    "transfer_number": f"TRF-COMPLETED-{uuid.uuid4().hex[:8]}",
+                    "from_warehouse_id": warehouse["id"],
+                    "to_warehouse_id": second_warehouse["id"],
+                    "status": "pending",
+                    "notes": "Completed compatibility transfer",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 2,
+                        }
+                    ],
+                },
+            )
+            assert completed_transfer_response.status_code == 201, completed_transfer_response.text
+            completed_transfer = completed_transfer_response.json()
+
+            complete_transfer_response = client.patch(
+                f"/api/v1/stock-transfers/{completed_transfer['id']}",
+                headers=headers,
+                json={"status": "completed"},
+            )
+            assert complete_transfer_response.status_code == 200, complete_transfer_response.text
+            completed_transfer_payload = complete_transfer_response.json()
+            assert completed_transfer_payload["transferNumber"] == completed_transfer_payload["transfer_number"]
+            assert completed_transfer_payload["fromWarehouseName"] == warehouse["name"]
+            assert completed_transfer_payload["toWarehouseName"] == second_warehouse["name"]
+
+            wastage_response = client.post(
+                "/api/v1/wastage-logs",
+                headers=headers,
+                json={
+                    "wastage_number": f"WST-COMPAT-{uuid.uuid4().hex[:8]}",
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 1,
+                    "reason": "Compatibility wastage",
+                    "note": "Compatibility note",
+                },
+            )
+            assert wastage_response.status_code == 201, wastage_response.text
+            wastage_log = wastage_response.json()
+            assert wastage_log["wastageNumber"] == wastage_log["wastage_number"]
+            assert wastage_log["warehouseName"] == warehouse["name"]
+
+            order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "order_number": f"ORD-COMPAT-{uuid.uuid4().hex[:8]}",
+                    "customer_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "customer_phone": "01733333333",
+                    "shipping_address": "Compatibility return address",
+                    "status": "pending",
+                    "payment_status": "unpaid",
+                    "source": "manual",
+                    "subtotal": 350,
+                    "discount": 0,
+                    "delivery_charge": 0,
+                    "total": 350,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 350,
+                            "total_price": 350,
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+            order = order_response.json()
+
+            return_response = client.post(
+                "/api/v1/returns",
+                headers=headers,
+                json={
+                    "return_number": f"RMA-COMPAT-{uuid.uuid4().hex[:8]}",
+                    "order_id": order["id"],
+                    "warehouse_id": warehouse["id"],
+                    "status": "requested",
+                    "reason": "Compatibility return",
+                    "resolution": "refund",
+                    "refund_amount": 350,
+                    "restock_items": False,
+                    "items": [
+                        {
+                            "order_item_id": order["items"][0]["id"],
+                            "product_id": product["id"],
+                            "variant_id": None,
+                            "product_name": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "condition": "good",
+                        }
+                    ],
+                },
+            )
+            assert return_response.status_code == 201, return_response.text
+            return_request = return_response.json()
+            assert return_request["returnNumber"] == return_request["return_number"]
+            assert return_request["orderNumber"] == order["order_number"]
+            assert return_request["warehouseName"] == warehouse["name"]
+            assert return_request["refundState"] is True
+            assert return_request["restockState"] is False
+
+            inventory_list_response = client.get(
+                "/api/v1/inventory?skip=0&limit=100",
+                headers=headers,
+            )
+            assert inventory_list_response.status_code == 200, inventory_list_response.text
+            inventory_rows = inventory_list_response.json()
+            matching_inventory = [row for row in inventory_rows if row["id"] == inventory_item["id"]]
+            assert matching_inventory
+            assert matching_inventory[0]["productName"] == product["name"]
+
+            products_list_response = client.get("/api/v1/products?skip=0&limit=100", headers=headers)
+            assert products_list_response.status_code == 200, products_list_response.text
+            products_payload = products_list_response.json()
+            matching_products = [row for row in products_payload if row["id"] == product["id"]]
+            assert matching_products
+            compat_product = matching_products[0]
+            assert compat_product["productName"] == product["name"]
+            assert compat_product["barcode"] == product["sku"]
+            assert compat_product["categoryName"] == category["name"]
+            assert compat_product["brandName"] == brand["name"]
+            assert compat_product["salePrice"] == "350.00"
+            assert compat_product["costPrice"] == "210.00"
+            assert compat_product["stockLevel"] >= 8
+            assert compat_product["reorderPoint"] == 4
+            assert compat_product["lowStockThreshold"] == 4
+            assert compat_product["image"] == "https://example.com/compat-product.jpg"
+            assert compat_product["imageUrl"] == compat_product["image"]
+            assert compat_product["hasVariants"] is False
+            assert compat_product["variantsCount"] == 0
+            assert compat_product["createdAt"] == compat_product["created_at"]
+            assert compat_product["updatedAt"] == compat_product["updated_at"]
+
+            stock_movement_response = client.get(
+                f"/api/v1/stock-movements?product_id={product['id']}&warehouse_id={warehouse['id']}",
+                headers=headers,
+            )
+            assert stock_movement_response.status_code == 200, stock_movement_response.text
+            stock_movements = stock_movement_response.json()
+            assert stock_movements
+            assert all(
+                movement["productName"] == product["name"]
+                for movement in stock_movements
+                if movement["product_id"] == product["id"]
+            )
+            assert any(movement["warehouseName"] == warehouse["name"] for movement in stock_movements)
+            assert any(movement["sku"] == product["sku"] for movement in stock_movements)
+            assert any(movement["reason"] for movement in stock_movements)
+            assert all("createdAt" in movement for movement in stock_movements)
+
+            summary_response = client.get("/api/v1/inventory/hub-summary", headers=headers)
+            assert summary_response.status_code == 200, summary_response.text
+            summary = summary_response.json()
+            assert summary["total_products"] >= 1
+            assert summary["active_products"] >= 1
+            assert summary["categories"] >= 1
+            assert summary["brands"] >= 1
+            assert summary["warehouses"] >= 2
+            assert summary["stock_rows"] >= 2
+            assert summary["low_stock"] >= 0
+            assert summary["out_of_stock"] >= 0
+            assert summary["pending_transfers"] >= 1
+            assert summary["completed_transfers"] >= 1
+            assert summary["wastage_count"] >= 1
+            assert summary["purchase_orders"] >= 1
+            assert summary["suppliers"] >= 1
+            assert summary["returns"] >= 1
+            assert summary["stock_movement_count"] >= 1
+            assert float(summary["inventory_value"]) > 0
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if any(
+            token in str(exc)
+            for token in [
+                "return_requests",
+                "warehouse_id",
+                "suppliers",
+                "purchase_orders",
+                "stock_transfers",
+                "wastage_logs",
+                "stock_movements",
+                "activity_logs",
+                "customer_phone",
+                "customer_name",
+                "payment_method",
+                "paid_amount",
+                "printed_count",
+                "order_events",
+            ]
+        ):
+            pytest.skip("Apply the latest inventory compatibility migrations before running this test.")
+        if any(token in str(exc).lower() for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_customer_crm_activity_flow() -> None:
     try:
         headers = auth_headers()

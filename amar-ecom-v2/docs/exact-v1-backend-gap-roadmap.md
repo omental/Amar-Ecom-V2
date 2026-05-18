@@ -1,6 +1,6 @@
 # Exact V1 Backend Gap Roadmap
 
-Last reviewed: 2026-05-17
+Last reviewed: 2026-05-18
 
 ## Scope
 
@@ -69,9 +69,25 @@ Remaining:
 
 ### 15E-support: Inventory
 
+Status: `Completed for backend compatibility foundation`
+
 - Add any missing compatibility fields or summary payloads needed to rebuild the v1 all-in-one inventory hub.
 - Decide whether product image upload parity will need backend storage support or a separate approved implementation path.
 - Add missing inventory-adjacent support only where the v1 hub truly depends on it, especially around attributes if that tab remains in-scope for exact parity.
+
+Completed in this phase:
+
+- `GET /api/v1/inventory/hub-summary` now returns the cross-tab counts needed by the v1 inventory control center.
+- `GET /api/v1/inventory` and `GET /api/v1/inventory/{id}` now expose flatter v1-style stock overview aliases including product, warehouse, category, brand, price, stock status, inventory value, last movement summary, and camelCase timestamps.
+- `GET /api/v1/products` now exposes inventory-hub-friendly aliases such as `productName`, `barcode`, `categoryName`, `brandName`, `stockLevel`, `reorderPoint`, `image`, and `hasVariants`.
+- `GET /api/v1/stock-movements` now exposes v1 log aliases plus variant filtering.
+- Supplier, purchase-order, return, transfer, wastage, category, brand, and warehouse responses now include the alias fields the embedded inventory tabs need.
+
+Remaining:
+
+- No new backend `attributes` model was added because the v1 source did not prove that exact persistent backend support is required to unblock the first v2 inventory-hub rebuild.
+- Product image upload remains URL-based in v2; Firebase Storage-style upload parity is still an explicit deviation.
+- Barcode and label printing remain frontend-generated flows; backend PDF generation was intentionally not added.
 
 ### 15F-support: CRM
 
@@ -137,17 +153,8 @@ Important:
 7. `15C-support`
 8. `15I-support`
 
-## First Backend Support Phase
+## Current Backend Support Status
 
-`15D-support`
-
-Reason:
-
-- Orders is now the next major exact-clone frontend target.
-- The orders cockpit, modal detail loop, and dedicated new-order workflow depend on dense row data, duplicate warnings, action flags, and exact status vocabulary support.
-- This compatibility layer lets the frontend restore the v1 orders experience without regressing the safer v2 backend model.
-
-Status:
-
-- Backend support for `15D-support` is complete.
-- The next implementation dependency is frontend `15D` orders cockpit, modal detail, and dedicated new-order clone work.
+- `15D-support` is complete.
+- `15E-support` is complete.
+- The next likely backend parity phase is `15F-support` or `15G-support`, unless the frontend `15E` exact inventory rebuild uncovers one narrow additional compatibility need.

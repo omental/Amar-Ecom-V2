@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from app.schemas.customer import CustomerListRead
 from app.schemas.order import OrderItemRead, OrderRead
@@ -74,3 +74,43 @@ class ReturnRequestRead(ORMBaseSchema):
     customer: CustomerListRead | None = None
     warehouse: WarehouseRead | None = None
     items: list[ReturnItemRead] = []
+
+    @computed_field(return_type=str)
+    @property
+    def returnNumber(self) -> str:
+        return self.return_number
+
+    @computed_field(return_type=str | None)
+    @property
+    def orderNumber(self) -> str | None:
+        return self.order.order_number if self.order else None
+
+    @computed_field(return_type=str | None)
+    @property
+    def customerName(self) -> str | None:
+        return self.customer.name if self.customer else None
+
+    @computed_field(return_type=str | None)
+    @property
+    def warehouseName(self) -> str | None:
+        return self.warehouse.name if self.warehouse else None
+
+    @computed_field(return_type=bool)
+    @property
+    def refundState(self) -> bool:
+        return self.status == "refunded" or self.refund_amount > 0
+
+    @computed_field(return_type=bool)
+    @property
+    def restockState(self) -> bool:
+        return self.stock_restocked or self.status == "restocked"
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def updatedAt(self) -> datetime:
+        return self.updated_at
