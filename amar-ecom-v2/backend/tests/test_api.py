@@ -2631,6 +2631,13 @@ def test_customer_crm_activity_flow() -> None:
             customer = customer_response.json()
             assert customer["customer_type"] == "vip"
             assert customer["follow_up_date"] == "2026-05-15"
+            assert customer["customerName"] == "CRM Test Customer"
+            assert customer["customerPhone"] == "01733333333"
+            assert customer["customerType"] == "vip"
+            assert customer["segment"] in {"VIP", "At Risk", "New", "Repeat"}
+            assert customer["tagList"] == ["priority", "repeat"]
+            assert customer["totalOrderCount"] == 0
+            assert str(customer["totalSpend"]) == "0.00"
 
             filtered_response = client.get(
                 "/api/v1/customers?search=CRM&customer_type=vip&has_follow_up=true",
@@ -2639,6 +2646,13 @@ def test_customer_crm_activity_flow() -> None:
             assert filtered_response.status_code == 200, filtered_response.text
             filtered_customers = filtered_response.json()
             assert any(item["id"] == customer["id"] for item in filtered_customers)
+
+            summary_response = client.get("/api/v1/customers/crm-summary", headers=headers)
+            assert summary_response.status_code == 200, summary_response.text
+            summary = summary_response.json()
+            assert summary["total_customers"] >= 1
+            assert summary["vip_customers"] >= 1
+            assert summary["followups_due"] >= 1
 
             category_response = client.post(
                 "/api/v1/categories",
@@ -2765,10 +2779,19 @@ def test_customer_crm_activity_flow() -> None:
             assert detail_response.status_code == 200, detail_response.text
             detail = detail_response.json()
             assert detail["total_order_count"] >= 1
+            assert detail["totalOrderCount"] >= 1
             assert str(detail["total_spend"]) == "270.00"
+            assert str(detail["totalSpend"]) == "270.00"
             assert detail["pending_follow_up_count"] >= 1
+            assert str(detail["averageOrderValue"]) == "270.00"
+            assert detail["lastOrderNumber"].startswith("ORD-CRM-")
+            assert detail["stats"]["totalOrderCount"] >= 1
+            assert detail["stats"]["followUpState"] in {"scheduled", "today", "overdue", "open", "none"}
             assert any(order["payment_status"] == "paid" for order in detail["orders"])
+            assert any(order["orderNumber"].startswith("ORD-CRM-") for order in detail["orders"])
             assert any(item["id"] == activity["id"] for item in detail["activities"])
+            assert any(item["activityType"] == "follow_up" for item in detail["activities"])
+            assert any(item["createdBy"] for item in detail["activities"])
 
             customer_logs_response = client.get(
                 "/api/v1/activity-logs?module=customers&entity_type=customer_activity&limit=20",
@@ -2789,20 +2812,118 @@ def test_customer_crm_activity_flow() -> None:
             assert update_activity_response.status_code == 200, update_activity_response.text
             updated_activity = update_activity_response.json()
             assert updated_activity["completed_at"] is not None
+            assert updated_activity["completedAt"] is not None
 
             updated_customer_response = client.patch(
                 f"/api/v1/customers/{customer['id']}",
                 headers=headers,
                 json={
-                    "customer_type": "wholesale",
-                    "tags": "priority,account",
+                    "customerType": "wholesale",
+                    "tags": ["priority", "account"],
                     "notes": "Moved to wholesale segment",
+                    "lastContactedAt": "2026-05-16T12:00:00Z",
                 },
             )
             assert updated_customer_response.status_code == 200, updated_customer_response.text
             updated_customer = updated_customer_response.json()
             assert updated_customer["customer_type"] == "wholesale"
             assert updated_customer["tags"] == "priority,account"
+            assert updated_customer["customerType"] == "wholesale"
+            assert updated_customer["tagList"] == ["priority", "account"]
+            assert updated_customer["lastContactedAt"] is not None
+    except ProgrammingError as exc:
+        if any(
+            token in str(exc)
+            for token in [
+                "customer_type",
+                "follow_up_date",
+                "last_contacted_at",
+                "customer_activities",
+                "activity_logs",
+                "customer_name",
+                "payment_method",
+                "paid_amount",
+            ]
+        ):
+            pytest.skip("Apply the latest customer CRM migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_customer_crm_summary_filters_and_alias_inputs() -> None:
+    try:
+        headers = auth_headers()
+
+        with TestClient(app) as client:
+            customer_response = client.post(
+                "/api/v1/customers",
+                headers=headers,
+                json={
+                    "customerName": "Alias CRM Customer",
+                    "customerPhone": "01888888888",
+                    "email": "alias.crm@example.com",
+                    "address": "Banani, Dhaka",
+                    "city": "Dhaka",
+                    "customerType": "regular",
+                    "tags": ["crm", "dhaka"],
+                    "notes": "Alias input coverage",
+                    "followUpDate": "2026-05-18",
+                },
+            )
+            assert customer_response.status_code == 201, customer_response.text
+            customer = customer_response.json()
+            assert customer["name"] == "Alias CRM Customer"
+            assert customer["phone"] == "01888888888"
+            assert customer["tags"] == "crm,dhaka"
+            assert customer["tagList"] == ["crm", "dhaka"]
+
+            list_response = client.get(
+                "/api/v1/customers?segment=new&follow_up_due=true&tag=crm&city=dhaka&created_from=2026-05-01T00:00:00Z&created_to=2026-05-31T00:00:00Z",
+                headers=headers,
+            )
+            assert list_response.status_code == 200, list_response.text
+            rows = list_response.json()
+            match = next((row for row in rows if row["id"] == customer["id"]), None)
+            assert match is not None
+            assert match["customerName"] == "Alias CRM Customer"
+            assert match["customerPhone"] == "01888888888"
+            assert match["customerType"] == "regular"
+            assert match["activityCount"] == 0
+            assert match["openActivityCount"] == 0
+            assert match["segment"] == "New"
+
+            activity_response = client.post(
+                f"/api/v1/customers/{customer['id']}/activities",
+                headers=headers,
+                json={
+                    "activityType": "note",
+                    "title": "Send onboarding message",
+                    "description": "CRM alias activity test",
+                    "dueDate": "2026-05-19T09:00:00Z",
+                },
+            )
+            assert activity_response.status_code == 201, activity_response.text
+            activity = activity_response.json()
+            assert activity["activity_type"] == "note"
+            assert activity["activityType"] == "note"
+            assert activity["dueDate"] == "2026-05-19T09:00:00Z"
+
+            detail_response = client.get(f"/api/v1/customers/{customer['id']}", headers=headers)
+            assert detail_response.status_code == 200, detail_response.text
+            detail = detail_response.json()
+            assert detail["activityCount"] >= 1
+            assert detail["openActivityCount"] >= 1
+            assert detail["followUpState"] in {"scheduled", "today", "overdue", "open", "none"}
+
+            summary_response = client.get("/api/v1/customers/crm-summary", headers=headers)
+            assert summary_response.status_code == 200, summary_response.text
+            summary = summary_response.json()
+            assert summary["total_customers"] >= 1
+            assert summary["leads"] >= 1
+            assert summary["regular_customers"] >= 1
+            assert "total_customer_spend" in summary
+            assert "average_customer_value" in summary
     except ProgrammingError as exc:
         if any(
             token in str(exc)

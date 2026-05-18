@@ -69,6 +69,8 @@ This phase adds the inventory operations hub migration:
 
 Phase `15E-support` adds no new migration.
 
+Phase `15F-support` adds no new migration.
+
 This phase adds the logistics workflow completion migration:
 
 - `d8f9a0b1c2d3_add_logistics_shipment_events_and_reconciliation`
@@ -258,6 +260,128 @@ Expected result:
   - `orderNumber`
   - `customerName`
   - `customerPhone`
+
+## CRM Summary Endpoint
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/customers/crm-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- response includes:
+  - `total_customers`
+  - `leads`
+  - `regular_customers`
+  - `vip_customers`
+  - `wholesale_customers`
+  - `reseller_customers`
+  - `blocked_customers`
+  - `followups_due`
+  - `followups_today`
+  - `overdue_followups`
+  - `recent_activity_count`
+  - `customers_with_orders`
+  - `total_customer_spend`
+  - `average_customer_value`
+
+## CRM Compatibility List Payload
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/customers?search=crm&segment=new&follow_up_due=true&tag=priority&city=dhaka&created_from=2026-05-01T00:00:00Z&created_to=2026-05-31T00:00:00Z" `
+  -Headers $headers
+```
+
+Expected result:
+
+- each row still contains the native customer fields
+- each row also includes compatibility fields such as:
+  - `customerName`
+  - `customerPhone`
+  - `customerType`
+  - `segment`
+  - `tagList`
+  - `followUpDate`
+  - `lastContactedAt`
+  - `totalOrderCount`
+  - `totalSpend`
+  - `lastOrderAt`
+  - `lastOrderNumber`
+  - `activityCount`
+  - `openActivityCount`
+  - `createdAt`
+  - `updatedAt`
+
+## CRM Compatibility Detail Payload
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/customers/{customerId} `
+  -Headers $headers
+```
+
+Expected result:
+
+- response still contains core customer fields
+- response now also includes:
+  - profile aliases such as `customerName`, `customerPhone`, `customerType`, `segment`, and `tagList`
+  - order history aliases such as `orderNumber`, `totalAmount`, and `createdAt`
+  - activity aliases such as `activityType`, `dueDate`, `completedAt`, `createdAt`, and `createdBy`
+  - CRM stat helpers such as `averageOrderValue`, `lastOrderAt`, `lastOrderNumber`, `followUpState`, and `stats`
+
+## CRM Alias Create / Update Payload
+
+```powershell
+$crmBody = @{
+  customerName = "Alias CRM Customer"
+  customerPhone = "01888888888"
+  email = "alias.crm@example.com"
+  address = "Banani, Dhaka"
+  city = "Dhaka"
+  customerType = "regular"
+  tags = @("crm", "priority")
+  notes = "Alias input coverage"
+  followUpDate = "2026-05-18"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/customers `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $crmBody
+```
+
+Expected result:
+
+- request succeeds without requiring the older snake_case-only field names
+- stored `tags` normalize to the existing comma-separated backend format
+
+## CRM Activity Alias Payload
+
+```powershell
+$activityBody = @{
+  activityType = "follow_up"
+  title = "Call customer about repeat order"
+  description = "Confirm preferred delivery window"
+  dueDate = "2026-05-19T09:00:00Z"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/customers/{customerId}/activities `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $activityBody
+```
+
+Expected result:
+
+- response contains both native and compatibility activity fields
+- `last_contacted_at` / `lastContactedAt` update on the customer for non-system CRM activity writes
   - `customerAddress`
   - `paymentMethod`
   - `deliveryCharge`

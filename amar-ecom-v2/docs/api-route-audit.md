@@ -33,7 +33,7 @@ Scope:
 | Categories | `/api/v1/categories` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Standard master-data CRUD. |
 | Brands | `/api/v1/brands` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Standard master-data CRUD. |
 | Products | `/api/v1/products` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, variant CRUD | Protected | Includes product variant endpoints under the same route group. Phase `15E-support` adds v1-inventory-friendly aliases such as `productName`, `barcode`, `categoryName`, `brandName`, `stockLevel`, `reorderPoint`, `image`, `hasVariants`, and camelCase timestamps without changing the underlying product model. |
-| Customers | `/api/v1/customers` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, activity list/create/update | Protected | CRM activity timeline is included. |
+| Customers | `/api/v1/customers` | `GET /crm-summary`, `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, activity list/create/update | Protected | CRM activity timeline is included. Phase `15F-support` adds the split-pane CRM summary endpoint, denser customer list/detail aliases, richer activity aliases, v1-friendly create/update aliases, and extra CRM filters such as `segment`, `follow_up_due`, `tag`, `city`, and created-date range. |
 | Warehouses | `/api/v1/warehouses` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Used by orders, inventory, logistics, and POS. Phase `15E-support` adds `location`, `status`, and camelCase timestamp aliases for the exact v1 inventory cards and modals. |
 | Inventory | `/api/v1/inventory` | `GET /hub-summary`, `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `POST /{id}/adjust` | Protected | Inventory adjustment is handled here. Phase `15E-support` adds the inventory hub summary plus v1-style stock overview aliases on the existing list and detail endpoints. |
 | Stock Movements | `/api/v1/stock-movements` | `GET /`, `GET /{id}` | Protected | Read-only ledger surface for adjustments, transfers, returns, orders, and POS. Phase `15E-support` extends it with v1-friendly log aliases and `variant_id` filtering. |
@@ -68,5 +68,5 @@ Scope:
 - Fresh migration path was validated against a temporary PostgreSQL database using `alembic upgrade head`.
 - App import succeeded after migration completion.
 - `GET /api/v1/health` returned `200 OK`.
-- Release-candidate backend validation on 2026-05-18 includes targeted Phase `15E-support` inventory compatibility coverage.
-- Registered `/api/v1/*` route count at validation time: `157`.
+- Release-candidate backend validation on 2026-05-18 includes targeted Phase `15F-support` CRM compatibility coverage in addition to the earlier inventory support checks.
+- Registered `/api/v1/*` route count at validation time: `158`.

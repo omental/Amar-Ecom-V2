@@ -142,7 +142,27 @@ Backend readiness notes:
 - No backend migration was required for Phase `15E-support`.
 - Known backend deviations remain for exact attribute persistence, Firebase Storage-style image upload, and barcode/label printing, which are still either undecided or frontend-side flows.
 
+Status:
+
+- Completed on `2026-05-18`
+
+Completion notes:
+
+- `/dashboard/inventory` now follows the v1 `Inventory.tsx` control-center pattern with the restored tab order:
+  `Products`, `Categories`, `Brands`, `Attributes`, `Warehouses`, `Stock`, `Transfers`, `Wastage`, `Purchases`, `Suppliers`, `Returns`, `Logs`, `Reports`
+- The page now consumes the new inventory backend compatibility surface:
+  `/api/v1/inventory/hub-summary`, `/api/v1/inventory`, `/api/v1/products`, `/api/v1/stock-movements`, `/api/v1/reports/inventory`, `/api/v1/reports/stock-movements-summary`, `/api/v1/reports/low-stock-products`, plus the existing category, brand, warehouse, supplier, transfer, wastage, purchase-order, and return routes with their new alias fields.
+- Context-sensitive add actions, low-stock alert framing, modal-first CRUD, purchase receiving, transfer completion, return restock flow, and logs filtering now live inside the inventory hub rather than relying on the older five-tab v2 ops console.
+- Known intentional deviations remain:
+  attributes are frontend-local only
+  image upload remains URL-based
+  barcode and label output remains frontend-generated
+
 ## Phase 15F: Exact v1 CRM
+
+Backend support status:
+
+- `15F-support` completed on `2026-05-18`
 
 Goals:
 
@@ -158,6 +178,14 @@ Primary targets:
 Exit condition:
 
 - CRM feels like a single-screen relationship workspace, not a list-plus-detail route pair
+
+Backend readiness notes:
+
+- `/api/v1/customers/crm-summary` now provides the KPI counts and spend rollups needed by the v1 CRM header cards.
+- `/api/v1/customers` now exposes split-pane-friendly aliases and computed CRM fields such as `segment`, `tagList`, `totalOrderCount`, `totalSpend`, `lastOrderAt`, `lastOrderNumber`, `activityCount`, and `openActivityCount`.
+- `/api/v1/customers/{id}` now exposes richer profile aliases, order-history aliases, activity timeline aliases, `averageOrderValue`, `followUpState`, and a `stats` summary block for the right pane.
+- Customer and activity create/update endpoints now accept the main v1-style alias inputs without requiring a new backend model or migration.
+- CRM export remains frontend-generated because that matches the v1 implementation; no new backend export route was required in `15F-support`.
 
 ## Phase 15G: Exact v1 Logistics
 
@@ -257,7 +285,7 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15E`
+- Recommended next coding phase: `15F`
 - Focus: exact v1 inventory hub reconstruction and tab consolidation
 
 ## Risk Notes

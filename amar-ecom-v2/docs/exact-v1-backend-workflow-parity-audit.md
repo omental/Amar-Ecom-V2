@@ -28,6 +28,8 @@ This document resets backend parity planning around the client's updated require
 - Existing order endpoints now expose dense v1-friendly order row aliases, modal-friendly detail aliases, extra status-summary counts, month/date filters, and create-schema aliases without replacing the underlying v2 order model.
 - `15E-support` is now implemented for inventory backend compatibility.
 - v2 now exposes an inventory hub summary endpoint plus v1-style aliases on inventory, product, stock movement, supplier, purchase-order, transfer, wastage, return, category, brand, and warehouse responses where the upcoming exact v1 Inventory Hub needs flatter data.
+- `15F-support` is now implemented for CRM backend compatibility.
+- v2 now exposes a CRM summary endpoint plus v1-style customer list, detail, activity, and alias support so the split-pane CRM can read denser relationship data without a model rewrite.
 
 ## Parity Scale
 
@@ -207,6 +209,29 @@ This document resets backend parity planning around the client's updated require
    `High`
 8. recommended backend phase
    `15E-support`
+
+### CRM
+
+1. v1 data source
+   Firestore `customers` collection plus direct `orders` lookups by `customerPhone`. Export is client-side CSV from the loaded list. No separate backend conversation store is used by the core CRM screen.
+2. v1 actions/workflows
+   Split-pane customer browsing, search, select-customer detail pane, add/edit/delete customer modal, segment badges, order history review, items-bought visibility, and lightweight relationship follow-up notes.
+3. v1 fields
+   Customer profile: `name`, `phone`, `email`, `address`, `orderCount`, `totalSpent`, `lastOrderDate`, `points`, `createdAt`, `segment`, `tags`, `notes`, `followUpDate`.
+   Detail side uses customer contact info, segment badge, order history rows, item history derived from order items, and basic messaging placeholders.
+4. v2 equivalent
+   Models: `backend/app/models/customer.py`, `backend/app/models/order.py`
+   Route: `backend/app/api/routes/customers.py`
+   Schemas: `backend/app/schemas/customer.py`
+   Related report route: `backend/app/api/routes/reports.py`
+5. parity status
+   `Partial`
+6. gaps
+   Phase `15F-support` closes the main backend blockers by adding `GET /api/v1/customers/crm-summary`, enriching `GET /api/v1/customers` with split-pane list aliases and computed order or activity stats, extending `GET /api/v1/customers/{id}` with profile aliases, order-history aliases, CRM stats, and activity timeline aliases, and allowing v1-style create or update input aliases such as `customerName`, `customerPhone`, `customerType`, `followUpDate`, `lastContactedAt`, and tag arrays. Remaining deviation is export: v1 handled CRM export client-side, so no new backend export endpoint was added.
+7. implementation risk
+   `Medium`
+8. recommended backend phase
+   `15F-support`
 
 ### Products
 

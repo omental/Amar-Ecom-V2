@@ -1,6 +1,6 @@
 # Exact V1 Clone Audit
 
-Last reviewed: 2026-05-17
+Last reviewed: 2026-05-18
 
 ## Scope
 
@@ -28,6 +28,7 @@ This document resets frontend parity planning around the client's updated requir
 - v2-only routes remain available under a clearly secondary nav group until later exact-clone phases absorb or de-emphasize them.
 - The dashboard page now follows the v1 header, filter bar, six-KPI grid, stock-alerts card, top-sellers card, recent-order card, store-performance chart, and staff-performance panel structure.
 - Orders now uses the v1 four-card summary strip, v1 status-tab order, search-first cockpit flow, modal-first detail inspection, duplicate-warning panel, and a dedicated v1-style create/edit workflow overlay on `/dashboard/orders`.
+- Inventory now uses the v1 monolithic hub pattern again on `/dashboard/inventory`, with the restored 13-tab control-center structure, v1-style summary/header framing, context-sensitive add actions, modal-first maintenance loops, embedded stock workflows, logs filtering, and inventory reports fed by the Phase `15E-support` backend aliases.
 
 ## Match Scale
 
@@ -117,6 +118,37 @@ Match: `Partial`
    High
 13. recommended clone phase
    `15B`
+
+Match: `Near match`
+
+### Inventory Hub
+
+1. v1 route/component
+   `src/components/Inventory.tsx`
+2. v1 layout structure
+   Monolithic inventory control center with header, low-stock alert, dense summary cards, scrollable tab rail, embedded tables/cards, and modal-first create/edit flows.
+3. v1 tabs/sections
+   `Products`, `Categories`, `Brands`, `Attributes`, `Warehouses`, `Stock`, `Transfers`, `Wastage`, `Purchases`, `Suppliers`, `Returns`, `Logs`, `Reports`
+4. v1 filters/search
+   Search-first product and stock browsing, embedded logs filters, tab-specific quick controls, and context-sensitive add actions.
+5. v1 tables/cards
+   Product rows with barcode/stock metadata, category/brand cards, warehouse cards, stock overview rows, transfer and purchase blocks, supplier cards, return blocks, stock-movement ledger, and inventory report cards.
+6. v1 modals/drawers
+   Product, category, brand, attribute, warehouse, stock-adjustment, transfer, wastage, purchase, supplier, and return modal loops.
+7. v1 buttons/actions
+   Context-sensitive `Add *` CTA by active tab, product barcode printing, stock adjustment, transfer, wastage, receive purchase, restock return, and entity edit/delete actions.
+8. v1 status badges
+   Stock health pills, active/inactive badges, transfer and purchase status pills, and return refund/restock state indicators.
+9. v1 workflow behavior
+   Inventory acts as a single operational hub rather than a set of disconnected pages. Operators can maintain catalog and warehouse data, adjust stock, inspect logs, and review reports without route hopping.
+10. current v2 equivalent
+   `/dashboard/inventory`
+11. exact gaps
+   Core hub parity is now restored closely enough for Phase `15E`. Known deviations remain intentionally documented: attributes are frontend-local only because no backend persistence was added in this phase, product images still use URL input rather than Firebase Storage-style upload, and barcode/label output remains frontend-generated instead of using a backend PDF or print service.
+12. implementation difficulty
+   High
+13. recommended clone phase
+   `15E`
 
 Match: `Near match`
 

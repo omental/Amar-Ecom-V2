@@ -1,6 +1,6 @@
 # Frontend Route Audit
 
-Last reviewed: 2026-05-17
+Last reviewed: 2026-05-18
 
 ## Requirement Reset
 
@@ -28,7 +28,7 @@ Status labels:
 | `/dashboard/products/[id]` | Working | `/api/v1/products/{id}`, `/api/v1/products/{id}/variants/*` | Detail depth is practical and now visually denser, with a stronger header, badge cluster, safer Woo refresh framing, and clearer inventory/variant summary blocks. |
 | `/dashboard/customers` | Working | `/api/v1/customers` | Phase 14G brings the shared ops shell into the CRM directory with a richer operations header, KPI strip, grouped search/filter bar, quick segment chips, and denser customer rows. It is still not a full v1 split-pane CRM. |
 | `/dashboard/customers/[id]` | Working | `/api/v1/customers/{id}`, `/api/v1/customers/{id}/activities` | Phase 14G upgrades the CRM detail route with a stronger profile header, denser info cards, clearer activity timeline hierarchy, and a more obvious operator edit panel while keeping the same API behavior. |
-| `/dashboard/inventory` | Working | `/api/v1/inventory`, `/api/v1/warehouses`, `/api/v1/stock-transfers`, `/api/v1/wastage-logs` | Phase 14F upgrades the route into a denser v1-style operations hub with a stronger KPI strip, ops tabs, overview row metadata, and grouped ledger filtering while keeping the same adjustment, transfer, wastage, and ledger behavior. |
+| `/dashboard/inventory` | Working | `/api/v1/inventory/hub-summary`, `/api/v1/inventory`, `/api/v1/products`, `/api/v1/categories`, `/api/v1/brands`, `/api/v1/warehouses`, `/api/v1/stock-transfers`, `/api/v1/wastage-logs`, `/api/v1/purchase-orders`, `/api/v1/suppliers`, `/api/v1/returns`, `/api/v1/stock-movements`, `/api/v1/reports/inventory`, `/api/v1/reports/stock-movements-summary`, `/api/v1/reports/low-stock-products` | Phase 15E replaces the older v2 five-tab inventory console with the v1-style monolithic inventory hub. The route now restores the 13-tab control center, v1 header and summary rhythm, context-sensitive add CTA behavior, modal CRUD loops, embedded procurement and returns adjacency, logs filtering, and report cards. Known deviations remain for frontend-local attributes, URL-based image input, and frontend-generated barcode/label output. |
 | `/dashboard/stock-movements` | Working | `/api/v1/stock-movements` | Read-only ledger; export/reporting depth is still basic. |
 | `/dashboard/returns` | Working | `/api/v1/returns`, `/api/v1/orders`, `/api/v1/customers` | Practical RMA flow, but not a full service-desk style returns workspace. |
 | `/dashboard/returns/[id]` | Working | `/api/v1/returns/{id}` | Focused detail page; operational shortcuts are still limited. |
@@ -123,6 +123,17 @@ Status labels:
   - `action_flags`
 - The fallback `/dashboard/orders/[id]` route remains available, but it is no longer the primary UX target for exact-v1 parity.
 
+## Phase 15E Inventory Clone Note
+
+- `15E` is now completed for `/dashboard/inventory`.
+- The route now consumes the inventory compatibility fields added in `15E-support`, including:
+  - `/api/v1/inventory/hub-summary`
+  - inventory row aliases such as `productName`, `warehouseName`, `variantSummary`, `stockStatus`, and `inventoryValue`
+  - product aliases such as `productName`, `barcode`, `categoryName`, `brandName`, `stockLevel`, `reorderPoint`, `image`, and `imageUrl`
+  - stock movement aliases and `variant_id` filtering on `/api/v1/stock-movements`
+  - supplier, purchase-order, return, transfer, wastage, category, brand, and warehouse alias fields used by the embedded tabs
+- `/dashboard/inventory` is now the primary exact-v1 inventory workflow again rather than a lighter v2 operations page.
+
 ## Exact Clone Priority Overrides
 
 - Highest structural mismatch routes are now:
@@ -195,7 +206,7 @@ These notes track legacy v1 React UI parity only. They are planning markers for 
 | `/dashboard/orders` and `/dashboard/orders/[id]` | Near match. The orders cockpit now follows the v1 table/grid, modal-first detail loop, duplicate-warning workflow, and dedicated create/edit overlay much more closely. | High | `15D` completed |
 | `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Improved. The shared ops visual language and responsive containment now cover the main logistics surfaces. | High | `14E` completed |
 | `/dashboard/products`, `/dashboard/products/[id]` | Improved. Product-admin parity is much closer, though still not a literal v1 recreation. | High | `14F` completed |
-| `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Improved. The inventory hub now behaves much more like the v1 admin hub while keeping v2 route boundaries. | High | `14F` completed |
+| `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Near match. The inventory workspace now restores the v1 monolithic hub and uses the new backend compatibility aliases directly. | High | `15E` completed |
 | `/dashboard/customers`, `/dashboard/customers/[id]` | Improved. CRM is much closer visually, though still not a true split-pane v1 master-detail clone. | High | `14G` completed |
 | `/dashboard/returns` and `/dashboard/returns/[id]` | Partial. Stable and visually aligned better, but still lighter than the top-priority ops modules. | Medium | post-`14K` optional |
 | `/dashboard/suppliers`, `/dashboard/purchase-orders`, `/dashboard/purchase-orders/[id]` | Partial. Procurement remains functional but visually lighter than the stronger ops modules. | Medium | post-`14K` optional |

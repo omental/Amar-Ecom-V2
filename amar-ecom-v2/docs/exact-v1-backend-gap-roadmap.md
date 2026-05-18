@@ -91,8 +91,23 @@ Remaining:
 
 ### 15F-support: CRM
 
+Status: `Completed for backend compatibility foundation`
+
 - Expose customer summary and segment data in the exact shape required by the v1 split-pane CRM.
 - Add any export support only if the v1 customer export behavior must be server-backed rather than client-derived.
+
+Completed in this phase:
+
+- `GET /api/v1/customers/crm-summary` now returns the v1 CRM KPI counts and spend rollups needed by the split-pane header cards.
+- `GET /api/v1/customers` now exposes v1-friendly customer aliases and computed CRM fields such as `customerName`, `customerPhone`, `customerType`, `segment`, `tagList`, `totalOrderCount`, `totalSpend`, `lastOrderAt`, `lastOrderNumber`, `activityCount`, and `openActivityCount`.
+- `GET /api/v1/customers/{id}` now exposes richer profile aliases, order-history aliases, activity timeline aliases, `averageOrderValue`, `followUpState`, and a `stats` summary block for the right pane.
+- Customer create and update endpoints now accept v1-style aliases such as `customerName`, `customerPhone`, `customerType`, `followUpDate`, `lastContactedAt`, and tag arrays.
+- Customer list filtering now covers the CRM workflow filters for `segment`, `follow_up_due`, `tag`, `city`, and created-date range without breaking the existing search or follow-up filters.
+
+Remaining:
+
+- No backend export endpoint was added because the v1 CRM screen generated CSV client-side from the loaded customer list.
+- The v1 `points` badge and `active chats/messages` blocks are still frontend-side placeholders unless a later scope pass proves a real backend workflow behind them.
 
 ### 15G-support: Logistics, Returns, Suppliers
 
@@ -157,4 +172,5 @@ Important:
 
 - `15D-support` is complete.
 - `15E-support` is complete.
-- The next likely backend parity phase is `15F-support` or `15G-support`, unless the frontend `15E` exact inventory rebuild uncovers one narrow additional compatibility need.
+- `15F-support` is complete.
+- The next likely backend parity phase is `15G-support`, unless the frontend `15F` CRM rebuild uncovers one narrow additional compatibility need.

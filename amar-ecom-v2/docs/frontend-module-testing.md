@@ -168,6 +168,89 @@
 20. For WooCommerce-sourced orders, confirm any refresh action remains guarded and manual, and that no automatic stock deduction or push-back behavior is introduced.
 21. Confirm there is no full-page horizontal overflow on `/dashboard/orders` while the table itself may still scroll locally when needed.
 
+## Phase 15E Inventory Clone Checks
+
+1. Open `http://localhost:3000/dashboard/inventory` and confirm the Phase `15B` shell still loads correctly around the inventory page.
+2. Confirm the page header now follows the v1 inventory hub with:
+   - `Inventory Management` title
+   - v1 subtitle
+   - low-stock warning block when applicable
+   - dense summary card strip
+   - context-sensitive add action
+3. Confirm the tab order matches v1 exactly:
+   - `Products`
+   - `Categories`
+   - `Brands`
+   - `Attributes`
+   - `Warehouses`
+   - `Stock`
+   - `Transfers`
+   - `Wastage`
+   - `Purchases`
+   - `Suppliers`
+   - `Returns`
+   - `Logs`
+   - `Reports`
+4. Confirm the active-tab add button changes label and behavior by tab:
+   - `Add Product`
+   - `Add Category`
+   - `Add Brand`
+   - `Add Attribute`
+   - `Add Warehouse`
+   - `Add Stock` or `Adjust Stock`
+   - `Add Transfer`
+   - `Add Wastage`
+   - `Add Purchase`
+   - `Add Supplier`
+   - `Add Return`
+5. In `Products`, confirm rows show the dense v1-style fields:
+   - image
+   - product name
+   - type
+   - SKU and barcode context
+   - category and brand
+   - market value
+   - stock badge
+   - print, edit, add-stock, and delete actions
+6. Click `Print` on a product and confirm barcode or label output remains frontend-generated rather than backend-served.
+7. In `Categories` and `Brands`, confirm the modal add/edit flow works and that delete actions still use the existing safe CRUD routes.
+8. In `Attributes`, confirm the UI is present and usable, and that the page clearly communicates the current frontend-local persistence deviation.
+9. In `Warehouses`, confirm v1-style cards or list blocks show name, location, code, status, and edit/delete controls.
+10. In `Stock`, confirm rows show:
+   - product name
+   - SKU
+   - warehouse name or code
+   - quantity
+   - alert level
+   - stock status
+   - adjustment, transfer, and wastage actions
+11. Open `Adjust Stock` and confirm it still submits through `/api/v1/inventory/{id}/adjust` without bypassing stock safety rules.
+12. Create a stock row if safe and confirm the row appears in the stock list without shell overflow.
+13. In `Transfers`, create a transfer if safe and confirm `Complete Transfer` still relies on the guarded backend status update flow.
+14. In `Wastage`, create a wastage row if safe and confirm stock deduction still uses the protected wastage backend path.
+15. In `Purchases`, create a purchase order if safe and confirm `Receive Stock` still updates inventory only through the purchase-order backend status change.
+16. In `Suppliers`, confirm supplier add/edit still works and that active or inactive state badges render cleanly.
+17. In `Returns`, confirm rows show return number, order, customer, warehouse, refund or restock state, and that `Restock Items` still respects the existing return safety path.
+18. In `Logs`, confirm all filters work without layout breakage:
+   - `product_id`
+   - `variant_id`
+   - `warehouse_id`
+   - `movement_type`
+   - `date_from`
+   - `date_to`
+   - local search
+19. In `Reports`, confirm these v1-style report sections appear:
+   - `Inventory Value (Cost)`
+   - `Potential Revenue`
+   - `Potential Profit`
+   - low stock items
+   - stock movement summary
+20. Confirm there is no full-page horizontal overflow on `/dashboard/inventory`, while local tab-strip scrolling remains acceptable.
+21. Note these intentional Phase `15E` deviations:
+   - attributes are frontend-local only
+   - image input remains URL-based
+   - barcode or label output remains frontend-generated
+
 ## Prerequisites
 
 1. Start the backend:
