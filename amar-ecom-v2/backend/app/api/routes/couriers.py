@@ -1,11 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
-from app.models.courier import Courier
+from app.models.courier import Courier, Shipment
 from app.schemas.courier import CourierCreate, CourierRead, CourierUpdate
 
 
@@ -20,12 +20,52 @@ async def list_couriers(
 ) -> list[Courier]:
     skip, limit = normalize_pagination(skip, limit)
     result = await db.execute(select(Courier).order_by(Courier.created_at.desc()).offset(skip).limit(limit))
-    return list(result.scalars().all())
+    couriers = list(result.scalars().all())
+    if not couriers:
+        return couriers
+
+    courier_ids = [courier.id for courier in couriers]
+    counts_result = await db.execute(
+        select(
+            Shipment.courier_id,
+            func.count(Shipment.id).filter(Shipment.status.not_in(["delivered", "cancelled", "returned", "failed"])),
+            func.count(Shipment.id).filter(Shipment.status == "delivered"),
+            func.count(Shipment.id).filter(Shipment.reconciliation_status != "settled"),
+        )
+        .where(Shipment.courier_id.in_(courier_ids))
+        .group_by(Shipment.courier_id)
+    )
+    counts_map = {
+        row[0]: {
+            "active": row[1] or 0,
+            "delivered": row[2] or 0,
+            "pending_reconciliation": row[3] or 0,
+        }
+        for row in counts_result.all()
+    }
+    for courier in couriers:
+        counts = counts_map.get(courier.id, {})
+        setattr(courier, "active_shipment_count", counts.get("active", 0))
+        setattr(courier, "delivered_count", counts.get("delivered", 0))
+        setattr(courier, "pending_reconciliation_count", counts.get("pending_reconciliation", 0))
+    return couriers
 
 
 @router.get("/{courier_id}", response_model=CourierRead)
 async def get_courier(courier_id: UUID, db: DBSession) -> Courier:
-    return await fetch_one_or_404(db, select(Courier).where(Courier.id == courier_id), "Courier not found")
+    courier = await fetch_one_or_404(db, select(Courier).where(Courier.id == courier_id), "Courier not found")
+    counts_result = await db.execute(
+        select(
+            func.count(Shipment.id).filter(Shipment.status.not_in(["delivered", "cancelled", "returned", "failed"])),
+            func.count(Shipment.id).filter(Shipment.status == "delivered"),
+            func.count(Shipment.id).filter(Shipment.reconciliation_status != "settled"),
+        ).where(Shipment.courier_id == courier.id)
+    )
+    counts = counts_result.one()
+    setattr(courier, "active_shipment_count", counts[0] or 0)
+    setattr(courier, "delivered_count", counts[1] or 0)
+    setattr(courier, "pending_reconciliation_count", counts[2] or 0)
+    return courier
 
 
 @router.post("", response_model=CourierRead, status_code=status.HTTP_201_CREATED)

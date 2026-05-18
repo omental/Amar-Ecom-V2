@@ -971,15 +971,23 @@ def provider_setting_metadata(setting: CourierProviderSetting) -> dict[str, Any]
 
 
 def courier_log_to_read_model_payload(log: CourierApiLog) -> dict[str, Any]:
+    shipment_number = log.shipment.shipment_number if log.shipment else None
+    order_number = None
+    if log.shipment and log.shipment.order:
+        order_number = log.shipment.order.order_number
+    response_snapshot = _parse_snapshot_text(log.response_snapshot)
     return {
         "id": log.id,
         "provider": log.provider,
         "action": log.action,
         "status": log.status,
         "shipment_id": log.shipment_id,
+        "shipment_number": shipment_number,
+        "order_number": order_number,
         "external_id": log.external_id,
         "request_snapshot": _parse_snapshot_text(log.request_snapshot),
-        "response_snapshot": _parse_snapshot_text(log.response_snapshot),
+        "response_snapshot": response_snapshot,
+        "response_summary": str(response_snapshot)[:200] if response_snapshot is not None else None,
         "message": log.message,
         "created_by_id": log.created_by_id,
         "started_at": log.started_at,

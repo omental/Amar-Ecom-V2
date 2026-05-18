@@ -203,6 +203,10 @@ Completion notes:
 
 ## Phase 15G: Exact v1 Logistics
 
+Backend support status:
+
+- `15G-support` completed on `2026-05-18`
+
 Goals:
 
 - Recreate the unified v1 logistics command center
@@ -218,6 +222,20 @@ Primary targets:
 Exit condition:
 
 - Logistics behaves like the v1 command center first
+
+Backend readiness notes:
+
+- `/api/v1/logistics/command-summary` now provides the command-center counts and COD or courier totals needed by the v1 logistics header cards.
+- `/api/v1/logistics/pending-dispatch` now exposes queue aliases and action flags such as `orderNumber`, `customerName`, `customerPhone`, `customerAddress`, `itemCount`, `totalAmount`, and `canCreateShipment`.
+- `/api/v1/shipments` and `/api/v1/shipments/{id}` now expose v1-friendly aliases such as `shipmentNumber`, `orderNumber`, `customerName`, `courierName`, `trackingNumber`, `statusLabel`, `pendingAmount`, `sentToCourier`, event-log aliases, and safe action flags.
+- Shipment create and update payloads now accept the main v1 camelCase alias inputs without adding a migration.
+- `/api/v1/couriers` now exposes courier-card-friendly aliases and counts such as `courierName`, `contactPhone`, `status`, `activeShipmentCount`, `deliveredCount`, and `pendingReconciliationCount`.
+- `/api/v1/courier-integrations/logs` now exposes `shipment_number`, `order_number`, `requestAt`, `createdAt`, and `response_summary` while preserving sanitized payloads and manual courier safety rules.
+
+Known backend deviations:
+
+- v1 `location` and `ETA` remain frontend-derived because they are not persisted as first-class shipment columns in v2
+- external courier sync remains manual, conservative, and warning-first by design
 
 ## Phase 15H: Exact v1 Settings / Team / Admin
 

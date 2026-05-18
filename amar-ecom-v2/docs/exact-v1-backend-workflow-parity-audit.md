@@ -30,6 +30,8 @@ This document resets backend parity planning around the client's updated require
 - v2 now exposes an inventory hub summary endpoint plus v1-style aliases on inventory, product, stock movement, supplier, purchase-order, transfer, wastage, return, category, brand, and warehouse responses where the upcoming exact v1 Inventory Hub needs flatter data.
 - `15F-support` is now implemented for CRM backend compatibility.
 - v2 now exposes a CRM summary endpoint plus v1-style customer list, detail, activity, and alias support so the split-pane CRM can read denser relationship data without a model rewrite.
+- `15G-support` is now implemented for logistics backend compatibility.
+- v2 now exposes a logistics command summary plus v1-style pending-dispatch, shipment, courier, and courier-log aliases so the unified v1 logistics workspace can load from the existing safe shipment and courier foundation.
 
 ## Parity Scale
 
@@ -373,9 +375,9 @@ This document resets backend parity planning around the client's updated require
    Routes: `logistics.py`, `shipments.py`, `couriers.py`, `courier_integrations.py`
    Services: `courier_service.py`
 5. parity status
-   `Better in v2`
+   `Exact`
 6. gaps
-   v2 logistics backend is stronger, but the exact v1 workspace needs one coherent data choreography across pending orders, shipments, couriers, reconciliation, and logs. Status names and reconciliation semantics may still need mapping to v1 labels.
+   Phase `15G-support` closes the main backend blocker by adding `GET /api/v1/logistics/command-summary`, extending `GET /api/v1/logistics/pending-dispatch` with v1 queue aliases and action flags, extending shipment and courier payloads with v1-style aliases, and exposing courier API log rows with shipment and order references plus response summaries. Remaining deviation is mostly presentation-side: v1 `location` and `ETA` are still frontend-derived rather than first-class shipment columns, and the embedded courier cards still rely on the existing conservative provider-settings workflow rather than legacy Firestore config docs.
 7. implementation risk
    `High`
 8. recommended backend phase
@@ -394,9 +396,9 @@ This document resets backend parity planning around the client's updated require
    Route: `couriers.py`
    Schema: `courier.py`
 5. parity status
-   `Partial`
+   `Exact`
 6. gaps
-   Core CRUD exists, but exact v1 flags such as API-enabled state and partner-card presentation may need mapping from `couriers` plus provider settings. If the UI expects one merged courier row model, the backend may need a compatibility response.
+   Courier rows now expose `courierName`, `contactPhone`, `status`, `activeShipmentCount`, `deliveredCount`, `pendingReconciliationCount`, and camelCase timestamps. Provider connectivity remains intentionally separate and admin-gated via courier-integration settings so the exact frontend can merge partner cards without weakening the current security model.
 7. implementation risk
    `Medium`
 8. recommended backend phase
@@ -416,9 +418,9 @@ This document resets backend parity planning around the client's updated require
    Schema: `backend/app/schemas/courier.py`
    Service: `courier_service.py`
 5. parity status
-   `Better in v2`
+   `Exact`
 6. gaps
-   v2 shipment data is normalized and safer, but exact v1 status vocabulary and modal action support may need mapping. The v1 UI expects edit/delete patterns that may not map exactly to current conservative v2 shipment rules.
+   Shipment list and detail payloads now expose v1-friendly aliases such as `shipmentNumber`, `orderNumber`, `customerName`, `courierName`, `trackingNumber`, `statusLabel`, `pendingAmount`, `sentToCourier`, camelCase timestamps, `logs`, and safe action flags. Create and update schemas also accept v1-style camelCase aliases like `shipmentNumber`, `orderId`, `courierId`, `deliveryCharge`, `courierCharge`, `codAmount`, `collectedAmount`, and `reconciliationStatus`.
 7. implementation risk
    `Medium`
 8. recommended backend phase

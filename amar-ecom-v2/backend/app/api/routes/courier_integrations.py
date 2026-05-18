@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409
+from app.models.courier import Shipment
 from app.models.courier_integration import CourierApiLog
 from app.models.user import User
 from app.schemas.courier_integration import (
@@ -226,7 +227,14 @@ async def list_courier_api_logs(
     current_user: User = Depends(get_current_user),
 ) -> list[CourierApiLogRead]:
     _ensure_admin(current_user)
-    stmt = select(CourierApiLog).options(selectinload(CourierApiLog.created_by)).order_by(CourierApiLog.created_at.desc())
+    stmt = (
+        select(CourierApiLog)
+        .options(
+            selectinload(CourierApiLog.created_by),
+            selectinload(CourierApiLog.shipment).selectinload(Shipment.order),
+        )
+        .order_by(CourierApiLog.created_at.desc())
+    )
     if provider:
         stmt = stmt.where(CourierApiLog.provider == provider)
     if action:

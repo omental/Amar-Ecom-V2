@@ -2,7 +2,7 @@ from typing import Any
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from app.schemas.common import ORMBaseSchema
 from app.schemas.user import UserRead
@@ -72,15 +72,28 @@ class CourierApiLogRead(ORMBaseSchema):
     action: str
     status: str
     shipment_id: UUID | None
+    shipment_number: str | None = None
+    order_number: str | None = None
     external_id: str | None
     request_snapshot: Any | None = None
     response_snapshot: Any | None = None
+    response_summary: str | None = None
     message: str | None
     created_by_id: UUID | None
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
     created_by: UserRead | None = None
+
+    @computed_field(return_type=datetime | None)
+    @property
+    def requestAt(self) -> datetime | None:
+        return self.started_at or self.created_at
+
+    @computed_field(return_type=datetime)
+    @property
+    def createdAt(self) -> datetime:
+        return self.created_at
 
 
 class CourierSendShipmentRequest(BaseModel):

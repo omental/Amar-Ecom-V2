@@ -9,9 +9,15 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession, get_current_user
 from app.api.utils import normalize_pagination
-from app.models.courier import Shipment
+from app.models.courier import Courier, Shipment
 from app.models.order import Order
-from app.schemas.courier import LogisticsOperationsSummaryRead, PendingDispatchOrderRead
+from app.models.return_request import ReturnRequest
+from app.models.supplier import PurchaseOrder, Supplier
+from app.schemas.courier import (
+    LogisticsCommandSummaryRead,
+    LogisticsOperationsSummaryRead,
+    PendingDispatchOrderRead,
+)
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -43,6 +49,7 @@ async def list_pending_dispatch_orders(
             selectinload(Order.customer),
             selectinload(Order.warehouse),
             selectinload(Order.shipments),
+            selectinload(Order.items),
         )
         .where(Order.status.in_(["confirmed", "processing", "ready_to_ship"]))
         .order_by(Order.created_at.desc())
@@ -59,7 +66,97 @@ async def list_pending_dispatch_orders(
             for shipment in order.shipments
         )
     ]
+    for order in filtered_orders:
+        setattr(order, "has_shipment", order.active_shipment is not None)
     return filtered_orders[skip : skip + limit]
+
+
+@router.get("/command-summary", response_model=LogisticsCommandSummaryRead)
+async def get_logistics_command_summary(db: DBSession) -> LogisticsCommandSummaryRead:
+    pending_dispatch_result = await db.execute(
+        select(func.count(Order.id)).where(
+            Order.status.in_(["confirmed", "processing", "ready_to_ship"]),
+            not_(Order.shipments.any(Shipment.status.not_in(["cancelled", "returned"]))),
+        )
+    )
+    ready_to_ship_result = await db.execute(
+        select(func.count(Order.id)).where(Order.status == "ready_to_ship")
+    )
+    shipment_counts_result = await db.execute(
+        select(
+            func.count(Shipment.id).filter(Shipment.status.in_(["pending", "ready_to_ship", "shipped", "in_transit"])),
+            func.count(Shipment.id).filter(Shipment.status == "shipped"),
+            func.count(Shipment.id).filter(Shipment.status == "delivered"),
+            func.count(Shipment.id).filter(Shipment.status == "failed"),
+            func.count(Shipment.id).filter(Shipment.status == "returned"),
+            func.count(Shipment.id).filter(Shipment.reconciliation_status != "settled"),
+            func.count(Shipment.id).filter(Shipment.reconciliation_status == "settled"),
+            func.coalesce(func.sum(Shipment.cod_amount), 0),
+            func.coalesce(func.sum(Shipment.collected_amount), 0),
+            func.coalesce(func.sum(Shipment.courier_charge), 0),
+            func.count(Shipment.id).filter(Shipment.sent_to_courier_at.is_not(None)),
+            func.count(Shipment.id).filter(
+                and_(
+                    Shipment.external_provider.is_not(None),
+                    or_(
+                        Shipment.external_synced_at.is_(None),
+                        Shipment.external_status.is_(None),
+                        Shipment.external_status.in_(["submitted", "pending", "processing", "assigned", "picked_up", "in_transit"]),
+                    ),
+                )
+            ),
+            func.count(Shipment.id).filter(
+                Shipment.external_status.in_(["failed", "returned", "cancelled"])
+            ),
+        )
+    )
+    courier_counts_result = await db.execute(
+        select(
+            func.count(Courier.id),
+            func.count(Courier.id).filter(Courier.is_active.is_(True)),
+        )
+    )
+    return_counts_result = await db.execute(
+        select(
+            func.count(ReturnRequest.id).filter(ReturnRequest.status != "restocked"),
+            func.count(ReturnRequest.id).filter(
+                or_(ReturnRequest.status == "restocked", ReturnRequest.stock_restocked.is_(True))
+            ),
+        )
+    )
+    purchase_orders_pending_result = await db.execute(
+        select(func.count(PurchaseOrder.id)).where(PurchaseOrder.status != "received")
+    )
+    suppliers_count_result = await db.execute(
+        select(func.count(Supplier.id)).where(Supplier.is_active.is_(True))
+    )
+
+    shipment_counts = shipment_counts_result.one()
+    courier_counts = courier_counts_result.one()
+    return_counts = return_counts_result.one()
+    return LogisticsCommandSummaryRead(
+        pending_dispatch_count=pending_dispatch_result.scalar_one() or 0,
+        ready_to_ship_count=ready_to_ship_result.scalar_one() or 0,
+        active_shipments=shipment_counts[0] or 0,
+        shipped_shipments=shipment_counts[1] or 0,
+        delivered_shipments=shipment_counts[2] or 0,
+        failed_shipments=shipment_counts[3] or 0,
+        returned_shipments=shipment_counts[4] or 0,
+        pending_reconciliation=shipment_counts[5] or 0,
+        settled_reconciliation=shipment_counts[6] or 0,
+        total_cod_amount=shipment_counts[7] or 0,
+        total_collected_amount=shipment_counts[8] or 0,
+        total_courier_charge=shipment_counts[9] or 0,
+        external_sent_count=shipment_counts[10] or 0,
+        external_pending_sync_count=shipment_counts[11] or 0,
+        external_failed_count=shipment_counts[12] or 0,
+        courier_count=courier_counts[0] or 0,
+        active_courier_count=courier_counts[1] or 0,
+        returns_pending=return_counts[0] or 0,
+        returns_restocked=return_counts[1] or 0,
+        purchase_orders_pending=purchase_orders_pending_result.scalar_one() or 0,
+        suppliers_count=suppliers_count_result.scalar_one() or 0,
+    )
 
 
 @router.get("/operations-summary", response_model=LogisticsOperationsSummaryRead)

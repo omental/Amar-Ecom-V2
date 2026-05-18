@@ -71,6 +71,8 @@ Phase `15E-support` adds no new migration.
 
 Phase `15F-support` adds no new migration.
 
+Phase `15G-support` adds no new migration.
+
 This phase adds the logistics workflow completion migration:
 
 - `d8f9a0b1c2d3_add_logistics_shipment_events_and_reconciliation`
@@ -1864,6 +1866,19 @@ Expected result:
 - `activities` are included
 - `total_order_count` and `total_spend` are populated
 
+## Logistics Command Summary
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/logistics/command-summary `
+  -Headers $headers
+```
+
+Expected result:
+
+- response includes command-center counts such as `pending_dispatch_count`, `ready_to_ship_count`, `active_shipments`, `delivered_shipments`, `failed_shipments`, `pending_reconciliation`, `external_sent_count`, and `courier_count`
+- response includes COD and courier totals such as `total_cod_amount`, `total_collected_amount`, and `total_courier_charge`
+
 ## Create Warehouse
 
 ```powershell
@@ -3169,6 +3184,79 @@ Expected result:
   - `shipments_waiting_status_sync_count`
   - `delivered_shipments`
   - `failed_shipments`
+
+### Logistics Pending Dispatch Compatibility
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/logistics/pending-dispatch?skip=0&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- each row still includes the native order-linked dispatch fields
+- each row also exposes v1 queue aliases such as `orderNumber`, `customerName`, `customerPhone`, `customerAddress`, `shippingAddress`, `warehouseName`, `itemCount`, `totalAmount`, `paymentStatus`, `orderStatus`, `courierReady`, `hasShipment`, `canCreateShipment`, `canPrint`, and `canOpenOrder`
+
+### Shipment Logistics Compatibility
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/shipments `
+  -Headers $headers
+```
+
+Expected result:
+
+- each row still includes the native shipment fields
+- each row also exposes v1 logistics aliases such as `shipmentNumber`, `orderNumber`, `customerName`, `recipientName`, `recipientPhone`, `deliveryAddress`, `courierName`, `trackingNumber`, `statusLabel`, `pendingAmount`, `sentToCourier`, `createdAt`, `updatedAt`, `shippedAt`, `deliveredAt`, `reconciledAt`, and safe action flags such as `canSendToCourier`, `canSyncStatus`, `canMarkShipped`, `canMarkDelivered`, and `canReconcile`
+
+### Shipment Alias Create / Update
+
+```powershell
+$shipmentBody = @{
+  shipmentNumber = "SHP-V1-ALIAS-1001"
+  orderId = "{orderId}"
+  courierId = "{courierId}"
+  recipientName = "Alias Recipient"
+  recipientPhone = "01710000000"
+  deliveryAddress = "Dhaka"
+  trackingNumber = "TRK-V1-1001"
+  deliveryCharge = 60
+  courierCharge = 40
+  codAmount = 500
+  collectedAmount = 0
+  reconciliationStatus = "pending"
+  notes = "Alias shipment payload"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/api/v1/shipments `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $shipmentBody
+```
+
+Expected result:
+
+- shipment create accepts the camelCase logistics aliases above
+- patch requests may also use aliases such as `courierCharge`, `collectedAmount`, and `reconciliationStatus`
+- shipment safety rules remain unchanged
+
+### Courier Integration Log Compatibility
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/api/v1/courier-integrations/logs?provider=steadfast&limit=20" `
+  -Headers $headers
+```
+
+Expected result:
+
+- each row remains sanitized and admin-only
+- rows now also include `shipment_number`, `order_number`, `requestAt`, `createdAt`, and `response_summary`
+- no secrets appear in `request_snapshot` or `response_snapshot`
 
 ### Shipment Batch Status Update
 

@@ -111,10 +111,27 @@ Remaining:
 
 ### 15G-support: Logistics, Returns, Suppliers
 
+Status: `Completed for backend compatibility foundation`
+
 - Map shipment, courier, and reconciliation statuses to the v1 logistics workspace language.
 - Align return-status vocabulary with the v1 standalone returns flow.
 - Add supplier-ledger style support if the exact supplier workspace requires backend-computed balances or joined payment history.
 - Expose cross-module logistics payloads so the v1 single-screen command center can load from coherent backend surfaces.
+
+Completed in this phase:
+
+- `GET /api/v1/logistics/command-summary` now returns the command-center counts and COD or courier totals needed by the v1 logistics header cards.
+- `GET /api/v1/logistics/pending-dispatch` now exposes v1 queue aliases such as `orderNumber`, `customerName`, `customerPhone`, `customerAddress`, `totalAmount`, `itemCount`, and action flags like `canCreateShipment`.
+- `GET /api/v1/shipments` and `GET /api/v1/shipments/{id}` now expose v1-friendly aliases such as `shipmentNumber`, `orderNumber`, `customerName`, `courierName`, `trackingNumber`, `statusLabel`, `pendingAmount`, `sentToCourier`, event-log aliases, camelCase timestamps, and safe action flags.
+- Shipment create or update payloads now accept v1-style camelCase aliases such as `shipmentNumber`, `orderId`, `courierId`, `recipientName`, `recipientPhone`, `deliveryAddress`, `deliveryCharge`, `courierCharge`, `codAmount`, `collectedAmount`, and `reconciliationStatus`.
+- `GET /api/v1/couriers` now exposes v1 courier-card aliases such as `courierName`, `contactPhone`, `status`, `activeShipmentCount`, `deliveredCount`, and `pendingReconciliationCount`.
+- `GET /api/v1/courier-integrations/logs` now exposes shipment and order references plus `requestAt`, `createdAt`, and `response_summary` while preserving sanitized payload snapshots and admin-only access.
+
+Remaining:
+
+- No new destructive courier automation was added; external sync remains manual, warning-first, and `apply_safe_status` still only auto-applies the safest local `delivered` transition.
+- v1 `location` and `ETA` display values are still frontend-derived because the current v2 shipment model intentionally does not persist those Firestore-specific fields.
+- Supplier ledger or finance-grade balance parity is still out of scope unless the later exact frontend logistics or supplier workspace proves it is truly required.
 
 ### 15H-support: Settings, Team, Activity
 
@@ -173,4 +190,5 @@ Important:
 - `15D-support` is complete.
 - `15E-support` is complete.
 - `15F-support` is complete.
-- The next likely backend parity phase is `15G-support`, unless the frontend `15F` CRM rebuild uncovers one narrow additional compatibility need.
+- `15G-support` is complete.
+- The next likely backend parity phase is `15H-support`, unless the frontend `15G` logistics rebuild uncovers one narrow additional compatibility need.

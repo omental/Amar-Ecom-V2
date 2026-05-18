@@ -1141,6 +1141,9 @@ def test_courier_integrations_admin_endpoints(monkeypatch: pytest.MonkeyPatch) -
             assert any(log["action"] == "connection_test" for log in logs_payload)
             assert any(log["action"] == "send_shipment" for log in logs_payload)
             assert any(log["action"] == "status_sync" for log in logs_payload)
+            assert all("requestAt" in log for log in logs_payload)
+            assert all("createdAt" in log for log in logs_payload)
+            assert any(log["response_summary"] for log in logs_payload if log["response_snapshot"] is not None)
 
             filtered_logs_response = client.get(
                 "/api/v1/courier-integrations/logs?provider=manual&action=status_sync&status=success",
@@ -4382,7 +4385,14 @@ def test_courier_and_shipment_flow() -> None:
             )
             assert pending_dispatch_response.status_code == 200, pending_dispatch_response.text
             pending_dispatch_orders = pending_dispatch_response.json()
-            assert any(item["id"] == order["id"] for item in pending_dispatch_orders)
+            pending_row = next(item for item in pending_dispatch_orders if item["id"] == order["id"])
+            assert pending_row["orderNumber"] == order["order_number"]
+            assert pending_row["customerPhone"] == "01744444444"
+            assert pending_row["customerAddress"] == "House 7, Dhaka"
+            assert pending_row["totalAmount"] == "360.00"
+            assert pending_row["itemCount"] == 1
+            assert pending_row["canCreateShipment"] is True
+            assert pending_row["hasShipment"] is False
 
             shipment_response = client.post(
                 f"/api/v1/orders/{order['id']}/create-shipment",
@@ -4404,6 +4414,68 @@ def test_courier_and_shipment_flow() -> None:
             assert shipment["recipient_phone"] == "01744444444"
             assert shipment["delivery_address"] == "House 7, Dhaka"
             assert any(event["event_type"] == "shipment_created" for event in shipment["events"])
+            assert shipment["shipmentNumber"] == shipment["shipment_number"]
+            assert shipment["orderNumber"] == order["order_number"]
+            assert shipment["courierName"] == courier["name"]
+            assert shipment["trackingNumber"] == shipment["tracking_number"]
+            assert shipment["statusLabel"] == "Pending"
+            assert shipment["sentToCourier"] is False
+            assert shipment["canSendToCourier"] is True
+            assert shipment["pendingAmount"] == "220.00"
+
+            direct_order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "orderNumber": f"ORD-LGX-{uuid.uuid4().hex[:8]}",
+                    "customerName": "Direct Shipment Customer",
+                    "customerPhone": "01755555555",
+                    "customerAddress": "Mirpur, Dhaka",
+                    "status": "processing",
+                    "payment_status": "unpaid",
+                    "source": "manual",
+                    "subtotal": 300,
+                    "discount": 0,
+                    "deliveryCharge": 50,
+                    "totalAmount": 350,
+                    "items": [
+                        {
+                            "productId": product["id"],
+                            "productName": product["name"],
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unitPrice": 300,
+                        }
+                    ],
+                },
+            )
+            assert direct_order_response.status_code == 201, direct_order_response.text
+            direct_order = direct_order_response.json()
+
+            direct_shipment_response = client.post(
+                "/api/v1/shipments",
+                headers=headers,
+                json={
+                    "shipmentNumber": f"SHP-V1-{uuid.uuid4().hex[:8]}",
+                    "orderId": direct_order["id"],
+                    "courierId": courier["id"],
+                    "recipientName": "Direct Shipment Customer",
+                    "recipientPhone": "01755555555",
+                    "deliveryAddress": "Mirpur, Dhaka",
+                    "trackingNumber": f"TRK-{uuid.uuid4().hex[:10]}",
+                    "deliveryCharge": 75,
+                    "courierCharge": 55,
+                    "codAmount": 350,
+                    "collectedAmount": 0,
+                    "reconciliationStatus": "pending",
+                    "notes": "Direct shipment aliases",
+                },
+            )
+            assert direct_shipment_response.status_code == 201, direct_shipment_response.text
+            direct_shipment = direct_shipment_response.json()
+            assert direct_shipment["recipientName"] == "Direct Shipment Customer"
+            assert direct_shipment["recipientPhone"] == "01755555555"
+            assert direct_shipment["deliveryAddress"] == "Mirpur, Dhaka"
 
             shipped_response = client.patch(
                 f"/api/v1/shipments/{shipment['id']}",
@@ -4431,9 +4503,9 @@ def test_courier_and_shipment_flow() -> None:
                 f"/api/v1/shipments/{shipment['id']}",
                 headers=headers,
                 json={
-                    "courier_charge": 95,
-                    "collected_amount": 300,
-                    "reconciliation_status": "settled",
+                    "courierCharge": 95,
+                    "collectedAmount": 300,
+                    "reconciliationStatus": "settled",
                 },
             )
             assert reconciliation_response.status_code == 200, reconciliation_response.text
@@ -4441,6 +4513,53 @@ def test_courier_and_shipment_flow() -> None:
             assert reconciled_shipment["reconciliation_status"] == "settled"
             assert reconciled_shipment["reconciled_at"] is not None
             assert any(event["event_type"] == "reconciliation_updated" for event in reconciled_shipment["events"])
+            assert reconciled_shipment["reconciliationStatus"] == "settled"
+            assert reconciled_shipment["canReconcile"] is False
+
+            shipment_list_response = client.get("/api/v1/shipments", headers=headers)
+            assert shipment_list_response.status_code == 200, shipment_list_response.text
+            shipment_rows = shipment_list_response.json()
+            direct_row = next(item for item in shipment_rows if item["id"] == direct_shipment["id"])
+            assert direct_row["shipmentNumber"] == direct_shipment["shipment_number"]
+            assert direct_row["orderNumber"] == direct_order["order_number"]
+            assert direct_row["customerName"] == "Direct Shipment Customer"
+            assert direct_row["courierName"] == courier["name"]
+            assert direct_row["statusLabel"] == "Pending"
+            assert direct_row["pendingAmount"] == "295.00"
+            assert direct_row["action_flags"]["can_send_to_courier"] is True
+
+            direct_update_response = client.patch(
+                f"/api/v1/shipments/{direct_shipment['id']}",
+                headers=headers,
+                json={
+                    "status": "shipped",
+                    "courierCharge": 60,
+                    "reconciliationStatus": "matched",
+                },
+            )
+            assert direct_update_response.status_code == 200, direct_update_response.text
+            direct_updated = direct_update_response.json()
+            assert direct_updated["status"] == "shipped"
+            assert direct_updated["courierCharge"] == "60.00"
+            assert direct_updated["reconciliationStatus"] == "matched"
+
+            command_summary_response = client.get("/api/v1/logistics/command-summary", headers=headers)
+            assert command_summary_response.status_code == 200, command_summary_response.text
+            command_summary = command_summary_response.json()
+            assert command_summary["pending_dispatch_count"] >= 0
+            assert command_summary["ready_to_ship_count"] >= 0
+            assert command_summary["active_shipments"] >= 1
+            assert command_summary["courier_count"] >= 1
+            assert command_summary["active_courier_count"] >= 1
+
+            courier_list_response = client.get("/api/v1/couriers", headers=headers)
+            assert courier_list_response.status_code == 200, courier_list_response.text
+            courier_rows = courier_list_response.json()
+            courier_row = next(item for item in courier_rows if item["id"] == courier["id"])
+            assert courier_row["courierName"] == courier["name"]
+            assert courier_row["contactPhone"] == "01700000000"
+            assert courier_row["activeShipmentCount"] >= 1
+            assert courier_row["pendingReconciliationCount"] >= 1
 
             deactivate_response = client.delete(
                 f"/api/v1/couriers/{courier['id']}",
