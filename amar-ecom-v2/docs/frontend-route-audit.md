@@ -45,10 +45,10 @@ Status labels:
 | `/dashboard/orders` and `/dashboard/orders/[id]` | Working | `/api/v1/orders`, `/api/v1/orders/{id}`, `/api/v1/woocommerce/orders/{local_order_id}/refresh` | WooCommerce-sourced orders now surface external source/status/synced metadata, and the detail screen offers a guarded `Refresh from WooCommerce` action that updates safe lifecycle fields without deducting stock automatically or pushing data back to WooCommerce. |
 | `/dashboard/tasks` | Working | `/api/v1/tasks`, `/api/v1/tasks/summary`, `/api/v1/users` | Kanban is status-based only; no drag/drop or deep collaboration tooling. |
 | `/dashboard/reports` | Working | `/api/v1/reports/*`, `/api/v1/courier-integrations/logs`, `/api/v1/orders?source=woocommerce` | Phase 14G upgrades the reporting shell with a richer header, date filter/action bar, report-group tabs, stronger KPI cards, and a clearer `Integration Health` management widget while keeping existing report queries and browser CSV export behavior unchanged. Advanced charts and saved views remain limited. |
-| `/dashboard/users` | Partial | `/api/v1/users`, `/api/v1/permissions`, `/api/v1/users/{id}/permissions`, `/api/v1/activity-logs` | Permission assignment exists, but full UI enforcement is still incomplete. |
-| `/dashboard/activity-logs` | Working | `/api/v1/activity-logs` | Good audit visibility; filtering depth can still expand later. |
-| `/dashboard/admin-tools` | Working | `/api/v1/admin/system-health`, `/api/v1/admin/backup-guidance`, `/api/v1/admin/maintenance-checklist`, `/api/v1/admin/exports/*` | Phase 14H gives admin tools a richer release-readiness shell with stronger health cards, clearer maintenance framing, and denser admin-console hierarchy. No actual backup execution and no deep permission engine yet. |
-| `/dashboard/settings` | Working | `/api/v1/settings/business`, `/api/v1/invoice-templates`, `/api/v1/orders/{id}/invoice-data` for preview paths | Phase 14H upgrades settings into a denser admin console with stronger section framing, clearer invoice-preview warnings, and better adjacency to templates, logs, team permissions, and admin tools. |
+| `/dashboard/users` | Working | `/api/v1/users`, `/api/v1/users/{id}`, `/api/v1/permissions/legacy-matrix`, `/api/v1/users/{id}/legacy-permissions`, `/api/v1/activity-logs` | Phase 15H restores the v1 team-management workspace: `Members` and `Activity` tabs, modal add/edit loops, activation flow, role badges, and the legacy boolean permission matrix. Known deviations remain for the shared pending/inactive backend mapping and placeholder-only `photoURL`. |
+| `/dashboard/activity-logs` | Working | `/api/v1/activity-logs`, `/api/v1/users` | Phase 15H rebuilds the route as the denser v1-style audit table with module, action, user, date, and search filters while still treating the standalone route as secondary to the embedded team/settings activity views. |
+| `/dashboard/admin-tools` | Working | `/api/v1/admin/system-health`, `/api/v1/admin/backup-guidance`, `/api/v1/admin/maintenance-checklist`, `/api/v1/admin/exports/*` | Phase 15H brings admin tools back under the same broad v1 control-center rhythm with safe exports, health checks, backup guidance, and maintenance review. Destructive restore or purge actions remain intentionally excluded. |
+| `/dashboard/settings` | Working | `/api/v1/settings/center-summary`, `/api/v1/settings/business`, `/api/v1/invoice-templates`, `/api/v1/activity-logs` | Phase 15H restores the v1 settings center tab order, company/invoice forms, template management, settings-adjacent activity view, and cross-links to team/admin surfaces. Known deviations remain for non-persistent per-user notification/security/mobile preferences. |
 
 ## Phase 14H UI Parity Note
 
@@ -156,6 +156,22 @@ Status labels:
   - guarded manual courier send/sync endpoints
 - `/dashboard/logistics` is now the primary exact-v1 logistics workspace again, while `/dashboard/shipments`, `/dashboard/shipments/[id]`, and `/dashboard/courier-integrations` remain fallback-only.
 
+## Phase 15H Settings / Team / Admin Clone Note
+
+- `15H` is now completed for `/dashboard/settings`, `/dashboard/users`, `/dashboard/activity-logs`, and `/dashboard/admin-tools`.
+- The settings route now consumes:
+  - `/api/v1/settings/center-summary`
+  - `/api/v1/settings/business`
+  - aliased `/api/v1/invoice-templates`
+  - embedded `/api/v1/activity-logs` rows
+- The users route now consumes:
+  - `/api/v1/users`
+  - `/api/v1/users/{id}`
+  - `/api/v1/permissions/legacy-matrix`
+  - `/api/v1/users/{id}/legacy-permissions`
+- The activity log route now consumes the expanded filterable `/api/v1/activity-logs` surface with alias fields such as `userName`, `actionLabel`, `moduleLabel`, `entityType`, `entityId`, and `createdAt`.
+- Admin tools continue using the safe existing admin endpoints and intentionally do not add destructive backup or restore execution.
+
 ## Exact Clone Priority Overrides
 
 - Highest structural mismatch routes are now:
@@ -237,7 +253,7 @@ These notes track legacy v1 React UI parity only. They are planning markers for 
 | `/dashboard/hr` | Improved. HR now uses the same stronger header, KPI, and tab shell language. | Medium | `14H` completed |
 | `/dashboard/tasks` | Partial. Functional and more consistent, but still lighter than the most polished routes. | Medium | post-`14K` optional |
 | `/dashboard/pos` | Improved. POS now reads more like a dense selling workspace while keeping the same behavior. | Medium | `14H` completed |
-| `/dashboard/settings` | Improved. The settings/admin shell is much closer to the intended v1-inspired control-center feel. | Medium | `14H` completed |
-| `/dashboard/users` | Partial. More consistent now, but still lighter than the strongest ops routes. | Medium | post-`14K` optional |
-| `/dashboard/activity-logs` | Partial / Better in v2 functionally. The route is useful, but still visually lighter than the main parity targets. | Low | post-`14K` optional |
+| `/dashboard/settings` | Near match. The route now restores the v1 settings-center tab order, company/invoice form density, and admin adjacency. | High | `15H` completed |
+| `/dashboard/users` | Near match. The team workspace now restores the v1 members/activity tabs, modal loops, and legacy permission matrix. | High | `15H` completed |
+| `/dashboard/activity-logs` | Near match. The audit route now uses the denser v1-style filter and table layout while remaining a secondary route to embedded admin activity views. | Medium | `15H` completed |
 | Cross-app regression pass | Completed at code level for consistency and responsive containment; browser viewport verification remains a manual checklist step. | High | `14I-14K` completed |

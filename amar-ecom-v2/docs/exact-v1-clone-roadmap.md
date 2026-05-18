@@ -260,6 +260,10 @@ Backend support status:
 
 - `15H-support` completed on `2026-05-18`
 
+Status:
+
+- Completed on `2026-05-18`
+
 Goals:
 
 - Rebuild the broad v1 settings center with grouped tab rows
@@ -291,6 +295,20 @@ Known backend deviations:
 - pending approval and inactive team states both still map to `is_active=false`
 - `photoURL` remains placeholder-only because v2 still has no persisted avatar workflow
 - broad per-user notification, security, mobile, and data-management preferences are still not first-class backend rows
+
+Completion notes:
+
+- `/dashboard/settings` now behaves like the v1 settings center again, with the restored tab order:
+  `General`, `Company Info`, `Account`, `Notifications`, `Security`, `Integrations`, `SMS Settings`, `Data Management`, `Mobile App`, `Activity Logs`
+- The settings screen now consumes `/api/v1/settings/center-summary`, `/api/v1/settings/business`, and the aliased invoice-template APIs while keeping team, admin, and activity adjacency inside the same broader control-center rhythm.
+- `/dashboard/users` now restores the v1 team-management model with `Members` and `Activity` tabs, modal-first add/edit loops, role badges, activation flow, and the legacy boolean permission matrix powered by `/api/v1/permissions/legacy-matrix` and `/api/v1/users/{id}/legacy-permissions`.
+- `/dashboard/activity-logs` now uses the denser v1-style admin audit table with module, action, user, date, and search filters based on the alias-friendly `/api/v1/activity-logs` response.
+- `/dashboard/admin-tools` now fits back into the same v1-style admin control-center framing while preserving the current safe backend rules around backup guidance, maintenance review, and exports.
+- Known intentional deviations remain:
+  pending approval and inactive both map to the same backend `is_active=false` state
+  `photoURL` remains placeholder-only
+  destructive backup and restore execution is intentionally not implemented
+  per-user notification, security, and mobile preferences remain represented visually rather than as first-class backend rows
 
 ## Phase 15I: Reports / Finance / HR / POS Exact Matching
 
@@ -353,8 +371,8 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15H-support`
-- Focus: backend compatibility needed for the exact v1 Settings, Team, and Admin control-center workflows
+- Recommended next coding phase: `15I-support` if backend gaps are discovered during the remaining exact-clone passes, otherwise `15I`
+- Focus: reports, finance, HR, POS, and any remaining cross-module exact-v1 backend shaping needed before those frontend rebuilds
 
 ## Risk Notes
 

@@ -2,12 +2,22 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Copy, DatabaseBackup, Download, Loader2, RefreshCcw, ShieldCheck, Wrench } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Copy,
+  DatabaseBackup,
+  Download,
+  Loader2,
+  RefreshCcw,
+  ShieldCheck,
+  Wrench,
+} from "lucide-react";
 
 import { ErrorAlert } from "@/components/ui/error-alert";
-import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
 import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { api, ApiError } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -58,14 +68,14 @@ type MaintenanceChecklist = {
   timestamp: string;
 };
 
-const tabs = [
-  { id: "health", label: "System Health", icon: Activity },
+type TabId = "overview" | "exports" | "backup" | "maintenance";
+
+const tabs: Array<{ id: TabId; label: string; icon: typeof Activity }> = [
+  { id: "overview", label: "System Health", icon: Activity },
   { id: "exports", label: "Data Export", icon: Download },
   { id: "backup", label: "Backup Guidance", icon: DatabaseBackup },
   { id: "maintenance", label: "Maintenance Checklist", icon: Wrench },
-] as const;
-
-type TabId = (typeof tabs)[number]["id"];
+];
 
 const exportActions = [
   { key: "products", label: "Products CSV", path: "/admin/exports/products" },
@@ -76,7 +86,411 @@ const exportActions = [
   { key: "transactions", label: "Transactions CSV", path: "/admin/exports/transactions" },
   { key: "suppliers", label: "Suppliers CSV", path: "/admin/exports/suppliers" },
   { key: "purchase-orders", label: "Purchase Orders CSV", path: "/admin/exports/purchase-orders" },
-] as const;
+];
+
+export default function AdminToolsPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+  const [backupGuidance, setBackupGuidance] = useState<BackupGuidance | null>(null);
+  const [maintenanceChecklist, setMaintenanceChecklist] = useState<MaintenanceChecklist | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [busyExportKey, setBusyExportKey] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadData() {
+      try {
+        const [healthData, backupData, checklistData] = await Promise.all([
+          api.get<SystemHealth>("/admin/system-health"),
+          api.get<BackupGuidance>("/admin/backup-guidance"),
+          api.get<MaintenanceChecklist>("/admin/maintenance-checklist"),
+        ]);
+
+        if (!isMounted) return;
+        setHealth(healthData);
+        setBackupGuidance(backupData);
+        setMaintenanceChecklist(checklistData);
+      } catch (err) {
+        if (!isMounted) return;
+        setError(err instanceof ApiError ? err.message : "Failed to load admin tools");
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    void loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const summaryCards = useMemo(() => {
+    if (!health || !maintenanceChecklist) return [];
+    const failingItems = maintenanceChecklist.items.filter((item) => item.status === "fail").length;
+    return [
+      {
+        label: "API",
+        value: health.service_status.api,
+        helper: `Database: ${health.service_status.database}`,
+        icon: Activity,
+        tone: "success" as const,
+      },
+      {
+        label: "Environment",
+        value: health.environment,
+        helper: health.migrations.up_to_date ? "Migrations up to date" : "Migration review needed",
+        icon: ShieldCheck,
+        tone: health.migrations.up_to_date ? ("info" as const) : ("warning" as const),
+      },
+      {
+        label: "Checklist Flags",
+        value: failingItems,
+        helper: `${maintenanceChecklist.items.length} release checks`,
+        icon: AlertTriangle,
+        tone: failingItems === 0 ? ("success" as const) : ("warning" as const),
+      },
+      {
+        label: "Last Health Check",
+        value: formatDateTime(health.timestamp),
+        helper: "Manual admin refresh only",
+        icon: RefreshCcw,
+        tone: "default" as const,
+      },
+    ];
+  }, [health, maintenanceChecklist]);
+
+  async function refreshHealth() {
+    setError("");
+    setIsRefreshing(true);
+    try {
+      const nextHealth = await api.get<SystemHealth>("/admin/system-health");
+      setHealth(nextHealth);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to refresh system health");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
+  async function handleExport(path: string, key: string) {
+    setError("");
+    setBusyExportKey(key);
+    try {
+      await downloadProtectedCsv(path, `${key}.csv`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to export CSV");
+    } finally {
+      setBusyExportKey(null);
+    }
+  }
+
+  async function copyText(value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopyMessage("Copied to clipboard.");
+    window.setTimeout(() => setCopyMessage(""), 1500);
+  }
+
+  if (isLoading) {
+    return <LoadingState label="Loading admin tools..." />;
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Admin"
+          title="Admin Tools"
+          description="Keep health checks, exports, backup guidance, and maintenance review inside the same broad control-center model the v1 settings workflow relied on."
+          meta="Safe admin only"
+          actions={
+            <button
+              type="button"
+              onClick={() => void refreshHealth()}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)] disabled:opacity-60"
+            >
+              {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+              Refresh
+            </button>
+          }
+        />
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {summaryCards.map((card) => (
+          <OpsSummaryCard
+            key={card.label}
+            label={card.label}
+            value={card.value}
+            helper={card.helper}
+            tone={card.tone}
+            icon={card.icon}
+          />
+        ))}
+      </section>
+
+      {error ? <ErrorAlert message={error} /> : null}
+      {copyMessage ? (
+        <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
+          {copyMessage}
+        </div>
+      ) : null}
+
+      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="space-y-4">
+          <div className="card-base p-4">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`mb-2 flex w-full items-center gap-3 rounded-full px-4 py-3 text-left text-[13px] font-bold transition ${
+                    isActive
+                      ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                      : "text-[var(--color-txt-sec)] hover:bg-[var(--color-surf-hover)]"
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-5 text-sm leading-6 text-rose-900">
+            Restore, purge, and destructive backup operations stay intentionally disabled. This screen only exposes the current safe guidance and export surfaces.
+          </div>
+
+          <Link
+            href="/dashboard/settings"
+            className="block rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf)] px-5 py-5 shadow-[var(--shadow-sub)] transition hover:bg-[var(--color-surf-hover)]"
+          >
+            <p className="text-sm font-bold text-[var(--color-txt-pri)]">Return to Settings Center</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+              Jump back to the broader company, invoice, and account control panels.
+            </p>
+          </Link>
+        </aside>
+
+        <div className="space-y-5">
+          {activeTab === "overview" && health ? (
+            <section className="card-base p-6">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <DataStat label="Users" value={health.counts.users} />
+                <DataStat label="Products" value={health.counts.products} />
+                <DataStat label="Orders" value={health.counts.orders} />
+                <DataStat label="Inventory" value={health.counts.inventory_items} />
+                <DataStat label="Customers" value={health.counts.customers} />
+                <DataStat label="Accounts" value={health.counts.finance_accounts} />
+                <DataStat label="Tasks" value={health.counts.tasks} />
+                <DataStat label="Employees" value={health.counts.employees} />
+              </div>
+
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <article className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-5 py-5">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-[var(--color-txt-pri)]">Service Status</h2>
+                    <OpsStatusBadge label={health.database_connectivity ? "Online" : "Review"} tone={health.database_connectivity ? "success" : "warning"} />
+                  </div>
+                  <div className="mt-4 space-y-3 text-sm text-[var(--color-txt-sec)]">
+                    <p>API: <span className="font-semibold text-[var(--color-txt-pri)]">{health.service_status.api}</span></p>
+                    <p>Database: <span className="font-semibold text-[var(--color-txt-pri)]">{health.service_status.database}</span></p>
+                    <p>Environment: <span className="font-semibold text-[var(--color-txt-pri)]">{health.environment}</span></p>
+                    <p>Checked: <span className="font-semibold text-[var(--color-txt-pri)]">{formatDateTime(health.timestamp)}</span></p>
+                  </div>
+                </article>
+
+                <article className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-5 py-5">
+                  <h2 className="text-base font-bold text-[var(--color-txt-pri)]">Migration Status</h2>
+                  <div className="mt-4 space-y-3 text-sm text-[var(--color-txt-sec)]">
+                    <p>
+                      Current revision:{" "}
+                      <span className="font-semibold text-[var(--color-txt-pri)]">
+                        {health.migrations.current_revision || "Unknown"}
+                      </span>
+                    </p>
+                    <p>
+                      Head revision:{" "}
+                      <span className="font-semibold text-[var(--color-txt-pri)]">
+                        {health.migrations.head_revision || "Unknown"}
+                      </span>
+                    </p>
+                    <p>
+                      Status:{" "}
+                      <span className="font-semibold text-[var(--color-txt-pri)]">
+                        {health.migrations.up_to_date ? "Up to date" : "Needs review"}
+                      </span>
+                    </p>
+                  </div>
+                </article>
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === "exports" ? (
+            <section className="card-base p-6">
+              <h2 className="text-lg font-bold text-[var(--color-txt-pri)]">Safe Data Export</h2>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+                Export the same core operations data from existing backend-approved CSV endpoints. No new all-in-one destructive export flow is introduced here.
+              </p>
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {exportActions.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => void handleExport(item.path, item.key)}
+                    disabled={busyExportKey === item.key}
+                    className="flex items-center justify-between rounded-[22px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4 text-left text-sm font-semibold text-[var(--color-txt-pri)] transition hover:bg-white disabled:opacity-60"
+                  >
+                    <span>{item.label}</span>
+                    {busyExportKey === item.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === "backup" && backupGuidance ? (
+            <section className="space-y-5">
+              <section className="card-base p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold text-[var(--color-txt-pri)]">Backup Guidance</h2>
+                    <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+                      Review the recommended database command and folder checklist before a release or maintenance window.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void copyText(backupGuidance.pg_dump_command_template)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)]"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copy Command
+                  </button>
+                </div>
+
+                <code className="mt-5 block whitespace-pre-wrap break-all rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4 text-sm text-[var(--color-txt-pri)]">
+                  {backupGuidance.pg_dump_command_template}
+                </code>
+
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <ListPanel
+                    title="Folders to Back Up"
+                    items={backupGuidance.folders_to_back_up}
+                  />
+                  <ListPanel
+                    title="Restore Checklist"
+                    items={backupGuidance.restore_checklist}
+                  />
+                </div>
+              </section>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <WarningPanel title="Environment Warning" body={backupGuidance.environment_warning} tone="amber" />
+                <WarningPanel title="Commit Warning" body={backupGuidance.env_commit_warning} tone="rose" />
+              </div>
+            </section>
+          ) : null}
+
+          {activeTab === "maintenance" ? (
+            <section className="card-base p-6">
+              <h2 className="text-lg font-bold text-[var(--color-txt-pri)]">Maintenance Checklist</h2>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+                Use the release-readiness checklist as a pass/fail control pass before shipping operational changes.
+              </p>
+              <div className="mt-5 space-y-3">
+                {maintenanceChecklist?.items.map((item) => (
+                  <article
+                    key={item.key}
+                    className="rounded-[22px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-5 py-5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h3 className="text-base font-bold text-[var(--color-txt-pri)]">{item.label}</h3>
+                          <OpsStatusBadge
+                            label={item.status}
+                            tone={item.status === "pass" ? "success" : item.status === "warn" ? "warning" : "danger"}
+                          />
+                        </div>
+                        <p className="text-sm text-[var(--color-txt-sec)]">
+                          Current value: <span className="font-semibold text-[var(--color-txt-pri)]">{item.value}</span>
+                        </p>
+                        <p className="text-sm leading-6 text-[var(--color-txt-sec)]">{item.recommended_action}</p>
+                      </div>
+                      {item.route ? (
+                        <Link
+                          href={item.route}
+                          className="inline-flex rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-sec)] transition hover:bg-white"
+                        >
+                          Open Module
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DataStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[22px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
+      <p className="text-sm text-[var(--color-txt-sec)]">{label}</p>
+      <p className="mt-2 text-2xl font-bold text-[var(--color-txt-pri)]">{value}</p>
+    </div>
+  );
+}
+
+function ListPanel({ title, items }: { title: string; items: string[] }) {
+  return (
+    <article className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-5 py-5">
+      <h3 className="text-base font-bold text-[var(--color-txt-pri)]">{title}</h3>
+      <ul className="mt-4 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="rounded-[18px] bg-white px-4 py-3 text-sm leading-6 text-[var(--color-txt-sec)]">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
+function WarningPanel({
+  title,
+  body,
+  tone,
+}: {
+  title: string;
+  body: string;
+  tone: "amber" | "rose";
+}) {
+  const className =
+    tone === "amber"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : "border-rose-200 bg-rose-50 text-rose-900";
+
+  return (
+    <div className={`rounded-[24px] border px-5 py-5 text-sm leading-6 ${className}`}>
+      <p className="font-bold">{title}</p>
+      <p className="mt-2">{body}</p>
+    </div>
+  );
+}
 
 async function downloadProtectedCsv(path: string, filename: string) {
   const token = getToken();
@@ -102,368 +516,4 @@ async function downloadProtectedCsv(path: string, filename: string) {
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "Not available";
   return new Date(value).toLocaleString();
-}
-
-function ChecklistBadge({ status }: { status: string }) {
-  const className =
-    status === "pass"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : status === "fail"
-        ? "border-rose-200 bg-rose-50 text-rose-700"
-        : "border-amber-200 bg-amber-50 text-amber-700";
-
-  return (
-    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${className}`}>
-      {status}
-    </span>
-  );
-}
-
-export default function AdminToolsPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("health");
-  const [health, setHealth] = useState<SystemHealth | null>(null);
-  const [backupGuidance, setBackupGuidance] = useState<BackupGuidance | null>(null);
-  const [maintenanceChecklist, setMaintenanceChecklist] = useState<MaintenanceChecklist | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
-  const [busyExportKey, setBusyExportKey] = useState<string | null>(null);
-  const [copyMessage, setCopyMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function loadAdminData() {
-    const [healthData, backupData, checklistData] = await Promise.all([
-      api.get<SystemHealth>("/admin/system-health"),
-      api.get<BackupGuidance>("/admin/backup-guidance"),
-      api.get<MaintenanceChecklist>("/admin/maintenance-checklist"),
-    ]);
-
-    setHealth(healthData);
-    setBackupGuidance(backupData);
-    setMaintenanceChecklist(checklistData);
-  }
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function load() {
-      try {
-        await loadAdminData();
-      } catch (err) {
-        if (!isMounted) return;
-        setError(err instanceof ApiError ? err.message : "Failed to load admin tools");
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void load();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  async function refreshHealth() {
-    setError("");
-    setIsRefreshingHealth(true);
-    try {
-      const nextHealth = await api.get<SystemHealth>("/admin/system-health");
-      setHealth(nextHealth);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to refresh system health");
-    } finally {
-      setIsRefreshingHealth(false);
-    }
-  }
-
-  async function handleExportClick(path: string, key: string) {
-    setError("");
-    setBusyExportKey(key);
-    try {
-      await downloadProtectedCsv(path, `${key}.csv`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to export CSV");
-    } finally {
-      setBusyExportKey(null);
-    }
-  }
-
-  async function copyText(value: string) {
-    await navigator.clipboard.writeText(value);
-    setCopyMessage("Copied to clipboard.");
-    window.setTimeout(() => setCopyMessage(""), 1600);
-  }
-
-  const countCards = useMemo(
-    () =>
-      health
-        ? [
-            { label: "Users", value: health.counts.users },
-            { label: "Products", value: health.counts.products },
-            { label: "Orders", value: health.counts.orders },
-            { label: "Inventory Items", value: health.counts.inventory_items },
-            { label: "Customers", value: health.counts.customers },
-            { label: "Finance Accounts", value: health.counts.finance_accounts },
-            { label: "Tasks", value: health.counts.tasks },
-            { label: "Employees", value: health.counts.employees },
-          ]
-        : [],
-    [health],
-  );
-
-  if (isLoading) {
-    return <LoadingState label="Loading admin tools..." />;
-  }
-
-  return (
-    <div className="space-y-4">
-      <section className="card-base p-6 sm:p-8">
-        <OpsPageHeader
-          eyebrow="Admin Console"
-          title="Admin tools"
-          description="Use this workspace for release checks, CSV exports, backup guidance, and a clearer operational maintenance pass before deployment."
-          meta="Admin only"
-        />
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <div className="card-base p-3">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm transition ${
-                    isActive ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 text-sm text-slate-600 shadow-[var(--shadow-soft)]">
-            <p className="font-semibold text-slate-950">Admin scope</p>
-            <p className="mt-2 leading-6">
-              These tools are intended for admin and super admin release-readiness checks, not day-to-day operator workflows.
-            </p>
-          </div>
-        </aside>
-
-        <div className="space-y-4">
-          {error ? <ErrorAlert message={error} /> : null}
-          {copyMessage ? (
-            <div className="rounded-[28px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700 shadow-[var(--shadow-soft)]">
-              {copyMessage}
-            </div>
-          ) : null}
-
-          {activeTab === "health" ? (
-            <div className="space-y-4">
-              <FormCard
-                title="System health"
-                description="Check API reachability, database connectivity, migration state, and core record counts before release."
-                action={
-                  <button
-                    type="button"
-                    onClick={() => void refreshHealth()}
-                    disabled={isRefreshingHealth}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isRefreshingHealth ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                    Refresh
-                  </button>
-                }
-              >
-                {health ? (
-                  <div className="space-y-5">
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <OpsSummaryCard label="API Status" value={health.service_status.api} icon={Activity} eyebrow="Health" tone="success" />
-                      <OpsSummaryCard label="Database Status" value={health.service_status.database} icon={ShieldCheck} eyebrow="Health" tone="success" />
-                      <OpsSummaryCard label="Environment" value={health.environment} icon={Wrench} eyebrow="Runtime" tone="info" />
-                      <OpsSummaryCard label="Migration Status" value={health.migrations.up_to_date ? "Up to date" : "Review needed"} icon={DatabaseBackup} eyebrow="Schema" tone={health.migrations.up_to_date ? "success" : "warning"} />
-                    </div>
-
-                    <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                      <div className="flex flex-wrap items-center gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Migration Revisions</p>
-                          <p className="mt-2 text-sm text-slate-700">
-                            Current: <span className="font-semibold text-slate-950">{health.migrations.current_revision || "Unknown"}</span>
-                          </p>
-                          <p className="mt-1 text-sm text-slate-700">
-                            Head: <span className="font-semibold text-slate-950">{health.migrations.head_revision || "Unknown"}</span>
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                          Last checked: <span className="font-semibold text-slate-950">{formatDateTime(health.timestamp)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {countCards.map((card) => (
-                        <div key={card.label} className="rounded-3xl border border-slate-200 bg-white px-5 py-5">
-                          <p className="text-sm text-slate-500">{card.label}</p>
-                          <p className="mt-3 text-2xl font-semibold text-slate-950">{card.value}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </FormCard>
-            </div>
-          ) : null}
-
-          {activeTab === "exports" ? (
-            <FormCard
-              title="Data export"
-              description="Download compact CSV exports for the main operational modules without leaving the admin workspace."
-              action={
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <Download className="h-5 w-5" />
-                </div>
-              }
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                {exportActions.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => void handleExportClick(item.path, item.key)}
-                    disabled={busyExportKey === item.key}
-                    className="inline-flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 text-left text-sm font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <span>{item.label}</span>
-                    {busyExportKey === item.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                  </button>
-                ))}
-              </div>
-            </FormCard>
-          ) : null}
-
-          {activeTab === "backup" ? (
-            <div className="space-y-4">
-              <FormCard
-                title="Backup guidance"
-                description="Review the recommended PostgreSQL dump command, the folders worth preserving, and the restore checklist before a release or maintenance window."
-                action={
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                    <DatabaseBackup className="h-5 w-5" />
-                  </div>
-                }
-              >
-                {backupGuidance ? (
-                  <div className="space-y-5">
-                    <div className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">pg_dump Template</p>
-                          <code className="mt-3 block whitespace-pre-wrap break-all rounded-2xl bg-white px-4 py-4 text-sm text-slate-800">
-                            {backupGuidance.pg_dump_command_template}
-                          </code>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => void copyText(backupGuidance.pg_dump_command_template)}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white"
-                        >
-                          <Copy className="h-4 w-4" />
-                          Copy
-                        </button>
-                      </div>
-                      <p className="mt-4 text-sm text-slate-600">
-                        Database name: <span className="font-semibold text-slate-950">{backupGuidance.database_name || "Not detected"}</span>
-                      </p>
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-5">
-                        <p className="text-sm font-semibold text-slate-950">Folders to back up</p>
-                        <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                          {backupGuidance.folders_to_back_up.map((folder) => (
-                            <li key={folder} className="rounded-2xl bg-slate-50 px-4 py-3">
-                              {folder}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="rounded-3xl border border-slate-200 bg-white px-5 py-5">
-                        <p className="text-sm font-semibold text-slate-950">Restore checklist</p>
-                        <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                          {backupGuidance.restore_checklist.map((item) => (
-                            <li key={item} className="rounded-2xl bg-slate-50 px-4 py-3">
-                              {item}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-5 text-sm leading-6 text-amber-800">
-                        <p className="font-semibold">Environment warning</p>
-                        <p className="mt-2">{backupGuidance.environment_warning}</p>
-                      </div>
-                      <div className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-5 text-sm leading-6 text-rose-800">
-                        <p className="font-semibold">Commit warning</p>
-                        <p className="mt-2">{backupGuidance.env_commit_warning}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </FormCard>
-            </div>
-          ) : null}
-
-          {activeTab === "maintenance" ? (
-            <FormCard
-              title="Maintenance checklist"
-              description="Use this as a quick pass/fail review for production readiness, operational configuration, and unresolved workload."
-              action={
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-              }
-            >
-              <div className="space-y-3">
-                {maintenanceChecklist?.items.map((item) => (
-                  <div key={item.key} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <h3 className="text-base font-semibold text-slate-950">{item.label}</h3>
-                          <ChecklistBadge status={item.status} />
-                        </div>
-                        <p className="text-sm text-slate-600">
-                          Current value: <span className="font-semibold text-slate-950">{item.value}</span>
-                        </p>
-                        <p className="text-sm leading-6 text-slate-500">{item.recommended_action}</p>
-                      </div>
-                      {item.route ? (
-                        <Link
-                          href={item.route}
-                          className="inline-flex items-center rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white"
-                        >
-                          Open module
-                        </Link>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </FormCard>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
 }

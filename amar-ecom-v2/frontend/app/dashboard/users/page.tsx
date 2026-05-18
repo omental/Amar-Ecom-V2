@@ -1,117 +1,148 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, ShieldCheck, UserCog, UserPlus } from "lucide-react";
+import Link from "next/link";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  ClipboardList,
+  Loader2,
+  Search,
+  ShieldCheck,
+  UserCheck,
+  UserPlus,
+  Users,
+} from "lucide-react";
 
-import { DataTable } from "@/components/ui/data-table";
-import { EmptyState } from "@/components/ui/empty-state";
+import { ControlModal } from "@/components/ui/control-modal";
 import { ErrorAlert } from "@/components/ui/error-alert";
-import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
+import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { api, ApiError } from "@/lib/api";
 import { getUser } from "@/lib/auth";
-import { formatDate, formatLabel } from "@/lib/format";
+import { formatDate, formatDateTime, formatLabel } from "@/lib/format";
+
+type TeamTab = "members" | "activity";
 
 type UserItem = {
   id: string;
+  uid?: string | null;
   full_name: string;
+  fullName?: string | null;
+  displayName?: string | null;
   email: string;
   role: string;
+  active?: boolean;
   is_active: boolean;
+  isActive?: boolean;
+  status?: string | null;
+  permissions?: string[];
+  legacy_permissions?: Record<string, boolean>;
+  legacyPermissions?: Record<string, boolean>;
+  has_full_access?: boolean;
+  hasFullAccess?: boolean;
+  pendingApproval?: boolean;
+  last_login?: string | null;
+  lastLogin?: string | null;
   created_at: string;
+  createdAt?: string | null;
   updated_at: string;
+  updatedAt?: string | null;
+  photoURL?: string | null;
 };
 
-type Permission = {
+type ActivityLog = {
   id: string;
-  module: string;
   action: string;
-  label: string | null;
-  created_at: string;
+  actionLabel?: string | null;
+  module?: string | null;
+  moduleLabel?: string | null;
+  message: string;
+  userName?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
 };
 
-type UserPermissionAssignment = {
+type LegacyMatrix = {
+  modules: Array<{
+    module: string;
+    label: string;
+    permission_keys: string[];
+  }>;
+};
+
+type PermissionAssignment = {
   user_id: string;
   assigned_permission_ids: string[];
   assigned_permission_keys: string[];
   has_full_access: boolean;
+  legacy_permissions: Record<string, boolean>;
+  legacyPermissions?: Record<string, boolean>;
 };
 
-type CreateUserForm = {
-  full_name: string;
+type UserForm = {
+  fullName: string;
   email: string;
   password: string;
   role: string;
-  is_active: boolean;
+  isActive: boolean;
 };
 
-type EditUserForm = {
-  full_name: string;
-  role: string;
-  is_active: boolean;
-};
+const teamTabs: Array<{ id: TeamTab; label: string }> = [
+  { id: "members", label: "Members" },
+  { id: "activity", label: "Activity" },
+];
 
 const roleOptions = ["admin", "manager", "staff"];
 
-const initialCreateForm: CreateUserForm = {
-  full_name: "",
+const initialForm: UserForm = {
+  fullName: "",
   email: "",
   password: "",
   role: "staff",
-  is_active: true,
+  isActive: true,
 };
 
 export default function UsersPage() {
   const currentUser = getUser();
+  const [activeTab, setActiveTab] = useState<TeamTab>("members");
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [createForm, setCreateForm] = useState<CreateUserForm>(initialCreateForm);
-  const [editingUser, setEditingUser] = useState<UserItem | null>(null);
-  const [permissionUser, setPermissionUser] = useState<UserItem | null>(null);
-  const [editForm, setEditForm] = useState<EditUserForm>({
-    full_name: "",
-    role: "staff",
-    is_active: true,
-  });
-  const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>([]);
-  const [permissionSummary, setPermissionSummary] = useState<UserPermissionAssignment | null>(null);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [legacyMatrix, setLegacyMatrix] = useState<LegacyMatrix | null>(null);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isPermissionsLoading, setIsPermissionsLoading] = useState(false);
-  const [isPermissionsSaving, setIsPermissionsSaving] = useState(false);
-  const [isSeedingPermissions, setIsSeedingPermissions] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const permissionsByModule = useMemo(() => {
-    return permissions.reduce<Record<string, Permission[]>>((groups, permission) => {
-      const key = permission.module;
-      groups[key] = groups[key] ? [...groups[key], permission] : [permission];
-      return groups;
-    }, {});
-  }, [permissions]);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserItem | null>(null);
+  const [userForm, setUserForm] = useState<UserForm>(initialForm);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+
+  const [permissionUser, setPermissionUser] = useState<UserItem | null>(null);
+  const [permissionDraft, setPermissionDraft] = useState<Record<string, boolean>>({});
+  const [isLoadingPermissions, setIsLoadingPermissions] = useState(false);
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadInitialData() {
+    async function loadData() {
       try {
-        const [usersData, permissionsData] = await Promise.all([
+        const [usersData, matrixData, logsData] = await Promise.all([
           api.get<UserItem[]>("/users?skip=0&limit=100"),
-          api.get<Permission[]>("/permissions"),
+          api.get<LegacyMatrix>("/permissions/legacy-matrix"),
+          api.get<ActivityLog[]>("/activity-logs?module=team&limit=30"),
         ]);
-        if (!isMounted) {
-          return;
-        }
+
+        if (!isMounted) return;
         setUsers(usersData);
-        setPermissions(permissionsData);
+        setLegacyMatrix(matrixData);
+        setActivityLogs(logsData);
       } catch (err) {
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
         setError(err instanceof ApiError ? err.message : "Failed to load team workspace");
       } finally {
         if (isMounted) {
@@ -120,118 +151,135 @@ export default function UsersPage() {
       }
     }
 
-    void loadInitialData();
+    void loadData();
     return () => {
       isMounted = false;
     };
   }, []);
 
-  async function refreshUsers() {
-    const data = await api.get<UserItem[]>("/users?skip=0&limit=100");
-    setUsers(data);
-  }
-
-  async function refreshPermissions() {
-    const data = await api.get<Permission[]>("/permissions");
-    setPermissions(data);
-  }
-
-  function startEditing(user: UserItem) {
-    setEditingUser(user);
-    setEditForm({
-      full_name: user.full_name,
-      role: user.role,
-      is_active: user.is_active,
+  const filteredUsers = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return users.filter((user) => {
+      const matchesSearch =
+        term.length === 0 ||
+        user.full_name.toLowerCase().includes(term) ||
+        user.email.toLowerCase().includes(term) ||
+        user.role.toLowerCase().includes(term);
+      const matchesRole = !roleFilter || user.role === roleFilter;
+      const computedStatus = getUserStatus(user);
+      const matchesStatus = !statusFilter || computedStatus === statusFilter;
+      return matchesSearch && matchesRole && matchesStatus;
     });
-    setError("");
-    setSuccess("");
+  }, [roleFilter, search, statusFilter, users]);
+
+  const summaryCards = useMemo(() => {
+    const activeUsers = users.filter((user) => user.is_active).length;
+    const pendingUsers = users.filter((user) => user.pendingApproval).length;
+    const adminUsers = users.filter((user) => user.role === "admin").length;
+    const managerUsers = users.filter((user) => user.role === "manager").length;
+
+    return [
+      {
+        label: "Team Members",
+        value: users.length,
+        helper: "Full member directory",
+        icon: Users,
+        tone: "default" as const,
+      },
+      {
+        label: "Active Users",
+        value: activeUsers,
+        helper: `${pendingUsers} pending or inactive`,
+        icon: UserCheck,
+        tone: "success" as const,
+      },
+      {
+        label: "Admins",
+        value: adminUsers,
+        helper: `${managerUsers} managers`,
+        icon: ShieldCheck,
+        tone: "info" as const,
+      },
+      {
+        label: "Recent Activity",
+        value: activityLogs.length,
+        helper: "Latest team updates",
+        icon: ClipboardList,
+        tone: "warning" as const,
+      },
+    ];
+  }, [activityLogs.length, users]);
+
+  async function refreshUsersAndLogs() {
+    const [usersData, logsData] = await Promise.all([
+      api.get<UserItem[]>("/users?skip=0&limit=100"),
+      api.get<ActivityLog[]>("/activity-logs?module=team&limit=30"),
+    ]);
+    setUsers(usersData);
+    setActivityLogs(logsData);
   }
 
-  function cancelEditing() {
+  function openCreateModal() {
     setEditingUser(null);
-    setEditForm({
-      full_name: "",
-      role: "staff",
-      is_active: true,
+    setUserForm(initialForm);
+    setIsUserModalOpen(true);
+    setError("");
+    setSuccess("");
+  }
+
+  function openEditModal(user: UserItem) {
+    setEditingUser(user);
+    setUserForm({
+      fullName: user.displayName || user.fullName || user.full_name,
+      email: user.email,
+      password: "",
+      role: user.role,
+      isActive: user.isActive ?? user.active ?? user.is_active,
     });
-  }
-
-  async function openPermissionEditor(user: UserItem) {
-    setPermissionUser(user);
+    setIsUserModalOpen(true);
     setError("");
     setSuccess("");
-    setIsPermissionsLoading(true);
-
-    try {
-      const assignment = await api.get<UserPermissionAssignment>(`/users/${user.id}/permissions`);
-      setPermissionSummary(assignment);
-      setSelectedPermissionIds(assignment.assigned_permission_ids);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load user permissions");
-    } finally {
-      setIsPermissionsLoading(false);
-    }
   }
 
-  function closePermissionEditor() {
-    setPermissionUser(null);
-    setPermissionSummary(null);
-    setSelectedPermissionIds([]);
+  function closeUserModal() {
+    setEditingUser(null);
+    setUserForm(initialForm);
+    setIsUserModalOpen(false);
   }
 
-  async function handleSeedPermissions() {
-    setError("");
-    setSuccess("");
-    setIsSeedingPermissions(true);
-
-    try {
-      await api.post<Permission[]>("/permissions/seed-defaults", {});
-      await refreshPermissions();
-      setSuccess("Default permissions seeded successfully.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to seed permissions");
-    } finally {
-      setIsSeedingPermissions(false);
-    }
-  }
-
-  async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
+  async function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setSuccess("");
-    setIsCreating(true);
+    setIsSavingUser(true);
 
     try {
-      await api.post<UserItem>("/users", createForm);
-      setCreateForm(initialCreateForm);
-      await refreshUsers();
-      setSuccess("Team member created successfully.");
+      if (editingUser) {
+        await api.patch<UserItem>(`/users/${editingUser.id}`, {
+          displayName: userForm.fullName,
+          email: userForm.email,
+          role: userForm.role,
+          isActive: userForm.isActive,
+          password: userForm.password || undefined,
+        });
+        setSuccess("Team member updated.");
+      } else {
+        await api.post<UserItem>("/users", {
+          displayName: userForm.fullName,
+          email: userForm.email,
+          password: userForm.password,
+          role: userForm.role,
+          isActive: userForm.isActive,
+        });
+        setSuccess("Team member created.");
+      }
+
+      closeUserModal();
+      await refreshUsersAndLogs();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create team member");
+      setError(err instanceof ApiError ? err.message : "Failed to save team member");
     } finally {
-      setIsCreating(false);
-    }
-  }
-
-  async function handleSaveUser(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!editingUser) {
-      return;
-    }
-
-    setError("");
-    setSuccess("");
-    setIsSaving(true);
-
-    try {
-      await api.patch<UserItem>(`/users/${editingUser.id}`, editForm);
-      await refreshUsers();
-      setSuccess("Team member updated successfully.");
-      cancelEditing();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update team member");
-    } finally {
-      setIsSaving(false);
+      setIsSavingUser(false);
     }
   }
 
@@ -241,448 +289,579 @@ export default function UsersPage() {
 
     try {
       await api.patch<UserItem>(`/users/${user.id}`, {
-        is_active: !user.is_active,
+        isActive: !(user.isActive ?? user.active ?? user.is_active),
       });
-      await refreshUsers();
+      await refreshUsersAndLogs();
       setSuccess(
-        `${user.full_name} has been ${user.is_active ? "deactivated" : "activated"} successfully.`,
+        `${user.displayName || user.fullName || user.full_name} ${
+          user.is_active ? "deactivated" : "activated"
+        }.`,
       );
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update active status");
+      setError(err instanceof ApiError ? err.message : "Failed to update member status");
     }
+  }
+
+  async function openPermissionModal(user: UserItem) {
+    setPermissionUser(user);
+    setPermissionDraft({});
+    setIsLoadingPermissions(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const assignment = await api.get<PermissionAssignment>(`/users/${user.id}/permissions`);
+      setPermissionDraft(assignment.legacyPermissions || assignment.legacy_permissions || {});
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to load legacy permissions");
+    } finally {
+      setIsLoadingPermissions(false);
+    }
+  }
+
+  function closePermissionModal() {
+    setPermissionUser(null);
+    setPermissionDraft({});
+  }
+
+  function toggleModule(module: string) {
+    setPermissionDraft((current) => ({ ...current, [module]: !current[module] }));
   }
 
   async function handleSavePermissions() {
-    if (!permissionUser) {
-      return;
-    }
+    if (!permissionUser) return;
 
     setError("");
     setSuccess("");
-    setIsPermissionsSaving(true);
+    setIsSavingPermissions(true);
 
     try {
-      const updated = await api.patch<UserPermissionAssignment>(`/users/${permissionUser.id}/permissions`, {
-        permission_ids: selectedPermissionIds,
+      await api.patch<PermissionAssignment>(`/users/${permissionUser.id}/legacy-permissions`, {
+        legacyPermissions: permissionDraft,
       });
-      setPermissionSummary(updated);
-      setSelectedPermissionIds(updated.assigned_permission_ids);
-      setSuccess(`Permissions updated for ${permissionUser.full_name}.`);
+      await refreshUsersAndLogs();
+      setSuccess(`Permissions updated for ${permissionUser.displayName || permissionUser.full_name}.`);
+      closePermissionModal();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save permissions");
+      setError(err instanceof ApiError ? err.message : "Failed to save legacy permissions");
     } finally {
-      setIsPermissionsSaving(false);
+      setIsSavingPermissions(false);
     }
   }
 
-  function togglePermission(permissionId: string) {
-    setSelectedPermissionIds((current) =>
-      current.includes(permissionId)
-        ? current.filter((id) => id !== permissionId)
-        : [...current, permissionId],
-    );
+  if (isLoading) {
+    return <LoadingState label="Loading team workspace..." />;
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
-          eyebrow="Team Management"
-          title="Team"
-          description="Manage user accounts, assign module-level permissions, and move closer to the v1 admin control surface without over-engineering roles yet."
+    <div className="space-y-5">
+      <section className="card-base p-6 sm:p-8">
+        <OpsPageHeader
+          eyebrow="Team"
+          title="Team Management"
+          description="Manage members, roles, approvals, and the older module permission matrix from the same compact control center flow the v1 app used."
           meta={`${users.length} members`}
+          actions={
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-hover)]"
+            >
+              <UserPlus className="h-4 w-4" />
+              Add Member
+            </button>
+          }
         />
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="space-y-4">
-          <FormCard
-            title="Create team member"
-            description="Add a user with role, active state, and then assign module permissions from the team workspace."
-            action={
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                <UserPlus className="h-5 w-5" />
-              </div>
-            }
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {summaryCards.map((card) => (
+          <OpsSummaryCard
+            key={card.label}
+            label={card.label}
+            value={card.value}
+            helper={card.helper}
+            tone={card.tone}
+            icon={card.icon}
+          />
+        ))}
+      </section>
+
+      {error ? <ErrorAlert message={error} /> : null}
+      {success ? (
+        <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
+          {success}
+        </div>
+      ) : null}
+
+      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="space-y-4">
+          <div className="card-base p-4">
+            {teamTabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`mb-2 flex w-full items-center justify-between rounded-full px-4 py-3 text-left text-[13px] font-bold transition ${
+                    isActive
+                      ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                      : "text-[var(--color-txt-sec)] hover:bg-[var(--color-surf-hover)]"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {tab.id === "members" ? filteredUsers.length : activityLogs.length}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-5 text-sm leading-6 text-amber-900">
+            Pending approval and inactive both map to `is_active=false` in the backend. This page keeps the older labels, but both states share the same safe activation toggle underneath.
+          </div>
+
+          <Link
+            href="/dashboard/activity-logs"
+            className="block rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf)] px-5 py-5 shadow-[var(--shadow-sub)] transition hover:bg-[var(--color-surf-hover)]"
           >
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Full name</span>
-                <input
-                  value={createForm.full_name}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, full_name: event.target.value }))
-                  }
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                  placeholder="Team Member Name"
-                  required
-                />
-              </label>
+            <p className="text-sm font-bold text-[var(--color-txt-pri)]">Open Full Activity Logs</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+              Use the full activity screen for broader admin history, search, and date filtering.
+            </p>
+          </Link>
+        </aside>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Email</span>
-                <input
-                  type="email"
-                  value={createForm.email}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                  placeholder="teammate@example.com"
-                  required
-                />
-              </label>
+        <div className="space-y-5">
+          {activeTab === "members" ? (
+            <>
+              <section className="card-base p-6">
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_180px_180px]">
+                  <label className="flex items-center gap-3 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3">
+                    <Search className="h-4 w-4 text-[var(--color-txt-mut)]" />
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Search member, email, or role"
+                      className="w-full bg-transparent text-sm text-[var(--color-txt-pri)] outline-none placeholder:text-[var(--color-txt-mut)]"
+                    />
+                  </label>
 
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Password</span>
-                <input
-                  type="password"
-                  value={createForm.password}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, password: event.target.value }))
-                  }
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                  placeholder="Temporary password"
-                  required
-                />
-              </label>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Role</span>
                   <select
-                    value={createForm.role}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({ ...current, role: event.target.value }))
-                    }
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
+                    value={roleFilter}
+                    onChange={(event) => setRoleFilter(event.target.value)}
+                    className={selectClassName}
                   >
+                    <option value="">All roles</option>
                     {roleOptions.map((role) => (
                       <option key={role} value={role}>
                         {formatLabel(role)}
                       </option>
                     ))}
                   </select>
-                </label>
 
-                <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:mt-8">
-                  <input
-                    type="checkbox"
-                    checked={createForm.is_active}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({ ...current, is_active: event.target.checked }))
-                    }
-                    className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
-                  />
-                  <span className="text-sm font-medium text-slate-700">Set as active</span>
-                </label>
-              </div>
-
-              {error ? <ErrorAlert message={error} /> : null}
-              {success ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  {success}
-                </div>
-              ) : null}
-
-              <button
-                type="submit"
-                disabled={isCreating}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isCreating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="h-4 w-4" />
-                    Create Team Member
-                  </>
-                )}
-              </button>
-            </form>
-          </FormCard>
-
-          <FormCard
-            title="Permission foundation"
-            description="Seed the standard module permissions, then assign checkboxes per user from the panel on the right."
-            action={
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-            }
-          >
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-600">
-                Current permission catalog: <span className="font-semibold text-slate-900">{permissions.length}</span> entries.
-                Admin and super admin users are treated as full access at login even when no explicit assignments exist.
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleSeedPermissions()}
-                disabled={isSeedingPermissions}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSeedingPermissions ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Seeding defaults...
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="h-4 w-4" />
-                    Seed Default Permissions
-                  </>
-                )}
-              </button>
-            </div>
-          </FormCard>
-        </div>
-
-        <div className="space-y-4">
-          {editingUser ? (
-            <FormCard
-              title="Edit team member"
-              description="Update the selected user’s core profile before adjusting module-level permissions."
-              action={
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <UserCog className="h-5 w-5" />
-                </div>
-              }
-            >
-              <form onSubmit={handleSaveUser} className="space-y-4">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Full name</span>
-                  <input
-                    value={editForm.full_name}
-                    onChange={(event) =>
-                      setEditForm((current) => ({ ...current, full_name: event.target.value }))
-                    }
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                    required
-                  />
-                </label>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-medium text-slate-700">Role</span>
-                    <select
-                      value={editForm.role}
-                      onChange={(event) =>
-                        setEditForm((current) => ({ ...current, role: event.target.value }))
-                      }
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                    >
-                      {roleOptions.map((role) => (
-                        <option key={role} value={role}>
-                          {formatLabel(role)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:mt-8">
-                    <input
-                      type="checkbox"
-                      checked={editForm.is_active}
-                      onChange={(event) =>
-                        setEditForm((current) => ({ ...current, is_active: event.target.checked }))
-                      }
-                      className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
-                    />
-                    <span className="text-sm font-medium text-slate-700">User is active</span>
-                  </label>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value)}
+                    className={selectClassName}
                   >
-                    {isSaving ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      "Save Changes"
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelEditing}
-                    className="rounded-2xl border border-slate-200 px-4 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                  >
-                    Cancel
-                  </button>
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                  </select>
                 </div>
-              </form>
-            </FormCard>
+              </section>
+
+              <section className="card-base overflow-hidden">
+                <div className="border-b border-[var(--color-brd)] px-6 py-5">
+                  <h2 className="text-lg font-bold text-[var(--color-txt-pri)]">Team Members</h2>
+                  <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+                    Add, edit, activate, and permission-manage members from a single dense workspace.
+                  </p>
+                </div>
+
+                {filteredUsers.length === 0 ? (
+                  <div className="px-6 py-12 text-center text-sm text-[var(--color-txt-mut)]">
+                    No team members match the current filters.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-left">
+                      <thead>
+                        <tr className="border-b border-[var(--color-brd)] text-[11px] uppercase tracking-[0.18em] text-[var(--color-txt-mut)]">
+                          <th className="px-4 py-3">Member</th>
+                          <th className="px-4 py-3">Role</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3">Last Login</th>
+                          <th className="px-4 py-3">Created</th>
+                          <th className="px-4 py-3">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredUsers.map((user) => {
+                          const isCurrentUser = currentUser?.id === user.id;
+                          const status = getUserStatus(user);
+                          const displayName = user.displayName || user.fullName || user.full_name;
+                          return (
+                            <tr key={user.id} className="border-b border-[var(--color-brd)]/70 align-top">
+                              <td className="px-4 py-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-sm font-bold text-[var(--color-accent)]">
+                                    {getInitials(displayName)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-sm font-bold text-[var(--color-txt-pri)]">
+                                        {displayName}
+                                      </p>
+                                      {isCurrentUser ? (
+                                        <span className="rounded-full bg-[var(--color-surf-hover)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">
+                                          You
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <p className="mt-1 text-sm text-[var(--color-txt-sec)]">{user.email}</p>
+                                    <p className="mt-1 text-xs text-[var(--color-txt-mut)]">
+                                      UID: {user.uid || user.id}
+                                    </p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <OpsStatusBadge label={formatLabel(user.role)} tone="info" />
+                              </td>
+                              <td className="px-4 py-4">
+                                <OpsStatusBadge
+                                  label={status === "active" ? "Active" : "Pending"}
+                                  tone={status === "active" ? "success" : "warning"}
+                                />
+                              </td>
+                              <td className="px-4 py-4 text-sm text-[var(--color-txt-sec)]">
+                                {formatDateTime(user.lastLogin || user.last_login || null)}
+                              </td>
+                              <td className="px-4 py-4 text-sm text-[var(--color-txt-sec)]">
+                                {formatDate(user.createdAt || user.created_at)}
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditModal(user)}
+                                    className={pillButtonClassName}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void openPermissionModal(user)}
+                                    className={pillButtonClassName}
+                                  >
+                                    Permissions
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleToggleActive(user)}
+                                    className={
+                                      status === "active"
+                                        ? warningPillButtonClassName
+                                        : successPillButtonClassName
+                                    }
+                                  >
+                                    {status === "active" ? "Deactivate" : "Approve"}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </>
           ) : null}
 
-          {permissionUser ? (
-            <FormCard
-              title={`Permissions for ${permissionUser.full_name}`}
-              description="Assign simple module-level permissions. This is the parity foundation, not a full role engine yet."
-              action={
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <ShieldCheck className="h-5 w-5" />
+          {activeTab === "activity" ? (
+            <section className="card-base overflow-hidden">
+              <div className="border-b border-[var(--color-brd)] px-6 py-5">
+                <h2 className="text-lg font-bold text-[var(--color-txt-pri)]">Team Activity</h2>
+                <p className="mt-2 text-sm leading-6 text-[var(--color-txt-sec)]">
+                  The v1 team workspace exposed a compact activity trail beside the member list. This keeps that same quick admin review loop.
+                </p>
+              </div>
+
+              {activityLogs.length === 0 ? (
+                <div className="px-6 py-12 text-center text-sm text-[var(--color-txt-mut)]">
+                  No recent team activity found.
                 </div>
-              }
-            >
-              {isPermissionsLoading ? (
-                <LoadingState label="Loading permissions..." />
-              ) : permissions.length === 0 ? (
-                <EmptyState
-                  title="No permissions seeded yet"
-                  description="Use the seed button first, then return to assign module-level access."
-                />
               ) : (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                    {permissionSummary?.has_full_access ? (
-                      <>This user role currently has full access by default. Explicit assignments are still saved for future role-tightening.</>
-                    ) : (
-                      <>This user only receives the explicitly assigned permissions below.</>
-                    )}
-                  </div>
-
-                  {Object.entries(permissionsByModule).map(([module, modulePermissions]) => (
-                    <section
-                      key={module}
-                      className="rounded-3xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <h3 className="text-sm font-semibold text-slate-950">{formatLabel(module)}</h3>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2">
-                        {modulePermissions.map((permission) => (
-                          <label
-                            key={permission.id}
-                            className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedPermissionIds.includes(permission.id)}
-                              onChange={() => togglePermission(permission.id)}
-                              className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
-                            />
-                            <span>{formatLabel(permission.action)}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void handleSavePermissions()}
-                      disabled={isPermissionsSaving}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isPermissionsSaving ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Saving permissions...
-                        </>
-                      ) : (
-                        "Save Permissions"
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={closePermissionEditor}
-                      className="rounded-2xl border border-slate-200 px-4 py-3.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              )}
-            </FormCard>
-          ) : null}
-
-          <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-            <PageHeader
-              eyebrow="Directory"
-              title="Current team members"
-              description="Review users, update core details, activate or deactivate access, and open the module permission editor."
-            />
-
-            <div className="mt-6">
-              {isLoading ? (
-                <LoadingState label="Loading team members..." />
-              ) : users.length === 0 ? (
-                <EmptyState
-                  title="No team members yet"
-                  description="Create the first user from the form to begin rebuilding the v1 team management flow."
-                />
-              ) : (
-                <DataTable columns={["ID", "Name", "Email", "Role", "Status", "Created", "Actions"]}>
-                  {users.map((user) => {
-                    const isCurrentUser = currentUser?.id === user.id;
-                    return (
-                      <div
-                        key={user.id}
-                        className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-7 2xl:gap-4"
-                      >
-                        <span className="truncate font-mono text-xs text-slate-500">{user.id.slice(0, 8)}...</span>
-                        <span className="font-medium text-slate-950">
-                          {user.full_name}
-                          {isCurrentUser ? (
-                            <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                              You
+                <div className="divide-y divide-[var(--color-brd)]">
+                  {activityLogs.map((log) => (
+                    <article key={log.id} className="px-6 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <OpsStatusBadge label={log.actionLabel || formatLabel(log.action)} tone="info" />
+                            <span className="text-sm font-semibold text-[var(--color-txt-pri)]">
+                              {log.userName || "System"}
                             </span>
-                          ) : null}
-                        </span>
-                        <span className="truncate">{user.email}</span>
-                        <span>
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                            {formatLabel(user.role)}
-                          </span>
-                        </span>
-                        <span>
-                          <StatusBadge status={user.is_active ? "active" : "inactive"} />
-                        </span>
-                        <span>{formatDate(user.created_at)}</span>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => startEditing(user)}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void openPermissionEditor(user)}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                          >
-                            Permissions
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleActive(user)}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                              user.is_active
-                                ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                            }`}
-                          >
-                            {user.is_active ? "Deactivate" : "Activate"}
-                          </button>
+                          </div>
+                          <p className="text-sm leading-6 text-[var(--color-txt-sec)]">{log.message}</p>
+                        </div>
+                        <div className="text-right text-xs uppercase tracking-[0.16em] text-[var(--color-txt-mut)]">
+                          <p>{log.moduleLabel || formatLabel(log.module || "team")}</p>
+                          <p className="mt-2 normal-case tracking-normal">
+                            {formatDateTime(log.createdAt || log.created_at || null)}
+                          </p>
                         </div>
                       </div>
-                    );
-                  })}
-                </DataTable>
+                    </article>
+                  ))}
+                </div>
               )}
-            </div>
-          </section>
+            </section>
+          ) : null}
         </div>
       </div>
+
+      {isUserModalOpen ? (
+        <ControlModal
+          title={editingUser ? "Edit Team Member" : "Add Team Member"}
+          description="Keep team creation and editing inside a modal-first flow so the directory stays in view, like the v1 admin workspace."
+          onClose={closeUserModal}
+        >
+          <form onSubmit={handleUserSubmit} className="space-y-4">
+            <Field label="Full Name">
+              <input
+                value={userForm.fullName}
+                onChange={(event) =>
+                  setUserForm((current) => ({ ...current, fullName: event.target.value }))
+                }
+                className={inputClassName}
+                required
+              />
+            </Field>
+
+            <Field label="Email">
+              <input
+                type="email"
+                value={userForm.email}
+                onChange={(event) =>
+                  setUserForm((current) => ({ ...current, email: event.target.value }))
+                }
+                className={inputClassName}
+                required
+              />
+            </Field>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Role">
+                <select
+                  value={userForm.role}
+                  onChange={(event) =>
+                    setUserForm((current) => ({ ...current, role: event.target.value }))
+                  }
+                  className={inputClassName}
+                >
+                  {roleOptions.map((role) => (
+                    <option key={role} value={role}>
+                      {formatLabel(role)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label={editingUser ? "Reset Password" : "Password"}>
+                <input
+                  type="password"
+                  value={userForm.password}
+                  onChange={(event) =>
+                    setUserForm((current) => ({ ...current, password: event.target.value }))
+                  }
+                  className={inputClassName}
+                  required={!editingUser}
+                  placeholder={editingUser ? "Leave blank to keep current password" : "Temporary password"}
+                />
+              </Field>
+            </div>
+
+            <ToggleRow
+              label="Member is active"
+              checked={userForm.isActive}
+              onChange={(next) => setUserForm((current) => ({ ...current, isActive: next }))}
+            />
+
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={isSavingUser}
+                className="rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+              >
+                {isSavingUser ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </span>
+                ) : editingUser ? (
+                  "Save Changes"
+                ) : (
+                  "Create Member"
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={closeUserModal}
+                className="rounded-full border border-[var(--color-brd)] px-5 py-2.5 text-sm font-semibold text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)]"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </ControlModal>
+      ) : null}
+
+      {permissionUser ? (
+        <ControlModal
+          title={`Permissions: ${permissionUser.displayName || permissionUser.full_name}`}
+          description="Use the older module-level matrix rather than the normalized permission catalog so the team workflow matches the v1 control panel."
+          onClose={closePermissionModal}
+        >
+          {isLoadingPermissions ? (
+            <LoadingState label="Loading legacy permissions..." />
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-900">
+                Admin roles still have broad backend access. This matrix is kept here to preserve the v1 user-management flow and to support future role tightening.
+              </div>
+
+              <div className="space-y-3">
+                {legacyMatrix?.modules.map((module) => (
+                  <label
+                    key={module.module}
+                    className="flex items-center justify-between gap-4 rounded-[22px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-[var(--color-txt-pri)]">{module.label}</p>
+                      <p className="mt-1 text-xs text-[var(--color-txt-mut)]">
+                        {module.permission_keys.join(", ")}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleModule(module.module)}
+                      className={`relative h-6 w-12 rounded-full transition ${
+                        permissionDraft[module.module] ? "bg-slate-950" : "bg-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${
+                          permissionDraft[module.module] ? "right-1" : "left-1"
+                        }`}
+                      />
+                    </button>
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSavePermissions()}
+                  disabled={isSavingPermissions}
+                  className="rounded-full bg-[var(--color-accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+                >
+                  {isSavingPermissions ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </span>
+                  ) : (
+                    "Save Permissions"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePermissionModal}
+                  className="rounded-full border border-[var(--color-brd)] px-5 py-2.5 text-sm font-semibold text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)]"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </ControlModal>
+      ) : null}
     </div>
   );
 }
+
+function getInitials(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("");
+}
+
+function getUserStatus(user: UserItem) {
+  return user.isActive ?? user.active ?? user.is_active ? "active" : "pending";
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--color-txt-mut)]">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-4 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3">
+      <span className="text-sm font-medium text-[var(--color-txt-pri)]">{label}</span>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-12 rounded-full transition ${checked ? "bg-slate-950" : "bg-slate-300"}`}
+      >
+        <span
+          className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${checked ? "right-1" : "left-1"}`}
+        />
+      </button>
+    </label>
+  );
+}
+
+const inputClassName =
+  "w-full rounded-[18px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-[var(--color-accent)] focus:bg-white";
+
+const selectClassName =
+  "w-full rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-[var(--color-accent)] focus:bg-white";
+
+const pillButtonClassName =
+  "rounded-full border border-[var(--color-brd)] px-3 py-1.5 text-xs font-semibold text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)]";
+
+const successPillButtonClassName =
+  "rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100";
+
+const warningPillButtonClassName =
+  "rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100";

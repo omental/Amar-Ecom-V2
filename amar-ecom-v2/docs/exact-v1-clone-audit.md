@@ -30,6 +30,8 @@ This document resets frontend parity planning around the client's updated requir
 - Orders now uses the v1 four-card summary strip, v1 status-tab order, search-first cockpit flow, modal-first detail inspection, duplicate-warning panel, and a dedicated v1-style create/edit workflow overlay on `/dashboard/orders`.
 - Inventory now uses the v1 monolithic hub pattern again on `/dashboard/inventory`, with the restored 13-tab control-center structure, v1-style summary/header framing, context-sensitive add actions, modal-first maintenance loops, embedded stock workflows, logs filtering, and inventory reports fed by the Phase `15E-support` backend aliases.
 - CRM now uses the v1 split-pane workspace pattern again on `/dashboard/customers`, with the restored left customer directory, right selected-customer detail pane, v1-style four-card header summary, client-side CSV export, modal add/edit customer flow, and in-pane order/history activity context powered by the Phase `15F-support` backend aliases.
+- Logistics now uses the v1 unified command-center pattern again on `/dashboard/logistics`, with the restored shipment-first tab flow, pending dispatch queue, courier cards, reconciliation table, and embedded API logs powered by the Phase `15G-support` backend aliases.
+- Settings, Team, Activity Logs, and Admin Tools now follow the v1 control-center model more closely again, with the restored settings tab order, team members/activity workspace, legacy permission matrix, denser audit table, and safe admin/data-management framing powered by the Phase `15H-support` backend aliases.
 
 ## Match Scale
 
@@ -858,13 +860,13 @@ Match: `Partial`
 10. current v2 equivalent
    `/dashboard/settings` plus `/dashboard/activity-logs`, `/dashboard/admin-tools`, `/dashboard/woocommerce`, `/dashboard/courier-integrations`
 11. exact gaps
-   v2 fragmented major v1 settings/admin content into several routes. Exact parity likely requires restoring the broad v1 settings center as the primary experience.
+   Core settings-center parity is now restored closely enough for Phase `15H`. Known deviations remain intentionally documented: broad per-user notification, security, mobile, and data-management preferences are still not first-class backend rows, destructive backup/restore execution is intentionally not implemented, and some integrations still live as linked secondary routes rather than literal inline v1 panels.
 12. implementation difficulty
    High
 13. recommended clone phase
    `15H`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### Team / Users
 
@@ -889,13 +891,13 @@ Match: `Major mismatch`
 10. current v2 equivalent
    `/dashboard/users` and `/dashboard/activity-logs`
 11. exact gaps
-   v2 split team and logs. The modal-centric permissions experience and two-tab team workspace are not preserved exactly.
+   Core team-workspace parity is now restored closely enough for Phase `15H`. Known deviations remain intentionally documented: `pending approval` and `inactive` still share the same backend `is_active=false` mapping, and `photoURL` remains a placeholder field rather than a real avatar workflow.
 12. implementation difficulty
    Medium
 13. recommended clone phase
    `15H`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### Activity Logs
 
@@ -920,13 +922,13 @@ Match: `Major mismatch`
 10. current v2 equivalent
    `/dashboard/activity-logs`
 11. exact gaps
-   v2 is more standalone than v1. If exact parity is mandatory, the separate route should become secondary to the embedded admin experiences.
+   The standalone route now uses the denser v1-style audit table and filter rhythm, but it still remains secondary to the embedded team/settings activity views where v1 most naturally exposed these records.
 12. implementation difficulty
    Low
 13. recommended clone phase
    `15H`
 
-Match: `Partial`
+Match: `Near match`
 
 ### WooCommerce
 

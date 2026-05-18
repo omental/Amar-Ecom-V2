@@ -378,6 +378,103 @@
    - customer
    - address
    - amount
+
+## Phase 15H Settings / Team / Admin Clone Checks
+
+1. Open `http://localhost:3000/dashboard/settings` and confirm the Phase `15B` shell still loads correctly around the settings page.
+2. Confirm the settings page restores the v1 tab order:
+   - `General`
+   - `Company Info`
+   - `Account`
+   - `Notifications`
+   - `Security`
+   - `Integrations`
+   - `SMS Settings`
+   - `Data Management`
+   - `Mobile App`
+   - `Activity Logs`
+3. Confirm the settings header shows the v1-style broad control-center framing rather than a narrow form-only card.
+4. Confirm the top summary strip consumes `/api/v1/settings/center-summary` without layout overflow.
+5. In `General`, confirm fields still save safely through `PATCH /api/v1/settings/business`, including:
+   - `companyName`
+   - `businessEmail`
+   - `businessPhone`
+   - `businessAddress`
+   - `invoicePrefix`
+   - `orderPrefix`
+   - `taxRate`
+   - `lowStockDefaultThreshold`
+6. In `Company Info`, confirm `logoUrl`, `invoiceFooterNote`, `invoiceTerms`, and `paymentInstructions` still save cleanly.
+7. Confirm invoice templates remain editable from the settings center and that default-template selection still works.
+8. Confirm `Notifications`, `Security`, `SMS Settings`, `Data Management`, and `Mobile App` remain visually represented in the v1 layout while clearly preserving the documented backend limitations.
+9. Confirm the settings page still links cleanly into Team, Activity Logs, and Admin Tools without breaking responsive containment.
+10. Open `http://localhost:3000/dashboard/users` and confirm the page now follows the v1 team-management model:
+   - summary cards
+   - `Members` tab
+   - `Activity` tab
+   - `Add Member` button
+11. In `Members`, confirm the dense list shows:
+   - initials/avatar circle
+   - name
+   - email
+   - role badge
+   - active or pending status
+   - last login
+   - edit, permissions, and approve/deactivate actions
+12. Open `Add Member` and confirm the modal-first flow includes:
+   - full name
+   - email
+   - password
+   - role
+   - active toggle
+13. Open `Edit` and confirm existing users can be updated without leaving the page.
+14. Open `Permissions` and confirm the v1-style legacy module matrix appears for:
+   - dashboard
+   - orders
+   - inventory
+   - crm
+   - logistics
+   - reports
+   - finance
+   - hr
+   - settings
+   - team
+   - pos
+   - admin if returned by the backend
+15. Confirm saving the permission matrix uses `PATCH /api/v1/users/{id}/legacy-permissions`.
+16. Confirm the page explains the intentional shared mapping where both `pending approval` and `inactive` still map to backend `is_active=false`.
+17. Open `http://localhost:3000/dashboard/activity-logs` and confirm the route now behaves like the denser v1-style admin log table with:
+   - search
+   - module filter
+   - action filter
+   - user filter
+   - date-from and date-to controls
+18. Confirm log rows show alias-backed fields:
+   - `userName`
+   - `userEmail`
+   - `actionLabel`
+   - `moduleLabel`
+   - `entityType`
+   - `entityId`
+   - `message`
+   - `createdAt`
+19. Open `http://localhost:3000/dashboard/admin-tools` and confirm the page now feels like part of the same v1 admin control center:
+   - system health
+   - export section
+   - backup guidance
+   - maintenance checklist
+20. Confirm export buttons still use only the existing safe admin export endpoints.
+21. Confirm no destructive backup or restore execution button is available.
+22. Confirm there is no full-page horizontal overflow on:
+   - `/dashboard/settings`
+   - `/dashboard/users`
+   - `/dashboard/activity-logs`
+   - `/dashboard/admin-tools`
+23. Note these intentional Phase `15H` deviations:
+   - pending approval and inactive still share backend `is_active=false`
+   - `photoURL` remains placeholder-only
+   - destructive backup/restore execution is intentionally excluded
+   - per-user notification, security, and mobile preferences remain visually represented rather than first-class backend rows
    - status
    - create shipment, open order, and print actions
 12. Select one or more pending orders and confirm `Bulk Book` appears and opens an in-page modal rather than forcing route navigation.
