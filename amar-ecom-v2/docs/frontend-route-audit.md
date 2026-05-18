@@ -32,11 +32,11 @@ Status labels:
 | `/dashboard/stock-movements` | Working | `/api/v1/stock-movements` | Read-only ledger; export/reporting depth is still basic. |
 | `/dashboard/returns` | Working | `/api/v1/returns`, `/api/v1/orders`, `/api/v1/customers` | Practical RMA flow, but not a full service-desk style returns workspace. |
 | `/dashboard/returns/[id]` | Working | `/api/v1/returns/{id}` | Focused detail page; operational shortcuts are still limited. |
-| `/dashboard/logistics` | Working | `/api/v1/logistics/pending-dispatch`, `/api/v1/logistics/operations-summary`, `/api/v1/logistics/reconciliation-export`, `/api/v1/orders`, `/api/v1/shipments`, `/api/v1/couriers` | Internal dispatch and reconciliation workspace now uses a stronger v1-style console shell with a denser KPI strip, clearer operations tabs, and more cohesive dispatch-versus-reconciliation framing while staying manual-first and non-destructive. |
+| `/dashboard/logistics` | Working | `/api/v1/logistics/command-summary`, `/api/v1/logistics/pending-dispatch`, `/api/v1/logistics/reconciliation-export`, `/api/v1/orders`, `/api/v1/shipments`, `/api/v1/couriers`, `/api/v1/courier-integrations/logs`, guarded courier send/sync endpoints | Phase 15G restores the v1 unified logistics command center as the primary UX: shipment-first tab flow, pending ready-to-ship queue, courier partner cards, reconciliation table, embedded API logs, modal shipment/courier loops, client-side CSV export, manual courier send/sync, and warning-first safety framing. Known deviations remain for frontend-derived location/ETA, manual-only courier sync, and fallback standalone routes. |
 | `/dashboard/couriers` | Working | `/api/v1/couriers` | Internal master-data only. |
-| `/dashboard/shipments` | Working | `/api/v1/shipments`, `/api/v1/shipments/batch-status-update`, `/api/v1/couriers`, `/api/v1/orders` | Reconciliation works, shipment rows surface external courier metadata when available, and Phase 14E adds a stronger ops header, summary strip, denser filters, and clearer batch-action presentation without changing the internal-only batch update behavior. |
-| `/dashboard/shipments/[id]` | Working | `/api/v1/shipments/{id}`, `/api/v1/courier-integrations/shipments/{shipment_id}/sync-status` | Functional detail page with external courier metadata, last external sync time, safe-status apply control, warning visibility, and a guarded manual status-sync action. Phase 14E also strengthens the visual hierarchy around status, linked order, and external sync framing. |
-| `/dashboard/courier-integrations` | Working | `/api/v1/courier-integrations/providers`, `/api/v1/courier-integrations/providers/{provider}/settings`, `/api/v1/courier-integrations/providers/{provider}/test-connection`, `/api/v1/courier-integrations/shipments/{shipment_id}/send`, `/api/v1/courier-integrations/shipments/{shipment_id}/sync-status`, `/api/v1/courier-integrations/status-sync/bulk`, `/api/v1/courier-integrations/logs` | External courier workspace with encrypted provider settings, manual send and sync flows, bulk status sync, sanitized API logs, and operator-facing warning/result summaries. Phase 13C keeps local updates non-destructive by default, adds explicit `apply safe delivered status locally` controls, and still requires Steadfast endpoint/base URL confirmation before live deployment. No background worker exists yet. |
+| `/dashboard/shipments` | Working | `/api/v1/shipments`, `/api/v1/shipments/batch-status-update`, `/api/v1/couriers`, `/api/v1/orders` | This route remains functional, but it is now fallback-only for exact-v1 parity. The primary logistics interaction loop now lives inside `/dashboard/logistics`. |
+| `/dashboard/shipments/[id]` | Working | `/api/v1/shipments/{id}`, `/api/v1/courier-integrations/shipments/{shipment_id}/sync-status` | Functional detail page remains available as a fallback, but `/dashboard/logistics` is now the primary exact-v1 workflow target. |
+| `/dashboard/courier-integrations` | Working | `/api/v1/courier-integrations/providers`, `/api/v1/courier-integrations/providers/{provider}/settings`, `/api/v1/courier-integrations/providers/{provider}/test-connection`, `/api/v1/courier-integrations/shipments/{shipment_id}/send`, `/api/v1/courier-integrations/shipments/{shipment_id}/sync-status`, `/api/v1/courier-integrations/status-sync/bulk`, `/api/v1/courier-integrations/logs` | The dedicated integrations route remains available for fallback or admin-depth workflows, but the primary exact-v1 logistics command center now exposes the day-to-day send/sync/log visibility directly inside `/dashboard/logistics`. |
 | `/dashboard/suppliers` | Working | `/api/v1/suppliers`, related supplier payments live under finance | Supplier directory works, but supplier ledger and deeper balance history are still missing. |
 | `/dashboard/purchase-orders` | Working | `/api/v1/purchase-orders`, `/api/v1/suppliers`, `/api/v1/warehouses`, `/api/v1/products` | Receiving is operational, but procurement workflow depth is still moderate. |
 | `/dashboard/purchase-orders/[id]` | Working | `/api/v1/purchase-orders/{id}` | Practical detail page; no complex approval chain. |
@@ -144,6 +144,18 @@ Status labels:
   - supplier, purchase-order, return, transfer, wastage, category, brand, and warehouse alias fields used by the embedded tabs
 - `/dashboard/inventory` is now the primary exact-v1 inventory workflow again rather than a lighter v2 operations page.
 
+## Phase 15G Logistics Clone Note
+
+- `15G` is now completed for `/dashboard/logistics`.
+- The route now consumes the logistics compatibility fields added in `15G-support`, including:
+  - `/api/v1/logistics/command-summary`
+  - `/api/v1/logistics/pending-dispatch` queue aliases and action flags
+  - shipment aliases, action flags, and detail logs from `/api/v1/shipments` and `/api/v1/shipments/{id}`
+  - courier card aliases and counts from `/api/v1/couriers`
+  - courier API log aliases from `/api/v1/courier-integrations/logs`
+  - guarded manual courier send/sync endpoints
+- `/dashboard/logistics` is now the primary exact-v1 logistics workspace again, while `/dashboard/shipments`, `/dashboard/shipments/[id]`, and `/dashboard/courier-integrations` remain fallback-only.
+
 ## Exact Clone Priority Overrides
 
 - Highest structural mismatch routes are now:
@@ -214,7 +226,7 @@ These notes track legacy v1 React UI parity only. They are planning markers for 
 | --- | --- | --- | --- |
 | `/dashboard` shell and landing page | Improved. The shell, cards, topbar, and responsive containment are much closer to the intended ops-console feel, though final browser verification is still manual. | High | `14D-14J` completed |
 | `/dashboard/orders` and `/dashboard/orders/[id]` | Near match. The orders cockpit now follows the v1 table/grid, modal-first detail loop, duplicate-warning workflow, and dedicated create/edit overlay much more closely. | High | `15D` completed |
-| `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Improved. The shared ops visual language and responsive containment now cover the main logistics surfaces. | High | `14E` completed |
+| `/dashboard/logistics`, `/dashboard/shipments`, `/dashboard/shipments/[id]`, `/dashboard/courier-integrations` | Near match. `/dashboard/logistics` now restores the v1 unified command-center loop, while the standalone shipment and courier-integration routes remain fallback-only. | High | `15G` completed |
 | `/dashboard/products`, `/dashboard/products/[id]` | Improved. Product-admin parity is much closer, though still not a literal v1 recreation. | High | `14F` completed |
 | `/dashboard/inventory`, `/dashboard/stock-movements`, supporting inventory routes | Near match. The inventory workspace now restores the v1 monolithic hub and uses the new backend compatibility aliases directly. | High | `15E` completed |
 | `/dashboard/customers`, `/dashboard/customers/[id]` | Near match. CRM now restores the v1 split-pane master-detail workspace and consumes the new CRM compatibility surface directly. | High | `15F` completed |

@@ -548,13 +548,13 @@ Match: `Major mismatch`
 10. current v2 equivalent
    `/dashboard/logistics`, `/dashboard/couriers`, `/dashboard/shipments`, `/dashboard/courier-integrations`
 11. exact gaps
-   v2 spread the v1 logistics command center across multiple pages. Exact parity likely requires pulling these back into one primary logistics workspace.
+   Core logistics parity is now restored closely enough for Phase `15G`. Known deviations remain documented: shipment `location` and `ETA` stay frontend-derived rather than persisted backend fields, courier send/sync remains manual and warning-first by design, no new supplier ledger or finance-grade balance block was added, and `/dashboard/shipments`, `/dashboard/shipments/[id]`, and `/dashboard/courier-integrations` remain fallback routes rather than the primary command loop.
 12. implementation difficulty
    High
 13. recommended clone phase
    `15G`
 
-Match: `Major mismatch`
+Match: `Near match`
 
 ### Couriers
 

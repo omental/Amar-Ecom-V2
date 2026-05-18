@@ -207,6 +207,10 @@ Backend support status:
 
 - `15G-support` completed on `2026-05-18`
 
+Status:
+
+- Completed on `2026-05-18`
+
 Goals:
 
 - Recreate the unified v1 logistics command center
@@ -236,6 +240,19 @@ Known backend deviations:
 
 - v1 `location` and `ETA` remain frontend-derived because they are not persisted as first-class shipment columns in v2
 - external courier sync remains manual, conservative, and warning-first by design
+
+Completion notes:
+
+- `/dashboard/logistics` now follows the v1 `Logistics.tsx` command-center pattern with the restored tab order:
+  `Shipments`, `Pending Ready-to-Ship`, `Courier Partners`, `Charge Reconciliation`, `API Logs`
+- The page now restores the v1 header actions, four-card shipment summary strip, secondary logistics metrics, shipment-first default view, pending dispatch queue, courier cards, reconciliation table, and API log visibility inside one primary workspace.
+- The route now consumes the logistics compatibility surface added in `15G-support`, including `/api/v1/logistics/command-summary`, `/api/v1/logistics/pending-dispatch`, `/api/v1/shipments`, `/api/v1/shipments/{id}`, `/api/v1/couriers`, and `/api/v1/courier-integrations/logs`.
+- Modal-first shipment creation, bulk booking, status updates, reconciliation updates, courier add/edit, manual courier send, and guarded courier sync now happen inside `/dashboard/logistics` rather than requiring the older split-route workflow first.
+- Known intentional deviations remain:
+  location and ETA stay frontend-derived
+  courier sync stays manual and warning-first
+  no new supplier ledger or finance-grade balance block was added
+  `/dashboard/shipments`, `/dashboard/shipments/[id]`, and `/dashboard/courier-integrations` remain fallback routes
 
 ## Phase 15H: Exact v1 Settings / Team / Admin
 
@@ -317,8 +334,8 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15G-support`
-- Focus: exact v1 inventory hub reconstruction and tab consolidation
+- Recommended next coding phase: `15H-support`
+- Focus: backend compatibility needed for the exact v1 Settings, Team, and Admin control-center workflows
 
 ## Risk Notes
 

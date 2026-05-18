@@ -329,6 +329,94 @@
 20. Confirm `/dashboard/customers/[id]` still works as a fallback detail route, but the main CRM workflow stays on `/dashboard/customers`.
 21. Confirm there is no full-page horizontal overflow on `/dashboard/customers`, while local table scrolling remains acceptable.
 
+## Phase 15G Logistics Clone Checks
+
+1. Open `http://localhost:3000/dashboard/logistics` and confirm the Phase `15B` shell still loads correctly around the logistics page.
+2. Confirm the page header now follows the v1 logistics layout with:
+   - `Logistics & Delivery` title
+   - v1 subtitle
+   - `Export CSV` button
+   - `Add Shipment` button
+   - `Connect Courier` button
+3. Confirm the primary tab order matches v1 exactly:
+   - `Shipments`
+   - `Pending Ready-to-Ship`
+   - `Courier Partners`
+   - `Charge Reconciliation`
+   - `API Logs`
+4. Confirm the top four summary cards follow the v1 shipment-first rhythm:
+   - `Total Shipments`
+   - `In Transit`
+   - `Delivered`
+   - `Failed / Returned`
+5. Confirm any extra readiness metrics remain secondary rather than replacing the v1 primary summary strip.
+6. In `Shipments`, confirm the main controls match the v1 feel:
+   - shipment search
+   - status filter
+   - `Sync All Status`
+   - fallback `Full Route` link
+7. Confirm shipment rows show dense v1-style context:
+   - tracking info
+   - order number
+   - courier
+   - recipient
+   - status badge
+   - reconciliation summary
+   - row actions for sync, send, view, edit, and more
+8. Open a shipment detail modal and confirm it shows:
+   - shipment summary header
+   - recipient block
+   - courier and external status block
+   - reconciliation values
+   - activity log
+   - guarded mark shipped, mark delivered, and update reconciliation actions when allowed
+9. Confirm `Sync Status` stays manual, keeps `Apply safe delivered status locally` opt-in, and does not imply destructive returned/cancelled/failed auto-apply.
+10. Confirm `Send To Courier` stays manual and warning-first, with no background worker behavior implied.
+11. In `Pending Ready-to-Ship`, confirm the queue shows:
+   - selection checkboxes
+   - order
+   - customer
+   - address
+   - amount
+   - status
+   - create shipment, open order, and print actions
+12. Select one or more pending orders and confirm `Bulk Book` appears and opens an in-page modal rather than forcing route navigation.
+13. Create a shipment from pending dispatch if safe and confirm the page returns to the command loop cleanly.
+14. In `Courier Partners`, confirm courier cards show:
+   - initials/avatar circle
+   - name
+   - website or code subtitle
+   - active/inactive badge
+   - active shipments
+   - delivered count
+   - edit and deactivate controls
+15. Add or edit a courier if safe and confirm the modal saves through the existing courier endpoints.
+16. In `Charge Reconciliation`, confirm rows show:
+   - courier
+   - order
+   - tracking
+   - COD
+   - collected
+   - courier charge
+   - pending amount
+   - reconciliation status
+   - external status
+17. Update reconciliation if safe and confirm the page still uses the guarded shipment PATCH flow.
+18. In `API Logs`, confirm rows show:
+   - timestamp
+   - courier/provider
+   - order or shipment reference
+   - status
+   - message/details
+19. Open a log preview and confirm request/response payloads remain sanitized with no secrets exposed.
+20. Confirm `/dashboard/shipments`, `/dashboard/shipments/[id]`, and `/dashboard/courier-integrations` still work as fallback routes, but the main logistics workflow stays on `/dashboard/logistics`.
+21. Confirm there is no full-page horizontal overflow on `/dashboard/logistics`, while local table scrolling remains acceptable.
+22. Note these intentional Phase `15G` deviations:
+   - shipment location and ETA remain frontend-derived
+   - courier sync remains manual and warning-first
+   - no new supplier ledger or finance-grade balance area was added
+   - standalone shipment and courier-integration routes remain fallback-only
+
 ## Prerequisites
 
 1. Start the backend:
