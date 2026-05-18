@@ -31,6 +31,7 @@ This document resets backend parity planning around the client's updated require
 - `15F-support` is now implemented for CRM backend compatibility.
 - v2 now exposes a CRM summary endpoint plus v1-style customer list, detail, activity, and alias support so the split-pane CRM can read denser relationship data without a model rewrite.
 - `15G-support` is now implemented for logistics backend compatibility.
+- `15H-support` is now implemented for settings, team, admin, and activity-log backend compatibility.
 - v2 now exposes a logistics command summary plus v1-style pending-dispatch, shipment, courier, and courier-log aliases so the unified v1 logistics workspace can load from the existing safe shipment and courier foundation.
 
 ## Parity Scale
@@ -590,11 +591,11 @@ This document resets backend parity planning around the client's updated require
    Routes: `settings.py`, `invoice_templates.py`, `woocommerce.py`, `courier_integrations.py`, `admin.py`, `activity_logs.py`
    Schemas: matching settings and integration schemas
 5. parity status
-   `Partial`
+   `Mostly ready after 15H-support`
 6. gaps
-   Business settings are strong, but the broad v1 settings center expects more grouped admin/config behavior than a single business settings row. Per-user account settings and shell-notification preferences do not map cleanly. Export-all-data support exists in admin tools, but not in v1's same-center shape.
+   Phase `15H-support` closes the main backend blocker by adding `GET /api/v1/settings/center-summary`, extending `GET/PATCH /api/v1/settings/business` with v1 aliases such as `companyName`, `businessName`, `logoUrl`, `invoicePrefix`, `invoiceTitle`, `paymentInstructions`, `taxRate`, and `lowStockDefaultThreshold`, and leaving the broader admin/export workflow additive rather than destructive. Remaining deviations are mostly breadth-related: per-user account, notification, mobile, and security preferences are still not stored as first-class backend rows, and v1's export-all-data button still maps best to the existing admin export surfaces rather than a new destructive center route.
 7. implementation risk
-   `Medium`
+   `Low`
 8. recommended backend phase
    `15H-support`
 
@@ -611,11 +612,11 @@ This document resets backend parity planning around the client's updated require
    Routes: `users.py`, `permissions.py`, `activity_logs.py`
    Schemas: `user.py`, `permission.py`, `activity_log.py`
 5. parity status
-   `Partial`
+   `Mostly ready after 15H-support`
 6. gaps
-   CRUD exists, but exact v1 boolean-permission object and activation workflow do not match the normalized v2 permission system one-to-one. If the team screen expects embedded activity summaries and direct active/inactive toggles with legacy naming, response shaping is needed.
+   Phase `15H-support` closes the main backend blocker by extending `/api/v1/users` and `/api/v1/users/{id}` with aliases such as `uid`, `displayName`, `fullName`, `active`, `isActive`, `status`, `pendingApproval`, `permissions`, `legacyPermissions`, `hasFullAccess`, `lastLogin`, `photoURL`, and camelCase timestamps. It also adds `GET /api/v1/permissions/legacy-matrix` and `PATCH /api/v1/users/{id}/legacy-permissions` so the v1 boolean module-permission modal can stay intact without flattening the normalized permission tables. Remaining deviation is approval semantics: pending and inactive both still map to `is_active=false` because v1 used looser Firebase document conventions than the current relational user model.
 7. implementation risk
-   `Medium`
+   `Low`
 8. recommended backend phase
    `15H-support`
 
@@ -633,9 +634,9 @@ This document resets backend parity planning around the client's updated require
    Schema: `activity_log.py`
    Service: `activity_log_service.py`
 5. parity status
-   `Better in v2`
+   `Ready for exact v1 embedded use after 15H-support`
 6. gaps
-   v2 already has a real audit route, but the exact clone may need embedded filtered views and legacy action wording from inside team/settings instead of only a standalone log screen.
+   Phase `15H-support` closes the main backend blocker by extending `GET /api/v1/activity-logs` with `action`, `search`, `date_from`, and `date_to` filters plus aliases such as `userName`, `userEmail`, `actionLabel`, `moduleLabel`, `entityType`, `entityId`, `message`, and `createdAt`. No destructive log mutation was added.
 7. implementation risk
    `Low`
 8. recommended backend phase

@@ -256,6 +256,10 @@ Completion notes:
 
 ## Phase 15H: Exact v1 Settings / Team / Admin
 
+Backend support status:
+
+- `15H-support` completed on `2026-05-18`
+
 Goals:
 
 - Rebuild the broad v1 settings center with grouped tab rows
@@ -272,6 +276,21 @@ Primary targets:
 Exit condition:
 
 - Admin workflows match the v1 central control-center model
+
+Backend readiness notes:
+
+- `/api/v1/settings/center-summary` now provides the grouped readiness and count cards needed by the v1 settings center.
+- `/api/v1/settings/business` now exposes v1 aliases such as `companyName`, `businessName`, `logoUrl`, `invoicePrefix`, `invoiceTitle`, `paymentInstructions`, `taxRate`, `lowStockDefaultThreshold`, and camelCase timestamps.
+- `/api/v1/users` and `/api/v1/users/{id}` now expose v1 team aliases such as `uid`, `displayName`, `fullName`, `active`, `isActive`, `status`, `pendingApproval`, `permissions`, `legacyPermissions`, `hasFullAccess`, `lastLogin`, `photoURL`, and camelCase timestamps.
+- `/api/v1/permissions/legacy-matrix` and `/api/v1/users/{id}/legacy-permissions` now provide the boolean module-permission bridge needed by the exact v1 Team and Settings permission modals.
+- `/api/v1/activity-logs` now supports the embedded v1 activity views with `action`, `search`, `date_from`, and `date_to` filters plus v1-friendly aliases.
+- `/api/v1/invoice-templates` now exposes v1 aliases such as `templateName`, `accentColor`, `headerText`, `footerText`, `termsText`, `paymentInstructions`, `isDefault`, and `isActive`.
+
+Known backend deviations:
+
+- pending approval and inactive team states both still map to `is_active=false`
+- `photoURL` remains placeholder-only because v2 still has no persisted avatar workflow
+- broad per-user notification, security, mobile, and data-management preferences are still not first-class backend rows
 
 ## Phase 15I: Reports / Finance / HR / POS Exact Matching
 

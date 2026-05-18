@@ -73,6 +73,8 @@ Phase `15F-support` adds no new migration.
 
 Phase `15G-support` adds no new migration.
 
+Phase `15H-support` adds no new migration.
+
 This phase adds the logistics workflow completion migration:
 
 - `d8f9a0b1c2d3_add_logistics_shipment_events_and_reconciliation`

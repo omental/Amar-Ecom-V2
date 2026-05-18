@@ -30,21 +30,50 @@ async def _clear_other_defaults(db: DBSession, template_id: UUID) -> None:
         template.is_default = False
 
 
+def _to_invoice_template_read(template: InvoiceTemplate) -> InvoiceTemplateRead:
+    return InvoiceTemplateRead(
+        id=template.id,
+        name=template.name,
+        slug=template.slug,
+        description=template.description,
+        template_type=template.template_type,
+        is_default=template.is_default,
+        is_active=template.is_active,
+        accent_color=template.accent_color,
+        header_text=template.header_text,
+        footer_text=template.footer_text,
+        terms_text=template.terms_text,
+        payment_instructions=template.payment_instructions,
+        created_at=template.created_at,
+        updated_at=template.updated_at,
+        templateName=template.name,
+        accentColor=template.accent_color,
+        headerText=template.header_text,
+        footerText=template.footer_text,
+        termsText=template.terms_text,
+        paymentInstructions=template.payment_instructions,
+        isDefault=template.is_default,
+        isActive=template.is_active,
+        createdAt=template.created_at,
+        updatedAt=template.updated_at,
+    )
+
+
 @router.get("", response_model=list[InvoiceTemplateRead])
 async def list_invoice_templates(
     db: DBSession,
     is_active: bool | None = Query(default=True),
-) -> list[InvoiceTemplate]:
+) -> list[InvoiceTemplateRead]:
     stmt = select(InvoiceTemplate).order_by(InvoiceTemplate.is_default.desc(), InvoiceTemplate.name.asc())
     if is_active is not None:
         stmt = stmt.where(InvoiceTemplate.is_active.is_(is_active))
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    return [_to_invoice_template_read(template) for template in result.scalars().all()]
 
 
 @router.get("/{template_id}", response_model=InvoiceTemplateRead)
 async def get_invoice_template(template_id: UUID, db: DBSession) -> InvoiceTemplate:
-    return await _get_invoice_template_or_404(db, template_id)
+    return _to_invoice_template_read(await _get_invoice_template_or_404(db, template_id))
 
 
 @router.post("", response_model=InvoiceTemplateRead, status_code=status.HTTP_201_CREATED)
@@ -74,7 +103,7 @@ async def create_invoice_template(
     )
     await commit_or_409(db, "Could not create invoice template")
     await db.refresh(template)
-    return template
+    return _to_invoice_template_read(template)
 
 
 @router.patch("/{template_id}", response_model=InvoiceTemplateRead)
@@ -118,7 +147,7 @@ async def update_invoice_template(
     )
     await commit_or_409(db, "Could not update invoice template")
     await db.refresh(template)
-    return template
+    return _to_invoice_template_read(template)
 
 
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -170,4 +199,4 @@ async def set_default_invoice_template(
     )
     await commit_or_409(db, "Could not update default invoice template")
     await db.refresh(template)
-    return template
+    return _to_invoice_template_read(template)

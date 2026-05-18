@@ -138,6 +138,17 @@ Remaining:
 - Add any missing per-user settings/profile data required by the v1 settings center.
 - Shape team/user payloads around v1 activation and permission editing expectations.
 - Support embedded activity views used inside settings and team without forcing the frontend to depend only on the standalone activity route.
+- Completed on `2026-05-18`.
+- Added `GET /api/v1/settings/center-summary` for the grouped settings-center cards and readiness indicators.
+- Extended `GET/PATCH /api/v1/settings/business` with v1 aliases such as `companyName`, `businessName`, `logoUrl`, `invoicePrefix`, `invoiceTitle`, `paymentInstructions`, `taxRate`, and `lowStockDefaultThreshold`.
+- Extended `GET /api/v1/users`, `GET /api/v1/users/{id}`, `POST /api/v1/users`, and `PATCH /api/v1/users/{id}` with v1 team aliases plus alias input handling for `fullName`, `displayName`, `active`, `isActive`, and optional legacy permission payloads.
+- Added `GET /api/v1/permissions/legacy-matrix` and `PATCH /api/v1/users/{id}/legacy-permissions` so the v1 boolean module-permission modal can stay intact on top of the normalized v2 access-control tables.
+- Extended `GET /api/v1/activity-logs` with v1 log-table aliases plus `action`, `search`, `date_from`, and `date_to` filters for embedded Team and Settings activity views.
+- Extended invoice-template responses and writes with v1 aliases such as `templateName`, `accentColor`, `headerText`, `footerText`, `termsText`, `paymentInstructions`, `isDefault`, and `isActive`.
+- Known backend deviations remain:
+  pending approval and inactive team states both currently map to `is_active=false`
+  `photoURL` remains placeholder-only because there is still no persisted user-avatar workflow in v2
+  broad per-user notification, security, mobile, and data-management preference persistence is still not first-class beyond the current business/admin settings model
 
 ## B. Can Emulate In Frontend
 
@@ -191,4 +202,5 @@ Important:
 - `15E-support` is complete.
 - `15F-support` is complete.
 - `15G-support` is complete.
-- The next likely backend parity phase is `15H-support`, unless the frontend `15G` logistics rebuild uncovers one narrow additional compatibility need.
+- `15H-support` is complete.
+- The next likely backend parity phase is `15I-support`, unless the frontend `15H` rebuild uncovers one narrow additional compatibility need.

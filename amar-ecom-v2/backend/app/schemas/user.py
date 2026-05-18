@@ -1,25 +1,45 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field
 
 from app.schemas.common import ORMBaseSchema
 
 
 class UserCreate(BaseModel):
-    full_name: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    full_name: str = Field(validation_alias=AliasChoices("full_name", "fullName", "displayName", "name"))
     email: EmailStr
     password: str = Field(max_length=72)
     role: str = "admin"
-    is_active: bool = True
+    is_active: bool = Field(default=True, validation_alias=AliasChoices("is_active", "isActive", "active"))
+    permissions: list[str] | dict[str, bool] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("permissions", "legacyPermissions", "legacy_permissions"),
+    )
+    photo_url: str | None = Field(default=None, validation_alias=AliasChoices("photo_url", "photoURL"))
 
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    full_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("full_name", "fullName", "displayName", "name"),
+    )
     email: EmailStr | None = None
     password: str | None = Field(default=None, max_length=72)
     role: str | None = None
-    is_active: bool | None = None
+    is_active: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("is_active", "isActive", "active"),
+    )
+    permissions: list[str] | dict[str, bool] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("permissions", "legacyPermissions", "legacy_permissions"),
+    )
+    photo_url: str | None = Field(default=None, validation_alias=AliasChoices("photo_url", "photoURL"))
 
 
 class UserRead(ORMBaseSchema):
@@ -28,8 +48,27 @@ class UserRead(ORMBaseSchema):
     email: EmailStr
     role: str
     is_active: bool
+    last_login: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    uid: str | None = None
+    name: str | None = None
+    fullName: str | None = None
+    displayName: str | None = None
+    active: bool | None = None
+    isActive: bool | None = None
+    status: str | None = None
+    permissions: list[str] = []
+    legacy_permissions: dict[str, bool] = {}
+    legacyPermissions: dict[str, bool] = {}
+    has_full_access: bool = False
+    hasFullAccess: bool = False
+    pendingApproval: bool = False
+    lastLogin: datetime | None = None
+    photo_url: str | None = None
+    photoURL: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
 
 
 class LoginRequest(BaseModel):

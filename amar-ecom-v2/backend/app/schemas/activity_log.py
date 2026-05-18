@@ -17,3 +17,10 @@ class ActivityLogRead(ORMBaseSchema):
     user_agent: str | None
     created_at: datetime
     user: UserRead | None = None
+    userName: str | None = None
+    userEmail: str | None = None
+    actionLabel: str | None = None
+    moduleLabel: str | None = None
+    entityType: str | None = None
+    entityId: str | None = None
+    createdAt: datetime | None = None

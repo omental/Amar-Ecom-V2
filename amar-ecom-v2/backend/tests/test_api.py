@@ -1897,15 +1897,26 @@ def test_team_permissions_and_activity_logs_flow() -> None:
                 "/api/v1/users",
                 headers=headers,
                 json={
-                    "full_name": "Permission Test User",
+                    "fullName": "Permission Test User",
                     "email": unique_email(),
                     "password": "StrongPass123",
                     "role": "staff",
-                    "is_active": True,
+                    "active": True,
+                    "permissions": {
+                        "orders": True,
+                        "crm": True,
+                        "inventory": True,
+                        "dashboard": False,
+                    },
                 },
             )
             assert create_user_response.status_code == 201, create_user_response.text
             created_user = create_user_response.json()
+            assert created_user["uid"] == created_user["id"]
+            assert created_user["displayName"] == "Permission Test User"
+            assert created_user["active"] is True
+            assert created_user["status"] == "active"
+            assert created_user["legacyPermissions"]["orders"] is True
 
             permissions_response = client.get("/api/v1/permissions", headers=headers)
             assert permissions_response.status_code == 200, permissions_response.text
@@ -1917,6 +1928,11 @@ def test_team_permissions_and_activity_logs_flow() -> None:
             ]
             assert len(selected_permissions) == 2
 
+            legacy_matrix_response = client.get("/api/v1/permissions/legacy-matrix", headers=headers)
+            assert legacy_matrix_response.status_code == 200, legacy_matrix_response.text
+            legacy_matrix = legacy_matrix_response.json()
+            assert any(item["module"] == "orders" for item in legacy_matrix["modules"])
+
             assign_response = client.patch(
                 f"/api/v1/users/{created_user['id']}/permissions",
                 headers=headers,
@@ -1926,6 +1942,17 @@ def test_team_permissions_and_activity_logs_flow() -> None:
             assigned = assign_response.json()
             assert "orders.view" in assigned["assigned_permission_keys"]
             assert assigned["has_full_access"] is False
+            assert assigned["legacyPermissions"]["orders"] is True
+
+            legacy_assign_response = client.patch(
+                f"/api/v1/users/{created_user['id']}/legacy-permissions",
+                headers=headers,
+                json={"permissions": {"orders": True, "crm": True, "inventory": True, "pos": True}},
+            )
+            assert legacy_assign_response.status_code == 200, legacy_assign_response.text
+            legacy_assigned = legacy_assign_response.json()
+            assert legacy_assigned["legacyPermissions"]["crm"] is True
+            assert legacy_assigned["legacyPermissions"]["pos"] is True
 
             get_user_permissions_response = client.get(
                 f"/api/v1/users/{created_user['id']}/permissions",
@@ -1934,6 +1961,14 @@ def test_team_permissions_and_activity_logs_flow() -> None:
             assert get_user_permissions_response.status_code == 200, get_user_permissions_response.text
             assigned_lookup = get_user_permissions_response.json()
             assert "customers.view" in assigned_lookup["assigned_permission_keys"]
+            assert assigned_lookup["legacyPermissions"]["crm"] is True
+
+            user_detail_response = client.get(f"/api/v1/users/{created_user['id']}", headers=headers)
+            assert user_detail_response.status_code == 200, user_detail_response.text
+            user_detail = user_detail_response.json()
+            assert user_detail["displayName"] == "Permission Test User"
+            assert user_detail["permissions"]
+            assert user_detail["legacyPermissions"]["inventory"] is True
 
             login_response = client.post(
                 "/api/v1/auth/login",
@@ -1950,18 +1985,28 @@ def test_team_permissions_and_activity_logs_flow() -> None:
             update_user_response = client.patch(
                 f"/api/v1/users/{created_user['id']}",
                 headers=headers,
-                json={"is_active": False},
+                json={"isActive": False},
             )
             assert update_user_response.status_code == 200, update_user_response.text
+            updated_user = update_user_response.json()
+            assert updated_user["active"] is False
+            assert updated_user["pendingApproval"] is True
+            assert updated_user["status"] == "pending"
 
             activity_logs_response = client.get(
-                "/api/v1/activity-logs?module=team&limit=20",
+                "/api/v1/activity-logs?module=team&action=legacy_permissions_updated&search=Permission%20Test%20User&limit=20",
                 headers=headers,
             )
             assert activity_logs_response.status_code == 200, activity_logs_response.text
             logs = activity_logs_response.json()
-            assert any(log["action"] == "permissions_updated" for log in logs)
-            assert any(log["action"] in {"user_created", "user_deactivated"} for log in logs)
+            assert any(log["action"] == "legacy_permissions_updated" for log in logs)
+            assert any(log["userName"] for log in logs)
+            assert any(log["actionLabel"] == "Legacy Permissions Updated" for log in logs)
+
+            user_list_response = client.get("/api/v1/users", headers=headers)
+            assert user_list_response.status_code == 200, user_list_response.text
+            user_rows = user_list_response.json()
+            assert any(row["id"] == created_user["id"] and row["pendingApproval"] for row in user_rows)
     except ProgrammingError as exc:
         if any(token in str(exc) for token in ["permissions", "user_permissions", "activity_logs"]):
             pytest.skip("Apply the latest team permissions migration before running this test.")
@@ -3063,20 +3108,23 @@ def test_business_settings_get_and_update() -> None:
             assert settings_body["invoice_title"]
             assert settings_body["show_logo_on_invoice"] is True
             assert settings_body["invoice_template"]
+            assert settings_body["companyName"] == settings_body["company_name"]
+            assert settings_body["invoiceTitle"] == settings_body["invoice_title"]
 
             update_response = client.patch(
                 "/api/v1/settings/business",
                 headers=headers,
                 json={
-                    "company_name": "Amar eCom Test",
+                    "companyName": "Amar eCom Test",
                     "currency": "USD",
-                    "order_prefix": "AMR",
-                    "invoice_title": "Tax Invoice",
-                    "invoice_footer_note": "Thank you for your business.",
-                    "payment_instructions": "Send payment to bKash",
+                    "orderPrefix": "AMR",
+                    "invoiceTitle": "Tax Invoice",
+                    "invoiceFooterNote": "Thank you for your business.",
+                    "paymentInstructions": "Send payment to bKash",
                     "show_payment_status_on_invoice": False,
-                    "low_stock_default_threshold": 9,
-                    "tax_rate": 15,
+                    "lowStockDefaultThreshold": 9,
+                    "taxRate": 15,
+                    "logoUrl": "https://example.com/logo.png",
                 },
             )
             assert update_response.status_code == 200, update_response.text
@@ -3089,6 +3137,23 @@ def test_business_settings_get_and_update() -> None:
             assert updated_body["payment_instructions"] == "Send payment to bKash"
             assert updated_body["show_payment_status_on_invoice"] is False
             assert updated_body["low_stock_default_threshold"] == 9
+            assert updated_body["companyName"] == "Amar eCom Test"
+            assert updated_body["orderPrefix"] == "AMR"
+            assert updated_body["invoiceTitle"] == "Tax Invoice"
+            assert updated_body["lowStockDefaultThreshold"] == 9
+            assert updated_body["taxRate"] == "15.00"
+            assert updated_body["logoUrl"] == "https://example.com/logo.png"
+
+            settings_summary_response = client.get(
+                "/api/v1/settings/center-summary",
+                headers=headers,
+            )
+            assert settings_summary_response.status_code == 200, settings_summary_response.text
+            settings_summary = settings_summary_response.json()
+            assert settings_summary["business_profile_completeness"] >= 0
+            assert settings_summary["invoice_settings_configured"] is True
+            assert settings_summary["active_users"] >= 1
+            assert settings_summary["permissions_seeded"] in {True, False}
 
             settings_logs_response = client.get(
                 "/api/v1/activity-logs?module=settings&limit=20",
@@ -3097,6 +3162,7 @@ def test_business_settings_get_and_update() -> None:
             assert settings_logs_response.status_code == 200, settings_logs_response.text
             settings_logs = settings_logs_response.json()
             assert any(log["action"] == "business_settings_updated" for log in settings_logs)
+            assert any(log["moduleLabel"] == "Settings" for log in settings_logs)
     except ProgrammingError as exc:
         if "business_settings" in str(exc):
             pytest.skip("Apply the business settings migration before running this test.")
@@ -3114,19 +3180,21 @@ def test_invoice_templates_and_invoice_data_flow() -> None:
                 "/api/v1/invoice-templates",
                 headers=headers,
                 json={
-                    "name": "Bold Template",
+                    "templateName": "Bold Template",
                     "slug": f"bold-template-{uuid.uuid4().hex[:8]}",
                     "description": "Reusable invoice copy",
-                    "accent_color": "#123456",
-                    "header_text": "Commercial Invoice",
-                    "footer_text": "Template footer text",
-                    "terms_text": "Template terms",
-                    "payment_instructions": "Template payment instructions",
-                    "is_active": True,
+                    "accentColor": "#123456",
+                    "headerText": "Commercial Invoice",
+                    "footerText": "Template footer text",
+                    "termsText": "Template terms",
+                    "paymentInstructions": "Template payment instructions",
+                    "isActive": True,
                 },
             )
             assert create_template_response.status_code == 201, create_template_response.text
             created_template = create_template_response.json()
+            assert created_template["templateName"] == "Bold Template"
+            assert created_template["accentColor"] == "#123456"
 
             set_default_response = client.post(
                 f"/api/v1/invoice-templates/{created_template['id']}/set-default",
@@ -3135,22 +3203,25 @@ def test_invoice_templates_and_invoice_data_flow() -> None:
             assert set_default_response.status_code == 200, set_default_response.text
             default_template = set_default_response.json()
             assert default_template["is_default"] is True
+            assert default_template["isDefault"] is True
 
             list_templates_response = client.get("/api/v1/invoice-templates", headers=headers)
             assert list_templates_response.status_code == 200, list_templates_response.text
             templates = list_templates_response.json()
-            assert any(template["id"] == created_template["id"] and template["is_default"] for template in templates)
+            assert any(template["id"] == created_template["id"] and template["isDefault"] for template in templates)
 
             update_template_response = client.patch(
                 f"/api/v1/invoice-templates/{created_template['id']}",
                 headers=headers,
                 json={
-                    "name": "Bold Template Updated",
-                    "footer_text": "Updated footer text",
+                    "templateName": "Bold Template Updated",
+                    "footerText": "Updated footer text",
                 },
             )
             assert update_template_response.status_code == 200, update_template_response.text
             assert update_template_response.json()["name"] == "Bold Template Updated"
+            assert update_template_response.json()["templateName"] == "Bold Template Updated"
+            assert update_template_response.json()["footerText"] == "Updated footer text"
 
             update_settings_response = client.patch(
                 "/api/v1/settings/business",
@@ -3241,7 +3312,7 @@ def test_invoice_templates_and_invoice_data_flow() -> None:
             )
             assert inactive_templates_response.status_code == 200, inactive_templates_response.text
             inactive_templates = inactive_templates_response.json()
-            assert any(template["id"] == created_template["id"] and template["is_active"] is False for template in inactive_templates)
+            assert any(template["id"] == created_template["id"] and template["isActive"] is False for template in inactive_templates)
     except ProgrammingError as exc:
         if any(token in str(exc) for token in ["invoice_templates", "business_settings", "activity_logs"]):
             pytest.skip("Apply the advanced invoice settings migration before running this test.")

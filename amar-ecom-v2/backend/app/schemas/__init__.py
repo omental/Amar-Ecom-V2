@@ -8,7 +8,7 @@ from app.schemas.admin import (
     SystemHealthServiceStatusRead,
 )
 from app.schemas.activity_log import ActivityLogRead
-from app.schemas.business_settings import BusinessSettingsRead, BusinessSettingsUpdate
+from app.schemas.business_settings import BusinessSettingsRead, BusinessSettingsUpdate, SettingsCenterSummaryRead
 from app.schemas.brand import BrandCreate, BrandRead, BrandUpdate
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from app.schemas.courier import (
@@ -101,7 +101,10 @@ from app.schemas.order import (
     OrderUpdate,
 )
 from app.schemas.permission import (
+    LegacyPermissionMatrixRead,
+    LegacyPermissionModuleRead,
     PermissionRead,
+    UserLegacyPermissionUpdate,
     UserPermissionAssignmentRead,
     UserPermissionRead,
     UserPermissionUpdate,
@@ -186,6 +189,7 @@ __all__ = [
     "BrandRead",
     "BrandUpdate",
     "BusinessSettingsRead",
+    "SettingsCenterSummaryRead",
     "BusinessSettingsUpdate",
     "CategoryCreate",
     "CategoryRead",
@@ -223,6 +227,8 @@ __all__ = [
     "InvoiceTemplateCreate",
     "InvoiceTemplateRead",
     "InvoiceTemplateUpdate",
+    "LegacyPermissionMatrixRead",
+    "LegacyPermissionModuleRead",
     "DesignationCreate",
     "DesignationRead",
     "DesignationUpdate",
@@ -313,6 +319,7 @@ __all__ = [
     "TransactionUpdate",
     "UserCreate",
     "UserPermissionAssignmentRead",
+    "UserLegacyPermissionUpdate",
     "UserPermissionRead",
     "UserPermissionUpdate",
     "UserRead",

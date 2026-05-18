@@ -23,13 +23,13 @@ Scope:
 
 | Group | Base path | Main endpoints | Access | Notes |
 | --- | --- | --- | --- | --- |
-| Users | `/api/v1/users` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Team/user CRUD; permission assignment endpoints live separately. |
-| Permissions | `/api/v1` | `GET /permissions`, `POST /permissions/seed-defaults`, `GET/PATCH /users/{id}/permissions` | Protected | Permission matrix exists, but frontend enforcement is still partial. |
+| Users | `/api/v1/users` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}` | Protected | Team/user CRUD; permission assignment endpoints live separately. Phase `15H-support` adds v1 team aliases such as `uid`, `displayName`, `fullName`, `active`, `isActive`, `status`, `pendingApproval`, `permissions`, `legacyPermissions`, `hasFullAccess`, `lastLogin`, `photoURL`, and camelCase timestamps, while create/update now accept the main v1 alias inputs. |
+| Permissions | `/api/v1` | `GET /permissions`, `GET /permissions/legacy-matrix`, `POST /permissions/seed-defaults`, `GET/PATCH /users/{id}/permissions`, `PATCH /users/{id}/legacy-permissions` | Protected | Permission matrix exists, but frontend enforcement is still partial. Phase `15H-support` adds a legacy module-permission bridge so the exact v1 Team and Settings screens can consume and write boolean module maps without replacing the normalized v2 permission system. |
 | Notifications | `/api/v1/notifications` | `GET /`, `GET /unread-count`, `PATCH /{id}/read`, `PATCH /mark-all-read`, `POST /` | Protected | Phase 15B-support adds shell notification persistence with broadcast plus per-user visibility and a v1-friendly unread workflow. Create is admin-only for now. |
-| Activity Logs | `/api/v1/activity-logs` | `GET /` | Protected | Filtered audit feed across implemented modules. |
+| Activity Logs | `/api/v1/activity-logs` | `GET /` | Protected | Filtered audit feed across implemented modules. Phase `15H-support` adds v1-friendly aliases such as `userName`, `userEmail`, `actionLabel`, `moduleLabel`, `entityType`, `entityId`, and `createdAt`, plus extra filters for `action`, `search`, and created-date range. |
 | Admin Tools | `/api/v1/admin` | `GET /system-health`, `GET /backup-guidance`, `GET /maintenance-checklist`, `GET /exports/*` | Protected | Admin and super-admin focused release-readiness surface for health checks, exports, and backup guidance. |
-| Settings | `/api/v1/settings` | `GET /business`, `PATCH /business` | Protected | Business and invoice display settings live here. |
-| Invoice Templates | `/api/v1/invoice-templates` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, `POST /{id}/set-default` | Protected | Deactivate uses soft behavior. |
+| Settings | `/api/v1/settings` | `GET /center-summary`, `GET /business`, `PATCH /business` | Protected | Business and invoice display settings live here. Phase `15H-support` adds a settings-center summary endpoint plus v1-style aliases such as `companyName`, `businessName`, `logoUrl`, `invoicePrefix`, `invoiceTitle`, `paymentInstructions`, `lowStockDefaultThreshold`, and camelCase timestamps. |
+| Invoice Templates | `/api/v1/invoice-templates` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, `POST /{id}/set-default` | Protected | Deactivate uses soft behavior. Phase `15H-support` adds v1 settings-screen aliases such as `templateName`, `accentColor`, `headerText`, `footerText`, `termsText`, `paymentInstructions`, `isDefault`, `isActive`, and camelCase timestamps. |
 | Categories | `/api/v1/categories` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Standard master-data CRUD. |
 | Brands | `/api/v1/brands` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}` | Protected | Standard master-data CRUD. |
 | Products | `/api/v1/products` | `GET /`, `GET /{id}`, `POST /`, `PATCH /{id}`, `DELETE /{id}`, variant CRUD | Protected | Includes product variant endpoints under the same route group. Phase `15E-support` adds v1-inventory-friendly aliases such as `productName`, `barcode`, `categoryName`, `brandName`, `stockLevel`, `reorderPoint`, `image`, `hasVariants`, and camelCase timestamps without changing the underlying product model. |
@@ -68,5 +68,5 @@ Scope:
 - Fresh migration path was validated against a temporary PostgreSQL database using `alembic upgrade head`.
 - App import succeeded after migration completion.
 - `GET /api/v1/health` returned `200 OK`.
-- Release-candidate backend validation on 2026-05-18 includes targeted Phase `15G-support` logistics compatibility coverage in addition to the earlier inventory and CRM support checks.
+- Release-candidate backend validation on 2026-05-18 includes targeted Phase `15H-support` settings/team/admin compatibility coverage in addition to the earlier inventory, CRM, and logistics support checks.
 - Registered `/api/v1/*` route count at validation time: `159`.

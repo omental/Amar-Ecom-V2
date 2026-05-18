@@ -67,6 +67,20 @@ LEGACY_PERMISSION_MODULES = (
     "pos",
 )
 
+LEGACY_PERMISSION_LABELS = {
+    "dashboard": "Dashboard",
+    "orders": "Orders",
+    "inventory": "Inventory",
+    "crm": "CRM",
+    "logistics": "Logistics",
+    "reports": "Reports",
+    "finance": "Finance",
+    "hr": "HR",
+    "settings": "Settings",
+    "team": "Team",
+    "pos": "POS",
+}
+
 LEGACY_PERMISSION_KEY_MAP = {
     "dashboard": {"dashboard.view"},
     "orders": {"orders.view"},
@@ -99,6 +113,14 @@ def build_legacy_permissions_map(permission_keys: list[str], role: str | None = 
         module: any(required_key in permission_key_set for required_key in LEGACY_PERMISSION_KEY_MAP.get(module, set()))
         for module in LEGACY_PERMISSION_MODULES
     }
+
+
+def build_permission_keys_from_legacy_map(legacy_permissions: dict[str, bool]) -> list[str]:
+    permission_keys: set[str] = set()
+    for module, enabled in legacy_permissions.items():
+        if enabled:
+            permission_keys.update(LEGACY_PERMISSION_KEY_MAP.get(module, set()))
+    return sorted(permission_keys)
 
 
 async def ensure_default_permissions(db: AsyncSession) -> list[Permission]:
@@ -181,6 +203,8 @@ async def set_user_permissions(
     existing_assignments = list(existing_result.scalars().all())
     for assignment in existing_assignments:
         await db.delete(assignment)
+    if existing_assignments:
+        await db.flush()
 
     for permission in unique_permissions:
         db.add(
