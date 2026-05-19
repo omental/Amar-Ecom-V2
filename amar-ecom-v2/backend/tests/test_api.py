@@ -5049,6 +5049,382 @@ def test_reports_foundation_endpoints() -> None:
     dispose_engine()
 
 
+def test_phase_15i_support_finance_hr_pos_aliases() -> None:
+    headers = auth_headers()
+    try:
+        with TestClient(app) as client:
+            designation_response = client.post(
+                "/api/v1/designations",
+                headers=headers,
+                json={"name": "Warehouse Staff", "description": "Alias designation"},
+            )
+            assert designation_response.status_code == 201, designation_response.text
+            designation = designation_response.json()
+            assert designation["name"] == "Warehouse Staff"
+            assert designation["status"] == "Active"
+
+            employee_response = client.post(
+                "/api/v1/employees",
+                headers=headers,
+                json={
+                    "name": "Alias Employee",
+                    "designationId": designation["id"],
+                    "joiningDate": "2026-05-18",
+                    "baseSalary": 18500,
+                    "status": "Active",
+                    "phone": "01700000000",
+                },
+            )
+            assert employee_response.status_code == 201, employee_response.text
+            employee = employee_response.json()
+            assert employee["name"] == "Alias Employee"
+            assert employee["designationName"] == "Warehouse Staff"
+            assert employee["baseSalary"] == "18500.00"
+            assert employee["employeeCode"].startswith("EMP-")
+
+            attendance_response = client.post(
+                "/api/v1/attendance",
+                headers=headers,
+                json={
+                    "employee_id": employee["id"],
+                    "date": "2026-05-19",
+                    "status": "Present",
+                },
+            )
+            assert attendance_response.status_code == 201, attendance_response.text
+            attendance = attendance_response.json()
+            assert attendance["attendanceDate"] == "2026-05-19"
+            assert attendance["employeeName"] == "Alias Employee"
+
+            salary_advance_response = client.post(
+                "/api/v1/salary-advances",
+                headers=headers,
+                json={
+                    "employee_id": employee["id"],
+                    "amount": 1200,
+                    "note": "Advance for travel",
+                    "date": "2026-05-19T09:00:00Z",
+                    "status": "Approved",
+                },
+            )
+            assert salary_advance_response.status_code == 201, salary_advance_response.text
+            salary_advance = salary_advance_response.json()
+            assert salary_advance["note"] == "Advance for travel"
+            assert salary_advance["statusLabel"] == "Approved"
+
+            salary_record_response = client.post(
+                "/api/v1/salary-records",
+                headers=headers,
+                json={
+                    "employee_id": employee["id"],
+                    "month": "2026-05",
+                    "basicSalary": 18500,
+                    "advanceDeduction": 1200,
+                    "deductions": 300,
+                    "bonus": 500,
+                    "status": "Paid",
+                },
+            )
+            assert salary_record_response.status_code == 201, salary_record_response.text
+            salary_record = salary_record_response.json()
+            assert salary_record["month"] == "2026-05"
+            assert salary_record["netSalary"] == "17500.00"
+            assert salary_record["paidAt"] is not None
+
+            cash_account_response = client.post(
+                "/api/v1/accounts",
+                headers=headers,
+                json={"name": "Alias Cash", "type": "Cash", "balance": 1000, "active": True},
+            )
+            assert cash_account_response.status_code == 201, cash_account_response.text
+            cash_account = cash_account_response.json()
+            assert cash_account["type"] == "Cash"
+            assert cash_account["balance"] == "1000.00"
+            assert cash_account["status"] == "Active"
+
+            bank_account_response = client.post(
+                "/api/v1/accounts",
+                headers=headers,
+                json={"name": "Alias Bank", "type": "Bank", "balance": 2000},
+            )
+            assert bank_account_response.status_code == 201, bank_account_response.text
+            bank_account = bank_account_response.json()
+            assert bank_account["code"]
+
+            transaction_response = client.post(
+                "/api/v1/transactions",
+                headers=headers,
+                json={
+                    "accountId": cash_account["id"],
+                    "type": "income",
+                    "subCategory": "Product Sales",
+                    "amount": 250,
+                    "notes": "Alias income",
+                },
+            )
+            assert transaction_response.status_code == 201, transaction_response.text
+            transaction = transaction_response.json()
+            assert transaction["transactionNumber"].startswith("TXN-")
+            assert transaction["type"] == "income"
+            assert transaction["notes"] == "Alias income"
+
+            petty_cash_response = client.post(
+                "/api/v1/petty-cash",
+                headers=headers,
+                json={
+                    "accountId": cash_account["id"],
+                    "type": "office_expense",
+                    "amount": 50,
+                    "note": "Stationery",
+                    "status": "approved",
+                    "date": "2026-05-19T10:00:00Z",
+                },
+            )
+            assert petty_cash_response.status_code == 201, petty_cash_response.text
+            petty_cash = petty_cash_response.json()
+            assert petty_cash["entryNumber"]
+            assert petty_cash["note"] == "Stationery"
+
+            supplier_response = client.post(
+                "/api/v1/suppliers",
+                headers=headers,
+                json={"name": "Alias Supplier", "phone": "01800000000"},
+            )
+            assert supplier_response.status_code == 201, supplier_response.text
+            supplier = supplier_response.json()
+
+            supplier_payment_response = client.post(
+                "/api/v1/supplier-payments",
+                headers=headers,
+                json={
+                    "supplierId": supplier["id"],
+                    "accountId": bank_account["id"],
+                    "voucherNo": "VCHR-ALIAS-1",
+                    "paidAmount": 125,
+                    "paymentType": "Bank",
+                    "remark": "Alias supplier payment",
+                },
+            )
+            assert supplier_payment_response.status_code == 201, supplier_payment_response.text
+            supplier_payment = supplier_payment_response.json()
+            assert supplier_payment["voucherNo"] == "VCHR-ALIAS-1"
+            assert supplier_payment["supplierName"] == "Alias Supplier"
+            assert supplier_payment["paidAmount"] == "125.00"
+
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={"name": "POS Alias Category", "slug": f"pos-alias-cat-{uuid.uuid4().hex[:6]}"},
+            )
+            assert category_response.status_code == 201, category_response.text
+            category = category_response.json()
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={"name": "POS Alias Brand", "slug": f"pos-alias-brand-{uuid.uuid4().hex[:6]}"},
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand = brand_response.json()
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "POS Alias Product",
+                    "slug": f"pos-alias-product-{uuid.uuid4().hex[:6]}",
+                    "sku": f"POS-SKU-{uuid.uuid4().hex[:4]}",
+                    "price": 300,
+                    "cost_price": 180,
+                    "category_id": category["id"],
+                    "brand_id": brand["id"],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={"name": "POS Alias Warehouse", "code": f"PAW-{uuid.uuid4().hex[:4]}"},
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 9,
+                    "low_stock_threshold": 2,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            pos_products_response = client.get(
+                f"/api/v1/pos/products?warehouse_id={warehouse['id']}&search={product['sku']}",
+                headers=headers,
+            )
+            assert pos_products_response.status_code == 200, pos_products_response.text
+            pos_products = pos_products_response.json()
+            assert pos_products[0]["productName"] == "POS Alias Product"
+            assert pos_products[0]["barcode"] == product["sku"]
+            assert pos_products[0]["stockLevel"] == 9
+
+            pos_checkout_response = client.post(
+                "/api/v1/pos/checkout",
+                headers=headers,
+                json={
+                    "warehouseId": warehouse["id"],
+                    "paymentMethod": "cash",
+                    "accountId": cash_account["id"],
+                    "paidAmount": 300,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "productName": "POS Alias Product",
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unitPrice": 300,
+                            "totalPrice": 300,
+                        }
+                    ],
+                },
+            )
+            assert pos_checkout_response.status_code == 201, pos_checkout_response.text
+            pos_checkout = pos_checkout_response.json()
+            assert pos_checkout["orderId"]
+            assert pos_checkout["orderNumber"].startswith("ORD-POS-")
+            assert pos_checkout["paymentStatus"] == "paid"
+            assert pos_checkout["dueAmount"] == "0.00"
+
+            pos_summary_response = client.get("/api/v1/pos/summary", headers=headers)
+            assert pos_summary_response.status_code == 200, pos_summary_response.text
+            pos_summary = pos_summary_response.json()
+            assert pos_summary["todayPosOrders"] >= 1
+            assert float(pos_summary["todayPosSales"]) >= 300
+    finally:
+        dispose_engine()
+
+
+def test_phase_15i_support_reports_aliases() -> None:
+    headers = auth_headers()
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={"name": "Reports Alias Category", "slug": f"reports-alias-cat-{uuid.uuid4().hex[:6]}"},
+            )
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={"name": "Reports Alias Brand", "slug": f"reports-alias-brand-{uuid.uuid4().hex[:6]}"},
+            )
+            customer_response = client.post(
+                "/api/v1/customers",
+                headers=headers,
+                json={"name": "Reports Alias Customer", "phone": "01900000000"},
+            )
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={"name": "Reports Alias Warehouse", "code": f"RAW-{uuid.uuid4().hex[:4]}"},
+            )
+            assert category_response.status_code == 201, category_response.text
+            assert brand_response.status_code == 201, brand_response.text
+            assert customer_response.status_code == 201, customer_response.text
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            category = category_response.json()
+            brand = brand_response.json()
+            customer = customer_response.json()
+            warehouse = warehouse_response.json()
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Reports Alias Product",
+                    "slug": f"reports-alias-product-{uuid.uuid4().hex[:6]}",
+                    "sku": f"RPT-SKU-{uuid.uuid4().hex[:4]}",
+                    "price": 150,
+                    "cost_price": 90,
+                    "category_id": category["id"],
+                    "brand_id": brand["id"],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 2,
+                    "low_stock_threshold": 5,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            order_response = client.post(
+                "/api/v1/orders",
+                headers=headers,
+                json={
+                    "customer_id": customer["id"],
+                    "warehouse_id": warehouse["id"],
+                    "customer_name": "Reports Alias Customer",
+                    "customer_phone": "01900000000",
+                    "status": "delivered",
+                    "payment_status": "paid",
+                    "source": "manual",
+                    "subtotal": 150,
+                    "total": 150,
+                    "paid_amount": 150,
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "product_name": "Reports Alias Product",
+                            "sku": product["sku"],
+                            "quantity": 1,
+                            "unit_price": 150,
+                            "total_price": 150,
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+
+            sales_summary_response = client.get("/api/v1/reports/sales-summary", headers=headers)
+            assert sales_summary_response.status_code == 200, sales_summary_response.text
+            sales_summary = sales_summary_response.json()
+            assert "totalOrders" in sales_summary
+            assert "averageOrderValue" in sales_summary
+
+            inventory_report_response = client.get("/api/v1/reports/inventory", headers=headers)
+            assert inventory_report_response.status_code == 200, inventory_report_response.text
+            inventory_report = inventory_report_response.json()
+            assert "lowStockCount" in inventory_report
+            assert "inventoryValueAtCost" in inventory_report
+
+            low_stock_response = client.get("/api/v1/reports/low-stock-products?limit=5", headers=headers)
+            assert low_stock_response.status_code == 200, low_stock_response.text
+            low_stock_rows = low_stock_response.json()
+            assert low_stock_rows[0]["productName"] == "Reports Alias Product"
+            assert low_stock_rows[0]["lowStockThreshold"] == 5
+
+            recent_orders_response = client.get("/api/v1/reports/recent-order-activity?limit=5", headers=headers)
+            assert recent_orders_response.status_code == 200, recent_orders_response.text
+            recent_orders = recent_orders_response.json()
+            assert "orderNumber" in recent_orders[0]
+            assert "createdAt" in recent_orders[0]
+    finally:
+        dispose_engine()
+
+
 def test_order_v1_compatibility_payloads_and_aliases() -> None:
     headers = auth_headers()
 

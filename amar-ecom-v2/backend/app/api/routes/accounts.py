@@ -14,6 +14,12 @@ from app.services.activity_log_service import log_activity
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+def _generate_account_code(account_name: str, account_type: str) -> str:
+    prefix = "".join(part[:3].upper() for part in account_type.replace("_", " ").split()) or "ACC"
+    suffix = "".join(ch for ch in account_name.upper() if ch.isalnum())[:6] or "AUTO"
+    return f"{prefix}-{suffix}"
+
+
 @router.get("", response_model=list[AccountRead])
 async def list_accounts(
     db: DBSession,
@@ -37,8 +43,10 @@ async def create_account(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> Account:
-    await ensure_unique(db, Account, "code", account_in.code, "Account code already exists")
+    account_code = account_in.code or _generate_account_code(account_in.name, account_in.account_type)
+    await ensure_unique(db, Account, "code", account_code, "Account code already exists")
     payload = account_in.model_dump()
+    payload["code"] = account_code
     opening_balance = payload.pop("opening_balance")
     account = Account(**payload, opening_balance=opening_balance, current_balance=opening_balance)
     db.add(account)

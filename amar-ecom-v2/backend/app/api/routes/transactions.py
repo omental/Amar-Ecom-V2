@@ -17,6 +17,11 @@ from app.services.finance_service import create_transaction, create_transfer
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+def _generate_transaction_number(transaction_type: str) -> str:
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+    return f"TXN-{transaction_type.replace('_', '-').upper()}-{stamp}"
+
+
 def _transaction_query():
     return select(Transaction).options(
         selectinload(Transaction.account),
@@ -83,6 +88,8 @@ async def create_transaction_entry(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> Transaction:
+    if transaction_in.transaction_number is None:
+        transaction_in.transaction_number = _generate_transaction_number(transaction_in.transaction_type)
     transaction = await (
         create_transfer(db, transaction_in, created_by=current_user)
         if transaction_in.transaction_type == "transfer"

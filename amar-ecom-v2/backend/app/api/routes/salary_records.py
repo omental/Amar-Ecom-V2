@@ -50,9 +50,19 @@ async def list_salary_records(
     db: DBSession,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    employee_id: UUID | None = None,
+    status: str | None = None,
+    salary_month: str | None = Query(default=None, alias="month"),
 ) -> list[SalaryRecord]:
     skip, limit = normalize_pagination(skip, limit)
-    result = await db.execute(_salary_record_query().order_by(SalaryRecord.created_at.desc()).offset(skip).limit(limit))
+    stmt = _salary_record_query()
+    if employee_id is not None:
+        stmt = stmt.where(SalaryRecord.employee_id == employee_id)
+    if status:
+        stmt = stmt.where(SalaryRecord.status == status.lower())
+    if salary_month:
+        stmt = stmt.where(SalaryRecord.salary_month == salary_month)
+    result = await db.execute(stmt.order_by(SalaryRecord.created_at.desc()).offset(skip).limit(limit))
     return list(result.scalars().all())
 
 

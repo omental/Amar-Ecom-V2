@@ -1,26 +1,24 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Building2,
   CreditCard,
   Download,
   Landmark,
   Loader2,
+  Plus,
   ReceiptText,
   RefreshCw,
   Wallet,
 } from "lucide-react";
 
+import { ControlModal } from "@/components/ui/control-modal";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
-import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { OpsActionButton } from "@/components/ui/ops-action-button";
-import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
-import { OpsPageHeader } from "@/components/ui/ops-page-header";
-import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
-import { OpsTabs } from "@/components/ui/ops-tabs";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDateTime, formatLabel } from "@/lib/format";
 
@@ -28,67 +26,98 @@ type Account = {
   id: string;
   name: string;
   code: string;
-  account_type: string;
+  account_type?: string;
+  accountType?: string;
+  type?: string;
+  category?: string | null;
   opening_balance: number | string;
   current_balance: number | string;
+  balance?: number | string;
   is_active: boolean;
+  active?: boolean;
+  status?: string;
   notes: string | null;
   created_at: string;
   updated_at: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type Transaction = {
   id: string;
-  transaction_number: string;
-  account_id: string;
-  related_account_id: string | null;
-  transaction_type: string;
-  category: string | null;
+  transaction_number?: string;
+  transactionNumber?: string;
+  account_id?: string;
+  accountId?: string;
+  related_account_id?: string | null;
+  toAccountId?: string | null;
+  related_account_name?: string | null;
+  transaction_type?: string;
+  type?: string;
+  category?: string | null;
+  subCategory?: string | null;
   amount: number | string;
   direction: string;
-  reference_type: string | null;
-  reference_id: string | null;
-  description: string | null;
-  transaction_date: string;
-  account: Account;
-  related_account: Account | null;
+  reference_type?: string | null;
+  reference_id?: string | null;
+  description?: string | null;
+  notes?: string | null;
+  transaction_date?: string;
+  date?: string;
+  status?: string;
+  account?: Account | null;
+  accountName?: string | null;
+  related_account?: Account | null;
 };
 
 type PettyCashEntry = {
   id: string;
-  entry_number: string;
-  account_id: string | null;
-  transaction_id: string | null;
+  entry_number?: string;
+  entryNumber?: string;
+  account_id?: string | null;
+  accountId?: string | null;
+  transaction_id?: string | null;
   transaction_created: boolean;
-  entry_type: string;
+  entry_type?: string;
+  type?: string;
   amount: number | string;
   purpose: string;
+  note?: string | null;
   spent_by: string | null;
-  approved_by_id: string | null;
+  approved_by_id?: string | null;
   status: string;
-  entry_date: string;
-  account: Account | null;
+  entry_date?: string;
+  date?: string;
+  account?: Account | null;
 };
 
 type Supplier = {
   id: string;
   name: string;
+  supplierName?: string;
 };
 
 type SupplierPayment = {
   id: string;
-  supplier_id: string | null;
-  account_id: string;
-  transaction_id: string | null;
-  payment_number: string;
+  supplier_id?: string | null;
+  supplierId?: string | null;
+  account_id?: string;
+  accountId?: string;
+  transaction_id?: string | null;
+  payment_number?: string;
+  voucherNo?: string;
   amount: number | string;
-  payment_method: string | null;
-  reference: string | null;
-  notes: string | null;
-  payment_date: string;
-  supplier: Supplier | null;
+  paidAmount?: number | string;
+  payment_method?: string | null;
+  paymentType?: string | null;
+  reference?: string | null;
+  remark?: string | null;
+  notes?: string | null;
+  payment_date?: string;
+  date?: string;
+  supplier?: Supplier | null;
   account: Account;
-  transaction: Transaction | null;
+  transaction?: Transaction | null;
 };
 
 type FinanceSummary = {
@@ -104,44 +133,47 @@ type FinanceSummary = {
 type AccountForm = {
   name: string;
   code: string;
-  account_type: string;
+  type: string;
+  category: string;
   opening_balance: string;
   notes: string;
-  is_active: boolean;
+  active: boolean;
 };
 
 type TransactionForm = {
-  transaction_number: string;
-  account_id: string;
-  related_account_id: string;
-  transaction_type: string;
+  transactionNumber: string;
+  accountId: string;
+  toAccountId: string;
+  type: string;
   category: string;
+  subCategory: string;
   amount: string;
   direction: string;
-  description: string;
-  transaction_date: string;
+  notes: string;
+  date: string;
 };
 
 type PettyCashForm = {
-  entry_number: string;
-  account_id: string;
-  entry_type: string;
+  entryNumber: string;
+  accountId: string;
+  type: string;
   amount: string;
   purpose: string;
-  spent_by: string;
+  spentBy: string;
   status: string;
-  entry_date: string;
+  date: string;
+  note: string;
 };
 
 type SupplierPaymentForm = {
-  supplier_id: string;
-  account_id: string;
-  payment_number: string;
+  supplierId: string;
+  accountId: string;
+  voucherNo: string;
   amount: string;
-  payment_method: string;
+  paymentType: string;
   reference: string;
   notes: string;
-  payment_date: string;
+  date: string;
 };
 
 type SummaryFilters = {
@@ -171,44 +203,47 @@ type TabId = (typeof tabs)[number]["id"];
 const initialAccountForm: AccountForm = {
   name: "",
   code: "",
-  account_type: "cash",
+  type: "cash",
+  category: "assets",
   opening_balance: "0",
   notes: "",
-  is_active: true,
+  active: true,
 };
 
 const initialTransactionForm: TransactionForm = {
-  transaction_number: "",
-  account_id: "",
-  related_account_id: "",
-  transaction_type: "income",
-  category: "",
+  transactionNumber: "",
+  accountId: "",
+  toAccountId: "",
+  type: "income",
+  category: "income",
+  subCategory: "",
   amount: "",
   direction: "in",
-  description: "",
-  transaction_date: "",
+  notes: "",
+  date: "",
 };
 
 const initialPettyCashForm: PettyCashForm = {
-  entry_number: "",
-  account_id: "",
-  entry_type: "expense",
+  entryNumber: "",
+  accountId: "",
+  type: "expense",
   amount: "",
   purpose: "",
-  spent_by: "",
+  spentBy: "",
   status: "pending",
-  entry_date: "",
+  date: "",
+  note: "",
 };
 
 const initialSupplierPaymentForm: SupplierPaymentForm = {
-  supplier_id: "",
-  account_id: "",
-  payment_number: "",
+  supplierId: "",
+  accountId: "",
+  voucherNo: "",
   amount: "",
-  payment_method: "",
+  paymentType: "",
   reference: "",
   notes: "",
-  payment_date: "",
+  date: "",
 };
 
 const initialSummaryFilters: SummaryFilters = {
@@ -259,6 +294,101 @@ function inputToApiDate(value: string) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+function getAccountType(account: Account) {
+  return account.type || account.accountType || account.account_type || "account";
+}
+
+function getAccountBalance(account: Account) {
+  return account.balance ?? account.current_balance;
+}
+
+function getTransactionNumber(transaction: Transaction) {
+  return transaction.transactionNumber || transaction.transaction_number || "Pending";
+}
+
+function getTransactionType(transaction: Transaction) {
+  return transaction.type || transaction.transaction_type || "transaction";
+}
+
+function getTransactionDate(transaction: Transaction) {
+  return transaction.date || transaction.transaction_date || "";
+}
+
+function getTransactionAccountName(transaction: Transaction) {
+  return transaction.accountName || transaction.account?.name || "Unknown account";
+}
+
+function getTransactionRelatedName(transaction: Transaction) {
+  return transaction.related_account?.name || transaction.related_account_name || "";
+}
+
+function getPettyCashNumber(entry: PettyCashEntry) {
+  return entry.entryNumber || entry.entry_number || "Pending";
+}
+
+function getPettyCashType(entry: PettyCashEntry) {
+  return entry.type || entry.entry_type || "entry";
+}
+
+function getPettyCashDate(entry: PettyCashEntry) {
+  return entry.date || entry.entry_date || "";
+}
+
+function getSupplierPaymentNumber(payment: SupplierPayment) {
+  return payment.voucherNo || payment.payment_number || "Pending";
+}
+
+function getSupplierPaymentDate(payment: SupplierPayment) {
+  return payment.date || payment.payment_date || "";
+}
+
+function SectionHeader({
+  title,
+  description,
+  action,
+}: {
+  title: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h2 className="text-lg font-bold tracking-tight text-slate-950">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  helper,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  icon: typeof Wallet;
+}) {
+  return (
+    <div className="rounded-[26px] border border-slate-200 bg-white px-5 py-5 shadow-[var(--shadow-soft)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.26em] text-slate-500">{label}</p>
+          <p className="mt-3 text-2xl font-black tracking-tight text-slate-950">{value}</p>
+          <p className="mt-2 text-xs font-medium text-slate-500">{helper}</p>
+        </div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FinancePage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
@@ -274,6 +404,10 @@ export default function FinancePage() {
   const [summaryFilters, setSummaryFilters] = useState<SummaryFilters>(initialSummaryFilters);
   const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>(initialTransactionFilters);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [showPettyCashModal, setShowPettyCashModal] = useState(false);
+  const [showSupplierPaymentModal, setShowSupplierPaymentModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshingOverview, setIsRefreshingOverview] = useState(false);
   const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false);
@@ -284,6 +418,11 @@ export default function FinancePage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const selectedSupplierPaymentAccount =
+    accounts.find((account) => account.id === supplierPaymentForm.accountId) || null;
+
+  const activeAccounts = useMemo(() => accounts.filter((account) => account.is_active), [accounts]);
 
   async function refreshOverview(filters: SummaryFilters = summaryFilters) {
     const summaryData = await api.get<FinanceSummary>(
@@ -330,21 +469,16 @@ export default function FinancePage() {
 
     async function bootstrap() {
       try {
-        const [
-          summaryData,
-          transactionData,
-          accountData,
-          pettyCashData,
-          supplierPaymentData,
-          supplierData,
-        ] = await Promise.all([
-          api.get<FinanceSummary>("/finance/summary"),
-          api.get<Transaction[]>("/transactions?skip=0&limit=100"),
-          api.get<Account[]>("/accounts?skip=0&limit=100"),
-          api.get<PettyCashEntry[]>("/petty-cash?skip=0&limit=100"),
-          api.get<SupplierPayment[]>("/supplier-payments?skip=0&limit=100"),
-          api.get<Supplier[]>("/suppliers?skip=0&limit=100").catch(() => []),
-        ]);
+        const [summaryData, transactionData, accountData, pettyCashData, supplierPaymentData, supplierData] =
+          await Promise.all([
+            api.get<FinanceSummary>("/finance/summary"),
+            api.get<Transaction[]>("/transactions?skip=0&limit=100"),
+            api.get<Account[]>("/accounts?skip=0&limit=100"),
+            api.get<PettyCashEntry[]>("/petty-cash?skip=0&limit=100"),
+            api.get<SupplierPayment[]>("/supplier-payments?skip=0&limit=100"),
+            api.get<Supplier[]>("/suppliers?skip=0&limit=100").catch(() => []),
+          ]);
+
         if (!isMounted) return;
         setSummary(summaryData);
         setTransactions(transactionData);
@@ -368,22 +502,44 @@ export default function FinancePage() {
     };
   }, []);
 
-  function populateAccountForm(account: Account) {
+  function clearMessages() {
+    setError("");
+    setSuccess("");
+  }
+
+  function openNewAccountModal() {
+    setEditingAccountId(null);
+    setAccountForm(initialAccountForm);
+    setShowAccountModal(true);
+  }
+
+  function openEditAccountModal(account: Account) {
     setEditingAccountId(account.id);
     setAccountForm({
       name: account.name,
       code: account.code,
-      account_type: account.account_type,
+      type: getAccountType(account),
+      category: account.category || "assets",
       opening_balance: String(account.opening_balance),
       notes: account.notes || "",
-      is_active: account.is_active,
+      active: account.is_active,
     });
-    setActiveTab("accounts");
+    setShowAccountModal(true);
   }
 
-  function clearMessages() {
-    setError("");
-    setSuccess("");
+  function openTransactionModal() {
+    setTransactionForm(initialTransactionForm);
+    setShowTransactionModal(true);
+  }
+
+  function openPettyCashModal() {
+    setPettyCashForm(initialPettyCashForm);
+    setShowPettyCashModal(true);
+  }
+
+  function openSupplierPaymentModal() {
+    setSupplierPaymentForm(initialSupplierPaymentForm);
+    setShowSupplierPaymentModal(true);
   }
 
   async function handleOverviewRefresh() {
@@ -416,27 +572,33 @@ export default function FinancePage() {
     event.preventDefault();
     clearMessages();
     setIsSavingAccount(true);
+
     try {
       if (editingAccountId) {
         await api.patch<Account>(`/accounts/${editingAccountId}`, {
           name: accountForm.name,
           code: accountForm.code,
-          account_type: accountForm.account_type,
+          type: accountForm.type,
+          category: accountForm.category || null,
           notes: accountForm.notes || null,
-          is_active: accountForm.is_active,
+          active: accountForm.active,
         });
         setSuccess("Account updated.");
       } else {
         await api.post<Account>("/accounts", {
           name: accountForm.name,
-          code: accountForm.code,
-          account_type: accountForm.account_type,
+          code: accountForm.code || undefined,
+          type: accountForm.type,
+          category: accountForm.category || null,
+          balance: Number(accountForm.opening_balance || 0),
           opening_balance: Number(accountForm.opening_balance || 0),
           notes: accountForm.notes || null,
-          is_active: accountForm.is_active,
+          active: accountForm.active,
         });
         setSuccess("Account created.");
       }
+
+      setShowAccountModal(false);
       setAccountForm(initialAccountForm);
       setEditingAccountId(null);
       await loadReferenceData();
@@ -467,18 +629,23 @@ export default function FinancePage() {
     event.preventDefault();
     clearMessages();
     setIsSavingTransaction(true);
+
     try {
       await api.post<Transaction>("/transactions", {
-        transaction_number: transactionForm.transaction_number,
-        account_id: transactionForm.account_id,
-        related_account_id: transactionForm.related_account_id || null,
-        transaction_type: transactionForm.transaction_type,
+        transactionNumber: transactionForm.transactionNumber || undefined,
+        accountId: transactionForm.accountId,
+        toAccountId: transactionForm.toAccountId || null,
+        type: transactionForm.type,
         category: transactionForm.category || null,
+        subCategory: transactionForm.subCategory || null,
         amount: Number(transactionForm.amount),
         direction: transactionForm.direction,
-        description: transactionForm.description || null,
-        transaction_date: inputToApiDate(transactionForm.transaction_date) || null,
+        notes: transactionForm.notes || null,
+        date: inputToApiDate(transactionForm.date) || null,
+        status: "completed",
       });
+
+      setShowTransactionModal(false);
       setTransactionForm(initialTransactionForm);
       await Promise.all([refreshTransactions(), refreshOverview(), loadReferenceData()]);
       setSuccess("Transaction created.");
@@ -492,8 +659,9 @@ export default function FinancePage() {
   async function handlePettyCashSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
+
     if (
-      pettyCashForm.account_id &&
+      pettyCashForm.accountId &&
       ["approved", "settled"].includes(pettyCashForm.status) &&
       !window.confirm(
         "Approving/settling will create a petty cash transaction and reduce the selected account balance.",
@@ -505,15 +673,18 @@ export default function FinancePage() {
     setIsSavingPettyCash(true);
     try {
       const entry = await api.post<PettyCashEntry>("/petty-cash", {
-        entry_number: pettyCashForm.entry_number,
-        account_id: pettyCashForm.account_id || null,
-        entry_type: pettyCashForm.entry_type,
+        entryNumber: pettyCashForm.entryNumber || undefined,
+        accountId: pettyCashForm.accountId || null,
+        type: pettyCashForm.type,
         amount: Number(pettyCashForm.amount),
         purpose: pettyCashForm.purpose,
-        spent_by: pettyCashForm.spent_by || null,
+        spent_by: pettyCashForm.spentBy || null,
         status: pettyCashForm.status,
-        entry_date: inputToApiDate(pettyCashForm.entry_date) || null,
+        date: inputToApiDate(pettyCashForm.date) || null,
+        note: pettyCashForm.note || null,
       });
+
+      setShowPettyCashModal(false);
       setPettyCashForm(initialPettyCashForm);
       await Promise.all([loadReferenceData(), refreshTransactions(), refreshOverview()]);
       setSuccess(
@@ -530,8 +701,10 @@ export default function FinancePage() {
 
   async function handlePettyCashStatusUpdate(entry: PettyCashEntry, status: string) {
     clearMessages();
+    const linkedAccountId = entry.accountId || entry.account_id;
+
     if (
-      entry.account_id &&
+      linkedAccountId &&
       ["approved", "settled"].includes(status) &&
       entry.status !== status &&
       !window.confirm(
@@ -561,21 +734,28 @@ export default function FinancePage() {
     event.preventDefault();
     clearMessages();
     setIsSavingSupplierPayment(true);
+
     try {
       const payment = await api.post<SupplierPayment>("/supplier-payments", {
-        supplier_id: supplierPaymentForm.supplier_id || null,
-        account_id: supplierPaymentForm.account_id,
-        payment_number: supplierPaymentForm.payment_number,
+        supplierId: supplierPaymentForm.supplierId || null,
+        accountId: supplierPaymentForm.accountId,
+        voucherNo: supplierPaymentForm.voucherNo || undefined,
+        paidAmount: Number(supplierPaymentForm.amount),
         amount: Number(supplierPaymentForm.amount),
-        payment_method: supplierPaymentForm.payment_method || null,
+        paymentType: supplierPaymentForm.paymentType || null,
         reference: supplierPaymentForm.reference || null,
+        remark: supplierPaymentForm.notes || null,
         notes: supplierPaymentForm.notes || null,
-        payment_date: inputToApiDate(supplierPaymentForm.payment_date) || null,
+        date: inputToApiDate(supplierPaymentForm.date) || null,
       });
+
+      setShowSupplierPaymentModal(false);
       setSupplierPaymentForm(initialSupplierPaymentForm);
       await Promise.all([loadReferenceData(), refreshTransactions(), refreshOverview()]);
       setSuccess(
-        `Supplier payment created. Transaction ${payment.transaction?.transaction_number || payment.transaction_id || ""} recorded automatically. Account balance is now ${formatCurrency(payment.account.current_balance)}.`,
+        `Supplier payment created. Transaction ${
+          payment.transaction?.transactionNumber || payment.transaction?.transaction_number || payment.transaction_id || ""
+        } recorded automatically. Account balance is now ${formatCurrency(getAccountBalance(payment.account))}.`,
       );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create supplier payment");
@@ -584,36 +764,94 @@ export default function FinancePage() {
     }
   }
 
-  const selectedSupplierPaymentAccount =
-    accounts.find((account) => account.id === supplierPaymentForm.account_id) || null;
-
   if (isLoading) {
     return <LoadingState label="Loading finance workspace..." />;
   }
 
   return (
-    <div className="space-y-5">
-      <section className="card-base p-6 sm:p-8">
-        <OpsPageHeader
-          eyebrow="Finance Console"
-          title="Finance workspace"
-          description="Run the practical finance foundation with linked supplier payment and petty cash transactions, clearer account groupings, and browser-side CSV exports."
-          meta="Overview, accounts, transactions, petty cash, and supplier payments"
-          actions={
-            <OpsActionButton
+    <div className="min-w-0 space-y-5">
+      <section className="rounded-[32px] border border-slate-200 bg-white px-6 py-7 shadow-[var(--shadow-soft)] sm:px-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-slate-500">Finance Center</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Finance</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              Run the practical finance foundation with accounts, transactions, petty cash, supplier payments, and date-based summary checks.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
               type="button"
-              variant="secondary"
               onClick={() => void handleOverviewRefresh()}
               disabled={isRefreshingOverview}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-70"
             >
               {isRefreshingOverview ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Refresh overview
-            </OpsActionButton>
-          }
-        />
+              Refresh
+            </button>
+            {activeTab === "accounts" ? (
+              <button
+                type="button"
+                onClick={openNewAccountModal}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Add Account
+              </button>
+            ) : null}
+            {activeTab === "transactions" ? (
+              <button
+                type="button"
+                onClick={openTransactionModal}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Add Transaction
+              </button>
+            ) : null}
+            {activeTab === "petty-cash" ? (
+              <button
+                type="button"
+                onClick={openPettyCashModal}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Add Petty Cash
+              </button>
+            ) : null}
+            {activeTab === "supplier-payments" ? (
+              <button
+                type="button"
+                onClick={openSupplierPaymentModal}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                <Plus className="h-4 w-4" />
+                Add Payment
+              </button>
+            ) : null}
+          </div>
+        </div>
       </section>
 
-      <OpsTabs tabs={tabs.map((tab) => ({ id: tab.id, label: tab.label }))} activeTab={activeTab} onChange={(id) => setActiveTab(id as TabId)} />
+      <section className="overflow-x-auto rounded-[28px] border border-slate-200 bg-white p-2 shadow-[var(--shadow-soft)]">
+        <div className="flex min-w-max gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center gap-2 rounded-[22px] px-5 py-3 text-sm font-bold transition ${
+                activeTab === tab.id
+                  ? "bg-slate-950 text-white"
+                  : "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <tab.icon className="h-4 w-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? (
@@ -623,338 +861,1021 @@ export default function FinancePage() {
       ) : null}
 
       {activeTab === "overview" && summary ? (
-        <div className="space-y-4">
-          <OpsFilterBar title="Finance Filters" description="Filter income, expense, supplier payment totals, and net cash flow by date range before reviewing recent movement.">
-              <label className="block min-w-[220px] flex-1">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Date from</span>
-                <input type="datetime-local" value={summaryFilters.date_from} onChange={(event) => setSummaryFilters((current) => ({ ...current, date_from: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
+        <div className="space-y-5">
+          <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+            <SectionHeader title="Overview" description="Date-filtered finance totals and recent movement." />
+            <div className="mt-6 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Date From</span>
+                <input
+                  type="datetime-local"
+                  value={summaryFilters.date_from}
+                  onChange={(event) => setSummaryFilters((current) => ({ ...current, date_from: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
               </label>
-              <label className="block min-w-[220px] flex-1">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Date to</span>
-                <input type="datetime-local" value={summaryFilters.date_to} onChange={(event) => setSummaryFilters((current) => ({ ...current, date_to: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Date To</span>
+                <input
+                  type="datetime-local"
+                  value={summaryFilters.date_to}
+                  onChange={(event) => setSummaryFilters((current) => ({ ...current, date_to: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
               </label>
-              <div className="flex items-end gap-2">
-                <OpsActionButton type="button" variant="primary" onClick={() => void handleOverviewRefresh()} disabled={isRefreshingOverview}>
-                  {isRefreshingOverview ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Refresh
-                </OpsActionButton>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void handleOverviewRefresh()}
+                  disabled={isRefreshingOverview}
+                  className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 lg:w-auto"
+                >
+                  Apply Range
+                </button>
               </div>
-          </OpsFilterBar>
-
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <OpsSummaryCard label="Cash / Bank Balance" value={formatCurrency(summary.total_cash_bank_balance)} icon={Wallet} eyebrow="Liquidity" />
-            <OpsSummaryCard label="Total Income" value={formatCurrency(summary.total_income)} icon={Landmark} eyebrow="Inflow" tone="success" />
-            <OpsSummaryCard label="Total Expense" value={formatCurrency(summary.total_expense)} icon={ReceiptText} eyebrow="Outflow" tone="warning" />
-            <OpsSummaryCard label="Net Cash Flow" value={formatCurrency(summary.net_cash_flow)} icon={CreditCard} eyebrow="Net Position" tone={Number(summary.net_cash_flow) >= 0 ? "info" : "danger"} />
-            <OpsSummaryCard label="Pending Petty Cash" value={String(summary.pending_petty_cash_count)} icon={CreditCard} eyebrow="Review Queue" tone="warning" helper="Pending requests still need finance review." />
-            <OpsSummaryCard label="Supplier Payments" value={formatCurrency(summary.supplier_payments_total)} icon={Building2} eyebrow="Procurement" helper="Supplier payment saves can create linked transactions." />
+            </div>
           </section>
 
-          <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-subtle)]">
-            Petty cash and supplier-payment actions can affect linked finance transactions. Double-check account and amount fields before saving.
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <SummaryCard
+              label="Cash / Bank Balance"
+              value={formatCurrency(summary.total_cash_bank_balance)}
+              helper="Live liquidity view"
+              icon={Wallet}
+            />
+            <SummaryCard
+              label="Total Income"
+              value={formatCurrency(summary.total_income)}
+              helper="Selected date range"
+              icon={Landmark}
+            />
+            <SummaryCard
+              label="Total Expense"
+              value={formatCurrency(summary.total_expense)}
+              helper="Selected date range"
+              icon={ReceiptText}
+            />
+            <SummaryCard
+              label="Net Cash Flow"
+              value={formatCurrency(summary.net_cash_flow)}
+              helper="Income minus expense"
+              icon={CreditCard}
+            />
+            <SummaryCard
+              label="Pending Petty Cash"
+              value={String(summary.pending_petty_cash_count)}
+              helper="Review queue"
+              icon={CreditCard}
+            />
+            <SummaryCard
+              label="Supplier Payments"
+              value={formatCurrency(summary.supplier_payments_total)}
+              helper="Recorded through finance"
+              icon={Building2}
+            />
+          </section>
+
+          <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-soft)]">
+            Petty cash approvals and supplier payments can create linked finance transactions and change account balances immediately. Double-check account and amount fields before saving.
           </div>
 
-          <FormCard title="Recent transactions" description="This list stays lightweight for day-to-day monitoring while the summary cards respect the selected date range.">
-            <div className="space-y-3">
+          <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+            <SectionHeader title="Recent Transactions" description="Lightweight operational view of the latest recorded transactions." />
+            <div className="mt-6">
               {summary.recent_transactions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
-                  No finance transactions yet.
-                </div>
+                <EmptyState title="No finance transactions yet" description="Transactions will appear here as the workspace is used." />
               ) : (
-                summary.recent_transactions.map((transaction) => (
-                  <div key={transaction.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="font-semibold text-slate-950">{transaction.transaction_number}</p>
-                        <p className="mt-1 text-slate-500">
-                          {transaction.account.name}
-                          {transaction.related_account ? ` -> ${transaction.related_account.name}` : ""}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-slate-950">{formatCurrency(transaction.amount)}</p>
-                        <p className="mt-1 text-slate-500">{formatLabel(transaction.transaction_type)}</p>
-                      </div>
+                <DataTable columns={["Number", "Type", "Account", "Amount", "When"]}>
+                  {summary.recent_transactions.map((transaction) => (
+                    <div key={transaction.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 lg:grid-cols-5">
+                      <span className="font-medium text-slate-950">{getTransactionNumber(transaction)}</span>
+                      <span>
+                        <StatusBadge status={getTransactionType(transaction)} label={formatLabel(getTransactionType(transaction))} />
+                      </span>
+                      <span>
+                        {getTransactionAccountName(transaction)}
+                        {getTransactionRelatedName(transaction) ? ` -> ${getTransactionRelatedName(transaction)}` : ""}
+                      </span>
+                      <span>{formatCurrency(transaction.amount)}</span>
+                      <span>{formatDateTime(getTransactionDate(transaction))}</span>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </DataTable>
               )}
             </div>
-          </FormCard>
+          </section>
         </div>
       ) : null}
 
       {activeTab === "accounts" ? (
-        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <FormCard title={editingAccountId ? "Edit account" : "Create account"} description="Track practical cash, bank, mobile banking, receivable, payable, income, and expense buckets.">
-            <form onSubmit={handleAccountSubmit} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Name</span>
-                  <input value={accountForm.name} onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required />
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Code</span>
-                  <input value={accountForm.code} onChange={(event) => setAccountForm((current) => ({ ...current, code: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required />
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Account type</span>
-                  <select value={accountForm.account_type} onChange={(event) => setAccountForm((current) => ({ ...current, account_type: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
-                    {["cash", "bank", "mobile_banking", "receivable", "payable", "expense", "income", "other"].map((value) => (
-                      <option key={value} value={value}>{formatLabel(value)}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Opening balance</span>
-                  <input type="number" step="0.01" value={accountForm.opening_balance} onChange={(event) => setAccountForm((current) => ({ ...current, opening_balance: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" disabled={Boolean(editingAccountId)} />
-                </label>
-                <label className="block md:col-span-2">
-                  <span className="mb-2 block text-sm font-medium text-slate-700">Notes</span>
-                  <textarea rows={3} value={accountForm.notes} onChange={(event) => setAccountForm((current) => ({ ...current, notes: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
-                </label>
-                <label className="inline-flex items-center gap-3 text-sm font-medium text-slate-700">
-                  <input type="checkbox" checked={accountForm.is_active} onChange={(event) => setAccountForm((current) => ({ ...current, is_active: event.target.checked }))} className="h-4 w-4 rounded border-slate-300" />
-                  Account is active
-                </label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="submit" disabled={isSavingAccount} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
-                  {isSavingAccount ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {editingAccountId ? "Save account" : "Create account"}
-                </button>
-                {editingAccountId ? (
-                  <button type="button" onClick={() => { setEditingAccountId(null); setAccountForm(initialAccountForm); }} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                    Cancel edit
-                  </button>
-                ) : null}
-              </div>
-            </form>
-          </FormCard>
-
-          <FormCard title="Accounts" description="Export the currently loaded account list or edit/deactivate accounts in place.">
-            <div className="mb-4 flex justify-end">
-              <button type="button" onClick={() => downloadCsv("accounts.csv", ["Name", "Code", "Type", "Opening Balance", "Current Balance", "Active", "Notes"], accounts.map((account) => [account.name, account.code, account.account_type, account.opening_balance, account.current_balance, account.is_active ? "Yes" : "No", account.notes]))} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+          <SectionHeader
+            title="Accounts"
+            description="Manage operational cash, bank, mobile, asset, and liability accounts."
+            action={
+              <button
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    "accounts.csv",
+                    ["Name", "Code", "Type", "Category", "Balance", "Status", "Created At"],
+                    accounts.map((account) => [
+                      account.name,
+                      account.code,
+                      getAccountType(account),
+                      account.category,
+                      getAccountBalance(account),
+                      account.status || (account.is_active ? "active" : "inactive"),
+                      account.createdAt || account.created_at,
+                    ]),
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
                 <Download className="h-4 w-4" />
                 Accounts CSV
               </button>
-            </div>
-            <div className="space-y-3">
-              {accounts.map((account) => (
-                <div key={account.id} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-950">{account.name}</h3>
-                      <p className="mt-1 text-sm text-slate-500">{account.code} · {formatLabel(account.account_type)}</p>
-                      <p className="mt-2 text-sm text-slate-600">{account.notes || "No notes"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-950">{formatCurrency(account.current_balance)}</p>
-                      <p className="mt-1 text-sm text-slate-500">{account.is_active ? "Active" : "Inactive"}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => populateAccountForm(account)} className="rounded-full border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white">Edit</button>
-                    {account.is_active ? (
-                      <button type="button" onClick={() => void handleDeactivateAccount(account.id)} disabled={busyId === account.id} className="rounded-full border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60">Deactivate</button>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </FormCard>
-        </div>
-      ) : null}
-
-      {activeTab === "transactions" ? (
-        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <FormCard title="Create transaction" description="Record direct income, expense, transfer, refund, customer payment, and adjustment activity.">
-            <form onSubmit={handleTransactionSubmit} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Transaction number</span><input value={transactionForm.transaction_number} onChange={(event) => setTransactionForm((current) => ({ ...current, transaction_number: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Account</span><select value={transactionForm.account_id} onChange={(event) => setTransactionForm((current) => ({ ...current, account_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required><option value="">Select account</option>{accounts.filter((item) => item.is_active).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Transaction type</span><select value={transactionForm.transaction_type} onChange={(event) => { const value = event.target.value; setTransactionForm((current) => ({ ...current, transaction_type: value, direction: value === "transfer" ? "out" : value === "income" || value === "customer_payment" ? "in" : current.direction })); }} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">{["income", "expense", "transfer", "supplier_payment", "customer_payment", "refund", "petty_cash", "adjustment"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Direction</span><select value={transactionForm.direction} onChange={(event) => setTransactionForm((current) => ({ ...current, direction: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="in">In</option><option value="out">Out</option></select></label>
-                {transactionForm.transaction_type === "transfer" ? (
-                  <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Destination account</span><select value={transactionForm.related_account_id} onChange={(event) => setTransactionForm((current) => ({ ...current, related_account_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required><option value="">Select destination account</option>{accounts.filter((item) => item.is_active).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-                ) : null}
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Category</span><input value={transactionForm.category} onChange={(event) => setTransactionForm((current) => ({ ...current, category: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Amount</span><input type="number" step="0.01" value={transactionForm.amount} onChange={(event) => setTransactionForm((current) => ({ ...current, amount: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Description</span><textarea rows={3} value={transactionForm.description} onChange={(event) => setTransactionForm((current) => ({ ...current, description: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Transaction date</span><input type="datetime-local" value={transactionForm.transaction_date} onChange={(event) => setTransactionForm((current) => ({ ...current, transaction_date: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-              </div>
-              <button type="submit" disabled={isSavingTransaction} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{isSavingTransaction ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Create transaction</button>
-            </form>
-          </FormCard>
-
-          <FormCard title="Transactions" description="Filter operational finance activity and export the loaded result set to CSV.">
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Account</span><select value={transactionFilters.account_id} onChange={(event) => setTransactionFilters((current) => ({ ...current, account_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="">All accounts</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Transaction type</span><select value={transactionFilters.transaction_type} onChange={(event) => setTransactionFilters((current) => ({ ...current, transaction_type: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="">All types</option>{["income", "expense", "transfer", "supplier_payment", "customer_payment", "refund", "petty_cash", "adjustment"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Direction</span><select value={transactionFilters.direction} onChange={(event) => setTransactionFilters((current) => ({ ...current, direction: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="">All directions</option><option value="in">In</option><option value="out">Out</option></select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Search</span><input value={transactionFilters.search} onChange={(event) => setTransactionFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Number, description, or category" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Date from</span><input type="datetime-local" value={transactionFilters.date_from} onChange={(event) => setTransactionFilters((current) => ({ ...current, date_from: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Date to</span><input type="datetime-local" value={transactionFilters.date_to} onChange={(event) => setTransactionFilters((current) => ({ ...current, date_to: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => void handleTransactionRefresh()} disabled={isRefreshingTransactions} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
-                  {isRefreshingTransactions ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Refresh
-                </button>
-                <button type="button" onClick={() => { setTransactionFilters(initialTransactionFilters); void handleTransactionRefresh(initialTransactionFilters); }} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Clear filters</button>
-                <button type="button" onClick={() => downloadCsv("transactions.csv", ["Transaction Number", "Type", "Direction", "Account", "Related Account", "Amount", "Category", "Reference Type", "Reference ID", "Description", "Transaction Date"], transactions.map((transaction) => [transaction.transaction_number, transaction.transaction_type, transaction.direction, transaction.account.name, transaction.related_account?.name || "", transaction.amount, transaction.category, transaction.reference_type, transaction.reference_id, transaction.description, transaction.transaction_date]))} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                  <Download className="h-4 w-4" />
-                  Transactions CSV
-                </button>
-              </div>
-              <div className="space-y-3">
-                {transactions.map((transaction) => (
-                  <div key={transaction.id} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-semibold text-slate-950">{transaction.transaction_number}</h3>
-                        <p className="mt-1 text-sm text-slate-500">{formatLabel(transaction.transaction_type)} · {formatLabel(transaction.direction)}</p>
-                        <p className="mt-2 text-sm text-slate-600">{transaction.account.name}{transaction.related_account ? ` -> ${transaction.related_account.name}` : ""}</p>
-                        <p className="mt-2 text-sm text-slate-500">{transaction.description || "No description"}</p>
-                        {transaction.reference_type ? (
-                          <p className="mt-1 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
-                            {transaction.reference_type}: {transaction.reference_id}
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-slate-950">{formatCurrency(transaction.amount)}</p>
-                        <p className="mt-1 text-sm text-slate-500">{formatDateTime(transaction.transaction_date)}</p>
-                      </div>
+            }
+          />
+          <div className="mt-6">
+            {accounts.length === 0 ? (
+              <EmptyState title="No accounts yet" description="Add an account to start recording finance activity." />
+            ) : (
+              <DataTable columns={["Account", "Code", "Type", "Category", "Balance", "Status", "Actions"]}>
+                {accounts.map((account) => (
+                  <div key={account.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 xl:grid-cols-7">
+                    <span className="font-medium text-slate-950">{account.name}</span>
+                    <span>{account.code || "Auto"}</span>
+                    <span>{formatLabel(getAccountType(account))}</span>
+                    <span>{formatLabel(account.category || "general")}</span>
+                    <span className="font-semibold text-slate-950">{formatCurrency(getAccountBalance(account))}</span>
+                    <span>
+                      <StatusBadge
+                        status={account.status || (account.is_active ? "active" : "inactive")}
+                        label={formatLabel(account.status || (account.is_active ? "active" : "inactive"))}
+                      />
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditAccountModal(account)}
+                        className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Edit
+                      </button>
+                      {account.is_active ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeactivateAccount(account.id)}
+                          disabled={busyId === account.id}
+                          className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+                        >
+                          Deactivate
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 ))}
-              </div>
+              </DataTable>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "transactions" ? (
+        <div className="space-y-5">
+          <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+            <SectionHeader title="Transactions" description="Filter operational income, expense, and transfer rows before export." />
+            <div className="mt-6 grid gap-3 xl:grid-cols-3">
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Search</span>
+                <input
+                  value={transactionFilters.search}
+                  onChange={(event) => setTransactionFilters((current) => ({ ...current, search: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  placeholder="Number, note, reference..."
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Account</span>
+                <select
+                  value={transactionFilters.account_id}
+                  onChange={(event) => setTransactionFilters((current) => ({ ...current, account_id: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All Accounts</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Type</span>
+                <select
+                  value={transactionFilters.transaction_type}
+                  onChange={(event) =>
+                    setTransactionFilters((current) => ({ ...current, transaction_type: event.target.value }))
+                  }
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All Types</option>
+                  {["income", "expense", "transfer"].map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Direction</span>
+                <select
+                  value={transactionFilters.direction}
+                  onChange={(event) => setTransactionFilters((current) => ({ ...current, direction: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All Directions</option>
+                  {["in", "out"].map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Date From</span>
+                <input
+                  type="datetime-local"
+                  value={transactionFilters.date_from}
+                  onChange={(event) => setTransactionFilters((current) => ({ ...current, date_from: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Date To</span>
+                <input
+                  type="datetime-local"
+                  value={transactionFilters.date_to}
+                  onChange={(event) => setTransactionFilters((current) => ({ ...current, date_to: event.target.value }))}
+                  className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
             </div>
-          </FormCard>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleTransactionRefresh()}
+                disabled={isRefreshingTransactions}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isRefreshingTransactions ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTransactionFilters(initialTransactionFilters);
+                  void handleTransactionRefresh(initialTransactionFilters);
+                }}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Clear Filters
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadCsv(
+                    "transactions.csv",
+                    ["Transaction Number", "Type", "Direction", "Account", "Related Account", "Amount", "Category", "Sub Category", "Date", "Notes"],
+                    transactions.map((transaction) => [
+                      getTransactionNumber(transaction),
+                      getTransactionType(transaction),
+                      transaction.direction,
+                      getTransactionAccountName(transaction),
+                      getTransactionRelatedName(transaction),
+                      transaction.amount,
+                      transaction.category,
+                      transaction.subCategory,
+                      getTransactionDate(transaction),
+                      transaction.notes || transaction.description,
+                    ]),
+                  )
+                }
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <Download className="h-4 w-4" />
+                Transactions CSV
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+            <SectionHeader title="Transaction List" description="Current filtered finance transactions." />
+            <div className="mt-6">
+              {transactions.length === 0 ? (
+                <EmptyState title="No transactions found" description="Try a different filter or create the first transaction." />
+              ) : (
+                <DataTable columns={["Number", "Type", "Account", "Amount", "Date", "Note"]}>
+                  {transactions.map((transaction) => (
+                    <div key={transaction.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-6">
+                      <span className="font-medium text-slate-950">{getTransactionNumber(transaction)}</span>
+                      <span>
+                        <StatusBadge status={getTransactionType(transaction)} label={formatLabel(getTransactionType(transaction))} />
+                      </span>
+                      <span>
+                        {getTransactionAccountName(transaction)}
+                        {getTransactionRelatedName(transaction) ? ` -> ${getTransactionRelatedName(transaction)}` : ""}
+                      </span>
+                      <span className="font-semibold text-slate-950">{formatCurrency(transaction.amount)}</span>
+                      <span>{formatDateTime(getTransactionDate(transaction))}</span>
+                      <span>{transaction.notes || transaction.description || "No note"}</span>
+                    </div>
+                  ))}
+                </DataTable>
+              )}
+            </div>
+          </section>
         </div>
       ) : null}
 
       {activeTab === "petty-cash" ? (
-        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <FormCard title="Create petty cash entry" description="Approved or settled entries with a linked account will create a finance transaction automatically.">
-            <form onSubmit={handlePettyCashSubmit} className="space-y-4">
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                Approving or settling will create a petty cash transaction and reduce the selected account balance.
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Entry number</span><input value={pettyCashForm.entry_number} onChange={(event) => setPettyCashForm((current) => ({ ...current, entry_number: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Account</span><select value={pettyCashForm.account_id} onChange={(event) => setPettyCashForm((current) => ({ ...current, account_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="">No linked account</option>{accounts.filter((item) => item.is_active).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Entry type</span><input value={pettyCashForm.entry_type} onChange={(event) => setPettyCashForm((current) => ({ ...current, entry_type: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Amount</span><input type="number" step="0.01" value={pettyCashForm.amount} onChange={(event) => setPettyCashForm((current) => ({ ...current, amount: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Spent by</span><input value={pettyCashForm.spent_by} onChange={(event) => setPettyCashForm((current) => ({ ...current, spent_by: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Status</span><select value={pettyCashForm.status} onChange={(event) => setPettyCashForm((current) => ({ ...current, status: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">{["pending", "approved", "rejected", "settled"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}</select></label>
-                <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Purpose</span><textarea rows={3} value={pettyCashForm.purpose} onChange={(event) => setPettyCashForm((current) => ({ ...current, purpose: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Entry date</span><input type="datetime-local" value={pettyCashForm.entry_date} onChange={(event) => setPettyCashForm((current) => ({ ...current, entry_date: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-              </div>
-              <button type="submit" disabled={isSavingPettyCash} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{isSavingPettyCash ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Create petty cash entry</button>
-            </form>
-          </FormCard>
-
-          <FormCard title="Petty cash entries" description="Export the loaded petty cash entries and watch which rows already created finance transactions.">
-            <div className="mb-4 flex justify-end">
-              <button type="button" onClick={() => downloadCsv("petty-cash.csv", ["Entry Number", "Status", "Entry Type", "Account", "Amount", "Purpose", "Spent By", "Transaction Created", "Transaction ID", "Entry Date"], pettyCashEntries.map((entry) => [entry.entry_number, entry.status, entry.entry_type, entry.account?.name || "", entry.amount, entry.purpose, entry.spent_by, entry.transaction_created ? "Yes" : "No", entry.transaction_id, entry.entry_date]))} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                <Download className="h-4 w-4" />
-                Petty Cash CSV
-              </button>
-            </div>
-            <div className="space-y-3">
-              {pettyCashEntries.map((entry) => (
-                <div key={entry.id} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-950">{entry.entry_number}</h3>
-                      <p className="mt-1 text-sm text-slate-500">{entry.account?.name || "No linked account"} · {formatLabel(entry.status)}</p>
-                      <p className="mt-2 text-sm text-slate-600">{entry.purpose}</p>
-                      <p className="mt-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
-                        {entry.transaction_created ? `Transaction created: ${entry.transaction_id || "linked"}` : "No finance transaction yet"}
-                      </p>
+        <div className="space-y-5">
+          <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-soft)]">
+            Approving or settling petty cash with a linked account will create a finance transaction and reduce the selected account balance.
+          </div>
+          <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+            <SectionHeader
+              title="Petty Cash"
+              description="Track requests, approval states, and linked transaction creation."
+              action={
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadCsv(
+                      "petty-cash.csv",
+                      ["Entry Number", "Status", "Type", "Account", "Amount", "Purpose", "Spent By", "Transaction Created", "Date"],
+                      pettyCashEntries.map((entry) => [
+                        getPettyCashNumber(entry),
+                        entry.status,
+                        getPettyCashType(entry),
+                        entry.account?.name || "",
+                        entry.amount,
+                        entry.purpose,
+                        entry.spent_by,
+                        entry.transaction_created ? "Yes" : "No",
+                        getPettyCashDate(entry),
+                      ]),
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" />
+                  Petty Cash CSV
+                </button>
+              }
+            />
+            <div className="mt-6">
+              {pettyCashEntries.length === 0 ? (
+                <EmptyState title="No petty cash entries yet" description="Create the first petty cash request to start the review loop." />
+              ) : (
+                <DataTable columns={["Entry", "Status", "Account", "Amount", "Purpose", "Actions"]}>
+                  {pettyCashEntries.map((entry) => (
+                    <div key={entry.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-6">
+                      <div>
+                        <p className="font-medium text-slate-950">{getPettyCashNumber(entry)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatDateTime(getPettyCashDate(entry))}</p>
+                      </div>
+                      <span>
+                        <StatusBadge status={entry.status} label={formatLabel(entry.status)} />
+                      </span>
+                      <span>{entry.account?.name || "No linked account"}</span>
+                      <span className="font-semibold text-slate-950">{formatCurrency(entry.amount)}</span>
+                      <div>
+                        <p>{entry.purpose}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {entry.transaction_created ? `Transaction created: ${entry.transaction_id || "linked"}` : "No finance transaction yet"}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {["approved", "rejected", "settled"].map((status) => (
+                          <button
+                            key={status}
+                            type="button"
+                            onClick={() => void handlePettyCashStatusUpdate(entry, status)}
+                            disabled={busyId === entry.id || entry.status === status}
+                            className="rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            {formatLabel(status)}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-950">{formatCurrency(entry.amount)}</p>
-                      <p className="mt-1 text-sm text-slate-500">{formatDateTime(entry.entry_date)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {["approved", "rejected", "settled"].map((status) => (
-                      <button key={status} type="button" onClick={() => void handlePettyCashStatusUpdate(entry, status)} disabled={busyId === entry.id || entry.status === status} className="rounded-full border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white disabled:opacity-60">
-                        {formatLabel(status)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                  ))}
+                </DataTable>
+              )}
             </div>
-          </FormCard>
+          </section>
         </div>
       ) : null}
 
       {activeTab === "supplier-payments" ? (
-        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-          <FormCard title="Create supplier payment" description="Each supplier payment now records a linked finance transaction automatically.">
-            <form onSubmit={handleSupplierPaymentSubmit} className="space-y-4">
-              {selectedSupplierPaymentAccount ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Selected account balance: <span className="font-semibold text-slate-950">{formatCurrency(selectedSupplierPaymentAccount.current_balance)}</span>
-                </div>
-              ) : null}
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Supplier</span><select value={supplierPaymentForm.supplier_id} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, supplier_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="">Unlinked payment</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Account</span><select value={supplierPaymentForm.account_id} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, account_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required><option value="">Select account</option>{accounts.filter((item) => item.is_active).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Payment number</span><input value={supplierPaymentForm.payment_number} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, payment_number: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Amount</span><input type="number" step="0.01" value={supplierPaymentForm.amount} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, amount: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" required /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Payment method</span><input value={supplierPaymentForm.payment_method} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, payment_method: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block"><span className="mb-2 block text-sm font-medium text-slate-700">Reference</span><input value={supplierPaymentForm.reference} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, reference: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Notes</span><textarea rows={3} value={supplierPaymentForm.notes} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, notes: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-                <label className="block md:col-span-2"><span className="mb-2 block text-sm font-medium text-slate-700">Payment date</span><input type="datetime-local" value={supplierPaymentForm.payment_date} onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, payment_date: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" /></label>
-              </div>
-              <button type="submit" disabled={isSavingSupplierPayment} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">{isSavingSupplierPayment ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Create supplier payment</button>
-            </form>
-          </FormCard>
-
-          <FormCard title="Supplier payments" description="Review account balance impact and the linked transaction reference for each payment.">
-            <div className="mb-4 flex justify-end">
-              <button type="button" onClick={() => downloadCsv("supplier-payments.csv", ["Payment Number", "Supplier", "Account", "Amount", "Payment Method", "Reference", "Transaction Number", "Transaction ID", "Payment Date"], supplierPayments.map((payment) => [payment.payment_number, payment.supplier?.name || "", payment.account.name, payment.amount, payment.payment_method, payment.reference, payment.transaction?.transaction_number || "", payment.transaction_id, payment.payment_date]))} className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                <Download className="h-4 w-4" />
-                Supplier Payments CSV
-              </button>
-            </div>
-            <div className="space-y-3">
-              {supplierPayments.map((payment) => (
-                <div key={payment.id} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-950">{payment.payment_number}</h3>
-                      <p className="mt-1 text-sm text-slate-500">{payment.supplier?.name || "Unlinked supplier"} · {payment.account.name}</p>
-                      <p className="mt-2 text-sm text-slate-600">{payment.payment_method || "No payment method"}{payment.reference ? ` · ${payment.reference}` : ""}</p>
-                      <p className="mt-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
-                        Transaction: {payment.transaction?.transaction_number || payment.transaction_id || "Pending"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Account balance after payment: {formatCurrency(payment.account.current_balance)}
-                      </p>
+        <div className="space-y-5">
+          <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm leading-6 text-amber-800 shadow-[var(--shadow-soft)]">
+            Supplier payments record a linked finance transaction automatically and reduce the chosen account balance immediately after save.
+          </div>
+          <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+            <SectionHeader
+              title="Supplier Payments"
+              description="Review procurement-related payments and their linked transaction references."
+              action={
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadCsv(
+                      "supplier-payments.csv",
+                      ["Voucher", "Supplier", "Account", "Amount", "Method", "Reference", "Transaction", "Date"],
+                      supplierPayments.map((payment) => [
+                        getSupplierPaymentNumber(payment),
+                        payment.supplier?.supplierName || payment.supplier?.name || "",
+                        payment.account.name,
+                        payment.paidAmount || payment.amount,
+                        payment.paymentType || payment.payment_method,
+                        payment.reference,
+                        payment.transaction?.transactionNumber || payment.transaction?.transaction_number || payment.transaction_id,
+                        getSupplierPaymentDate(payment),
+                      ]),
+                    )
+                  }
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <Download className="h-4 w-4" />
+                  Supplier Payments CSV
+                </button>
+              }
+            />
+            <div className="mt-6">
+              {supplierPayments.length === 0 ? (
+                <EmptyState title="No supplier payments yet" description="Create a supplier payment when procurement spending needs to be recorded." />
+              ) : (
+                <DataTable columns={["Voucher", "Supplier", "Account", "Amount", "Method", "Transaction"]}>
+                  {supplierPayments.map((payment) => (
+                    <div key={payment.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-6">
+                      <div>
+                        <p className="font-medium text-slate-950">{getSupplierPaymentNumber(payment)}</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatDateTime(getSupplierPaymentDate(payment))}</p>
+                      </div>
+                      <span>{payment.supplier?.supplierName || payment.supplier?.name || "Unlinked supplier"}</span>
+                      <span>{payment.account.name}</span>
+                      <span className="font-semibold text-slate-950">{formatCurrency(payment.paidAmount || payment.amount)}</span>
+                      <div>
+                        <p>{payment.paymentType || payment.payment_method || "No method"}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {payment.reference ? `Ref: ${payment.reference}` : "No reference"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-950">
+                          {payment.transaction?.transactionNumber || payment.transaction?.transaction_number || payment.transaction_id || "Pending"}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Balance after payment: {formatCurrency(getAccountBalance(payment.account))}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-slate-950">{formatCurrency(payment.amount)}</p>
-                      <p className="mt-1 text-sm text-slate-500">{formatDateTime(payment.payment_date)}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  ))}
+                </DataTable>
+              )}
             </div>
-          </FormCard>
+          </section>
         </div>
       ) : null}
 
-      <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-[var(--shadow-soft)]">
-        Need an invoice-linked payment flow next? The current finance polish keeps supplier payments and petty cash operationally consistent without turning this phase into full accounting. <Link href="/dashboard/reports" className="font-semibold text-slate-950 underline-offset-4 hover:underline">Open reports</Link>
-      </div>
+      {showAccountModal ? (
+        <ControlModal
+          title={editingAccountId ? "Edit Account" : "Add Account"}
+          description="Use the v1-style finance loop to manage operational accounts without leaving the page."
+          onClose={() => setShowAccountModal(false)}
+        >
+          <form onSubmit={handleAccountSubmit} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Account Name</span>
+                <input
+                  required
+                  value={accountForm.name}
+                  onChange={(event) => setAccountForm((current) => ({ ...current, name: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Code</span>
+                <input
+                  value={accountForm.code}
+                  onChange={(event) => setAccountForm((current) => ({ ...current, code: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  placeholder="Leave blank to auto-generate"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Type</span>
+                <select
+                  value={accountForm.type}
+                  onChange={(event) => setAccountForm((current) => ({ ...current, type: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  {["cash", "bank", "mobile", "asset", "liability", "equity"].map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Category</span>
+                <select
+                  value={accountForm.category}
+                  onChange={(event) => setAccountForm((current) => ({ ...current, category: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  {["assets", "liabilities", "equity", "income", "cogs", "expenses"].map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Opening Balance</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={accountForm.opening_balance}
+                  onChange={(event) =>
+                    setAccountForm((current) => ({ ...current, opening_balance: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={accountForm.active}
+                  onChange={(event) => setAccountForm((current) => ({ ...current, active: event.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Active account
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Notes</span>
+                <textarea
+                  rows={3}
+                  value={accountForm.notes}
+                  onChange={(event) => setAccountForm((current) => ({ ...current, notes: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAccountModal(false)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingAccount}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSavingAccount ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {editingAccountId ? "Save Account" : "Create Account"}
+              </button>
+            </div>
+          </form>
+        </ControlModal>
+      ) : null}
+
+      {showTransactionModal ? (
+        <ControlModal
+          title="Add Transaction"
+          description="Record a finance transaction without leaving the current workspace."
+          onClose={() => setShowTransactionModal(false)}
+        >
+          <form onSubmit={handleTransactionSubmit} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Transaction Number</span>
+                <input
+                  value={transactionForm.transactionNumber}
+                  onChange={(event) =>
+                    setTransactionForm((current) => ({ ...current, transactionNumber: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  placeholder="Leave blank to auto-generate"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Type</span>
+                <select
+                  value={transactionForm.type}
+                  onChange={(event) => setTransactionForm((current) => ({ ...current, type: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  {["income", "expense", "transfer"].map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">
+                  {transactionForm.type === "transfer" ? "From Account" : "Account"}
+                </span>
+                <select
+                  required
+                  value={transactionForm.accountId}
+                  onChange={(event) => setTransactionForm((current) => ({ ...current, accountId: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">Select account</option>
+                  {activeAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {transactionForm.type === "transfer" ? (
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-700">To Account</span>
+                  <select
+                    required
+                    value={transactionForm.toAccountId}
+                    onChange={(event) =>
+                      setTransactionForm((current) => ({ ...current, toAccountId: event.target.value }))
+                    }
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  >
+                    <option value="">Select account</option>
+                    {activeAccounts
+                      .filter((account) => account.id !== transactionForm.accountId)
+                      .map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-700">Direction</span>
+                  <select
+                    value={transactionForm.direction}
+                    onChange={(event) => setTransactionForm((current) => ({ ...current, direction: event.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  >
+                    {["in", "out"].map((value) => (
+                      <option key={value} value={value}>
+                        {formatLabel(value)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Category</span>
+                <input
+                  value={transactionForm.category}
+                  onChange={(event) => setTransactionForm((current) => ({ ...current, category: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Sub Category</span>
+                <input
+                  value={transactionForm.subCategory}
+                  onChange={(event) =>
+                    setTransactionForm((current) => ({ ...current, subCategory: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Amount</span>
+                <input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={transactionForm.amount}
+                  onChange={(event) => setTransactionForm((current) => ({ ...current, amount: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Transaction Date</span>
+                <input
+                  type="datetime-local"
+                  value={transactionForm.date}
+                  onChange={(event) => setTransactionForm((current) => ({ ...current, date: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Notes</span>
+                <textarea
+                  rows={3}
+                  value={transactionForm.notes}
+                  onChange={(event) => setTransactionForm((current) => ({ ...current, notes: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowTransactionModal(false)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingTransaction}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSavingTransaction ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Save Transaction
+              </button>
+            </div>
+          </form>
+        </ControlModal>
+      ) : null}
+
+      {showPettyCashModal ? (
+        <ControlModal
+          title="Add Petty Cash Entry"
+          description="Approved or settled entries with a linked account can create a finance transaction automatically."
+          onClose={() => setShowPettyCashModal(false)}
+        >
+          <form onSubmit={handlePettyCashSubmit} className="space-y-4">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Approving or settling will create a petty cash transaction and reduce the selected account balance.
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Entry Number</span>
+                <input
+                  value={pettyCashForm.entryNumber}
+                  onChange={(event) =>
+                    setPettyCashForm((current) => ({ ...current, entryNumber: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  placeholder="Leave blank to auto-generate"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Account</span>
+                <select
+                  value={pettyCashForm.accountId}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, accountId: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">No linked account</option>
+                  {activeAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Type</span>
+                <input
+                  value={pettyCashForm.type}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, type: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Amount</span>
+                <input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={pettyCashForm.amount}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, amount: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Spent By</span>
+                <input
+                  value={pettyCashForm.spentBy}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, spentBy: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Status</span>
+                <select
+                  value={pettyCashForm.status}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, status: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  {["pending", "approved", "rejected", "settled"].map((value) => (
+                    <option key={value} value={value}>
+                      {formatLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Purpose</span>
+                <textarea
+                  required
+                  rows={3}
+                  value={pettyCashForm.purpose}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, purpose: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Note</span>
+                <textarea
+                  rows={2}
+                  value={pettyCashForm.note}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, note: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Entry Date</span>
+                <input
+                  type="datetime-local"
+                  value={pettyCashForm.date}
+                  onChange={(event) => setPettyCashForm((current) => ({ ...current, date: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowPettyCashModal(false)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingPettyCash}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSavingPettyCash ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Save Entry
+              </button>
+            </div>
+          </form>
+        </ControlModal>
+      ) : null}
+
+      {showSupplierPaymentModal ? (
+        <ControlModal
+          title="Add Supplier Payment"
+          description="Supplier payments create linked finance transactions automatically and reduce the chosen account balance."
+          onClose={() => setShowSupplierPaymentModal(false)}
+        >
+          <form onSubmit={handleSupplierPaymentSubmit} className="space-y-4">
+            {selectedSupplierPaymentAccount ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                Selected account balance:{" "}
+                <span className="font-semibold text-slate-950">{formatCurrency(getAccountBalance(selectedSupplierPaymentAccount))}</span>
+              </div>
+            ) : null}
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Supplier</span>
+                <select
+                  value={supplierPaymentForm.supplierId}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, supplierId: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">Unlinked payment</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.supplierName || supplier.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Account</span>
+                <select
+                  required
+                  value={supplierPaymentForm.accountId}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, accountId: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">Select account</option>
+                  {activeAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Voucher Number</span>
+                <input
+                  value={supplierPaymentForm.voucherNo}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, voucherNo: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                  placeholder="Leave blank to auto-generate"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Amount</span>
+                <input
+                  required
+                  type="number"
+                  step="0.01"
+                  value={supplierPaymentForm.amount}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, amount: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Payment Type</span>
+                <input
+                  value={supplierPaymentForm.paymentType}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, paymentType: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Reference</span>
+                <input
+                  value={supplierPaymentForm.reference}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, reference: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Notes / Remark</span>
+                <textarea
+                  rows={3}
+                  value={supplierPaymentForm.notes}
+                  onChange={(event) =>
+                    setSupplierPaymentForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Payment Date</span>
+                <input
+                  type="datetime-local"
+                  value={supplierPaymentForm.date}
+                  onChange={(event) => setSupplierPaymentForm((current) => ({ ...current, date: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSupplierPaymentModal(false)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingSupplierPayment}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {isSavingSupplierPayment ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Save Payment
+              </button>
+            </div>
+          </form>
+        </ControlModal>
+      ) : null}
     </div>
   );
 }

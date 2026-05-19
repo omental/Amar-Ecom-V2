@@ -33,9 +33,16 @@ async def list_salary_advances(
     db: DBSession,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    employee_id: UUID | None = None,
+    status: str | None = None,
 ) -> list[SalaryAdvance]:
     skip, limit = normalize_pagination(skip, limit)
-    result = await db.execute(_advance_query().order_by(SalaryAdvance.requested_at.desc()).offset(skip).limit(limit))
+    stmt = _advance_query()
+    if employee_id is not None:
+        stmt = stmt.where(SalaryAdvance.employee_id == employee_id)
+    if status:
+        stmt = stmt.where(SalaryAdvance.status == status.lower())
+    result = await db.execute(stmt.order_by(SalaryAdvance.requested_at.desc()).offset(skip).limit(limit))
     return list(result.scalars().all())
 
 

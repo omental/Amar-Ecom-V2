@@ -15,6 +15,11 @@ from app.services.activity_log_service import log_activity
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
+def _generate_employee_code(full_name: str) -> str:
+    stamp = "".join(ch for ch in full_name.upper() if ch.isalnum())[:4] or "EMP"
+    return f"EMP-{stamp}"
+
+
 def _employee_query():
     return select(Employee).options(
         selectinload(Employee.designation),
@@ -34,9 +39,25 @@ async def list_employees(
     db: DBSession,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    search: str | None = None,
+    employment_status: str | None = Query(default=None, alias="status"),
+    designation_id: UUID | None = None,
 ) -> list[Employee]:
     skip, limit = normalize_pagination(skip, limit)
-    result = await db.execute(_employee_query().order_by(Employee.created_at.desc()).offset(skip).limit(limit))
+    stmt = _employee_query()
+    if search:
+        token = f"%{search.strip()}%"
+        stmt = stmt.where(
+            Employee.full_name.ilike(token)
+            | Employee.email.ilike(token)
+            | Employee.phone.ilike(token)
+            | Employee.employee_code.ilike(token)
+        )
+    if employment_status:
+        stmt = stmt.where(Employee.employment_status == employment_status.lower())
+    if designation_id is not None:
+        stmt = stmt.where(Employee.designation_id == designation_id)
+    result = await db.execute(stmt.order_by(Employee.created_at.desc()).offset(skip).limit(limit))
     return list(result.scalars().all())
 
 
@@ -52,9 +73,12 @@ async def create_employee(
     request: Request,
     current_user: User = Depends(get_current_user),
 ) -> Employee:
-    await ensure_unique(db, Employee, "employee_code", employee_in.employee_code, "Employee code already exists")
+    employee_code = employee_in.employee_code or _generate_employee_code(employee_in.full_name)
+    await ensure_unique(db, Employee, "employee_code", employee_code, "Employee code already exists")
     await _validate_employee_links(db, designation_id=employee_in.designation_id, user_id=employee_in.user_id)
-    employee = Employee(**employee_in.model_dump())
+    payload = employee_in.model_dump()
+    payload["employee_code"] = employee_code
+    employee = Employee(**payload)
     db.add(employee)
     await db.flush()
     await log_activity(

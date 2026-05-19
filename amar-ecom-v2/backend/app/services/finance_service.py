@@ -51,6 +51,14 @@ def _generate_transaction_number(prefix: str) -> str:
     return f"{prefix}-{_now().strftime('%Y%m%d%H%M%S%f')}"
 
 
+def _generate_petty_cash_entry_number() -> str:
+    return f"PC-{_now().strftime('%Y%m%d%H%M%S%f')}"
+
+
+def _generate_supplier_payment_number() -> str:
+    return f"SP-{_now().strftime('%Y%m%d%H%M%S%f')}"
+
+
 async def _get_account(db: AsyncSession, account_id: UUID) -> Account:
     account = await fetch_one_or_404(db, select(Account).where(Account.id == account_id), "Account not found")
     if not account.is_active:
@@ -200,11 +208,12 @@ async def record_supplier_payment(
     *,
     created_by: User | None = None,
 ) -> SupplierPayment:
+    payment_number = payment_in.payment_number or _generate_supplier_payment_number()
     await ensure_unique(
         db,
         SupplierPayment,
         "payment_number",
-        payment_in.payment_number,
+        payment_number,
         "Payment number already exists",
     )
     account = await _get_account(db, payment_in.account_id)
@@ -215,6 +224,7 @@ async def record_supplier_payment(
 
     payment = SupplierPayment(
         **payment_in.model_dump(exclude={"payment_date"}),
+        payment_number=payment_number,
         payment_date=payment_in.payment_date or _now(),
     )
     db.add(payment)
@@ -279,11 +289,12 @@ async def record_petty_cash_entry(
     *,
     created_by: User | None = None,
 ) -> PettyCashEntry:
+    entry_number = entry_in.entry_number or _generate_petty_cash_entry_number()
     await ensure_unique(
         db,
         PettyCashEntry,
         "entry_number",
-        entry_in.entry_number,
+        entry_number,
         "Petty cash entry number already exists",
     )
     if entry_in.account_id is not None:
@@ -293,6 +304,7 @@ async def record_petty_cash_entry(
 
     entry = PettyCashEntry(
         **entry_in.model_dump(exclude={"entry_date"}),
+        entry_number=entry_number,
         entry_date=entry_in.entry_date or _now(),
     )
     db.add(entry)

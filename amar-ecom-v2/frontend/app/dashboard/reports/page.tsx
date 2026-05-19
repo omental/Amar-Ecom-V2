@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3,
   Boxes,
   CircleDollarSign,
   Download,
   Loader2,
   PackageSearch,
   RefreshCcw,
-  TrendingUp,
+  ShoppingCart,
+  Truck,
+  Users,
   Wifi,
 } from "lucide-react";
 
@@ -17,13 +18,6 @@ import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { LoadingState } from "@/components/ui/loading-state";
-import { OpsActionButton } from "@/components/ui/ops-action-button";
-import { OpsFilterBar } from "@/components/ui/ops-filter-bar";
-import { OpsPageHeader } from "@/components/ui/ops-page-header";
-import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
-import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
-import { OpsTabs } from "@/components/ui/ops-tabs";
-import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
@@ -177,6 +171,14 @@ type ReportsState = {
   recentOrderActivity: RecentOrderActivityItem[];
 };
 
+type ReportTabId = "intelligence" | "assets" | "people";
+
+const reportTabs: Array<{ id: ReportTabId; label: string }> = [
+  { id: "intelligence", label: "Intelligence & Assets" },
+  { id: "assets", label: "Asset Entry" },
+  { id: "people", label: "Human Capital" },
+];
+
 const initialFilters: FilterState = {
   start_date: "",
   end_date: "",
@@ -246,13 +248,99 @@ function getBarWidth(value: number, maxValue: number) {
   return Math.max(8, Math.round((value / maxValue) * 100));
 }
 
+function numberValue(value: number | string | null | undefined) {
+  return Number(value ?? 0);
+}
+
+function SectionHeader({
+  title,
+  description,
+  exportLabel,
+  onExport,
+}: {
+  title: string;
+  description: string;
+  exportLabel?: string;
+  onExport?: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <h2 className="text-lg font-bold tracking-tight text-slate-950">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+      {exportLabel && onExport ? (
+        <button
+          type="button"
+          onClick={onExport}
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+        >
+          <Download className="h-4 w-4" />
+          {exportLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SummaryTile({
+  label,
+  value,
+  helper,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  icon: typeof CircleDollarSign;
+}) {
+  return (
+    <div className="rounded-[26px] border border-slate-200 bg-white px-5 py-5 shadow-[var(--shadow-soft)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">{label}</p>
+          <p className="mt-3 text-2xl font-black tracking-tight text-slate-950">{value}</p>
+          <p className="mt-2 text-xs font-medium text-slate-500">{helper}</p>
+        </div>
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricBlock({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "success" | "warning" | "danger";
+}) {
+  const toneClasses = {
+    default: "border-slate-200 bg-slate-50 text-slate-700",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    warning: "border-amber-200 bg-amber-50 text-amber-800",
+    danger: "border-rose-200 bg-rose-50 text-rose-800",
+  };
+
+  return (
+    <div className={`rounded-2xl border px-4 py-4 ${toneClasses[tone]}`}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.22em]">{label}</p>
+      <p className="mt-2 text-lg font-bold tracking-tight">{value}</p>
+    </div>
+  );
+}
+
 export default function ReportsPage() {
   const [filters, setFilters] = useState<FilterState>(initialFilters);
   const [reports, setReports] = useState<ReportsState>(initialReportsState);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [activeReportTab, setActiveReportTab] = useState("all");
+  const [activeTab, setActiveTab] = useState<ReportTabId>("intelligence");
 
   const orderStatusMax = useMemo(
     () => Math.max(0, ...reports.orderStatus.map((item) => item.count)),
@@ -263,15 +351,9 @@ export default function ReportsPage() {
     [reports.paymentStatus],
   );
   const revenueMax = useMemo(
-    () => Math.max(0, ...reports.revenueByDate.map((item) => Number(item.total_sales ?? 0))),
+    () => Math.max(0, ...reports.revenueByDate.map((item) => numberValue(item.total_sales))),
     [reports.revenueByDate],
   );
-  const integrationSummary = reports.integrationSummary;
-  const showSales = activeReportTab === "all" || activeReportTab === "sales" || activeReportTab === "orders" || activeReportTab === "finance";
-  const showInventory = activeReportTab === "all" || activeReportTab === "inventory";
-  const showCustomers = activeReportTab === "all" || activeReportTab === "customers";
-  const showLogistics = activeReportTab === "all" || activeReportTab === "logistics";
-  const showIntegrations = activeReportTab === "all" || activeReportTab === "integrations";
 
   async function fetchReports(currentFilters: FilterState) {
     const dateQuery = buildDateQuery(currentFilters);
@@ -299,12 +381,12 @@ export default function ReportsPage() {
       api.get<CustomerReport>("/reports/customers"),
       api.get<LogisticsReport>("/reports/logistics"),
       api.get<IntegrationSummary>("/reports/integration-summary"),
-      api.get<CourierFailureLog[]>("/courier-integrations/logs?status=failed&limit=50").catch(() => []),
-      api.get<WooImportedOrder[]>("/orders?source=woocommerce&limit=100").catch(() => []),
-      api.get<TopProductReportItem[]>(appendLimit(`/reports/top-products${dateQuery}`, 10)),
-      api.get<LowStockProductReportItem[]>(appendLimit("/reports/low-stock-products", 10)),
+      api.get<CourierFailureLog[]>("/courier-integrations/logs?status=failed&limit=12").catch(() => []),
+      api.get<WooImportedOrder[]>("/orders?source=woocommerce&limit=12").catch(() => []),
+      api.get<TopProductReportItem[]>(appendLimit(`/reports/top-products${dateQuery}`, 8)),
+      api.get<LowStockProductReportItem[]>(appendLimit("/reports/low-stock-products", 8)),
       api.get<RevenueByDateReportItem[]>(appendLimit(`/reports/revenue-by-date${dateQuery}`, 14)),
-      api.get<RecentOrderActivityItem[]>(appendLimit(`/reports/recent-order-activity${dateQuery}`, 10)),
+      api.get<RecentOrderActivityItem[]>(appendLimit(`/reports/recent-order-activity${dateQuery}`, 8)),
     ]);
 
     return {
@@ -370,492 +452,458 @@ export default function ReportsPage() {
     }
   }
 
+  const showIntelligence = activeTab === "intelligence";
+  const showAssets = activeTab === "assets";
+  const showPeople = activeTab === "people";
+
   return (
-    <div className="space-y-5">
-      <section className="card-base px-6 py-7 sm:px-8">
-        <OpsPageHeader
-          eyebrow="Reporting Console"
-          title="Analytics and management workspace"
-          description="Review sales, revenue trends, order mix, low-stock risk, logistics totals, customer CRM health, and external integration status from one denser management surface."
-          meta={<span>Manual-safe reporting</span>}
-          actions={
-            <OpsActionButton type="button" variant="primary" onClick={() => void handleRefresh()} disabled={isRefreshing}>
+    <div className="min-w-0 space-y-5">
+      <section className="rounded-[32px] border border-slate-200 bg-white px-6 py-7 shadow-[var(--shadow-soft)] sm:px-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-slate-500">Analytics Workspace</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950">Reports</h1>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              Review sales, assets, customer mix, logistics pressure, and recent movement trends in the tighter v1 reporting loop.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setFilters(initialFilters)}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Clear Dates
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
               {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-              Refresh reports
-            </OpsActionButton>
-          }
-        />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+          <label className="block">
+            <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Date From</span>
+            <input
+              type="date"
+              value={filters.start_date}
+              onChange={(event) => setFilters((current) => ({ ...current, start_date: event.target.value }))}
+              className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Date To</span>
+            <input
+              type="date"
+              value={filters.end_date}
+              onChange={(event) => setFilters((current) => ({ ...current, end_date: event.target.value }))}
+              className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+            />
+          </label>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing}
+              className="w-full rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 lg:w-auto"
+            >
+              Apply Range
+            </button>
+          </div>
+        </div>
       </section>
 
-      <OpsFilterBar
-        title="Report Filters"
-        description="Keep date filters and report group switching close to the top so operators can move between sales, inventory, CRM, logistics, and integration slices quickly."
-      >
-        <label className="block">
-          <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Start date</span>
-          <input
-            type="date"
-            value={filters.start_date}
-            onChange={(event) => setFilters((current) => ({ ...current, start_date: event.target.value }))}
-            className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-[var(--color-accent)]"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-500">End date</span>
-          <input
-            type="date"
-            value={filters.end_date}
-            onChange={(event) => setFilters((current) => ({ ...current, end_date: event.target.value }))}
-            className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm text-[var(--color-txt-pri)] outline-none transition focus:border-[var(--color-accent)]"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => setFilters(initialFilters)}
-          className="ops-filter-chip"
-        >
-          Clear dates
-        </button>
-      </OpsFilterBar>
-
-      <OpsTabs
-        tabs={[
-          { id: "all", label: "All Reports" },
-          { id: "sales", label: "Sales" },
-          { id: "orders", label: "Orders" },
-          { id: "inventory", label: "Inventory" },
-          { id: "customers", label: "Customers" },
-          { id: "logistics", label: "Logistics" },
-          { id: "finance", label: "Finance" },
-          { id: "integrations", label: "Integrations" },
-        ]}
-        activeTab={activeReportTab}
-        onChange={setActiveReportTab}
-      />
+      <section className="overflow-x-auto rounded-[28px] border border-slate-200 bg-white p-2 shadow-[var(--shadow-soft)]">
+        <div className="flex min-w-max gap-2">
+          {reportTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-[22px] px-5 py-3 text-sm font-bold transition ${
+                activeTab === tab.id
+                  ? "bg-slate-950 text-white"
+                  : "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {error ? <ErrorAlert message={error} /> : null}
       {isLoading ? <LoadingState label="Loading reports..." /> : null}
 
       {!isLoading && reports.salesSummary && reports.inventoryReport && reports.customerReport && reports.logisticsReport ? (
         <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <OpsSummaryCard
-              eyebrow="Top Metric"
-              label="Total sales"
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
+            <SummaryTile
+              label="Total Sales"
               value={formatCurrency(reports.salesSummary.total_sales)}
               helper={`${reports.salesSummary.total_orders} orders in range`}
               icon={CircleDollarSign}
-              tone="success"
             />
-            <OpsSummaryCard
-              eyebrow="Top Metric"
-              label="Average order value"
-              value={formatCurrency(reports.salesSummary.average_order_value)}
-              helper={`${reports.salesSummary.paid_orders} paid orders`}
-              icon={TrendingUp}
-              tone="info"
+            <SummaryTile
+              label="Total Orders"
+              value={String(reports.salesSummary.total_orders)}
+              helper={`${reports.salesSummary.paid_orders} paid`}
+              icon={ShoppingCart}
             />
-            <OpsSummaryCard
-              eyebrow="Top Metric"
-              label="Inventory value"
+            <SummaryTile
+              label="Inventory Value"
               value={formatCurrency(reports.inventoryReport.inventory_value_at_cost)}
               helper={`${reports.inventoryReport.total_stock_units} stock units`}
               icon={Boxes}
-              tone="warning"
             />
-            <OpsSummaryCard
-              eyebrow="Top Metric"
-              label="Collected COD"
-              value={formatCurrency(reports.logisticsReport.total_collected_amount)}
-              helper={`${reports.logisticsReport.unsettled_reconciliations} unsettled shipments`}
-              icon={Wifi}
-              tone="default"
+            <SummaryTile
+              label="Customers"
+              value={String(reports.customerReport.total_customers)}
+              helper={`${reports.customerReport.customers_with_follow_up} follow-up`}
+              icon={Users}
+            />
+            <SummaryTile
+              label="Shipments"
+              value={String(reports.logisticsReport.total_shipments)}
+              helper={`${reports.logisticsReport.unsettled_reconciliations} unsettled`}
+              icon={Truck}
+            />
+            <SummaryTile
+              label="Low Stock"
+              value={String(reports.inventoryReport.low_stock_count)}
+              helper={`${reports.inventoryReport.out_of_stock_count} out of stock`}
+              icon={PackageSearch}
             />
           </section>
 
-          {integrationSummary && showIntegrations ? (
-            <section className="card-base p-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <OpsPageHeader
-                  eyebrow="Integration Health"
-                  title="WooCommerce and Courier status"
-                  description="Keep management attention on safe external sync activity, failure counts, and last-sync visibility without turning integrations into background automation."
-                  meta={
-                    <div className="flex items-center gap-2">
-                      <OpsStatusBadge
-                        label={`${integrationSummary.pending_integration_actions} pending`}
-                        tone={integrationSummary.pending_integration_actions > 0 ? "warning" : "success"}
-                        dot
-                      />
-                    </div>
-                  }
+          {showIntelligence ? (
+            <div className="space-y-5">
+              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                <SectionHeader
+                  title="Sales Summary"
+                  description="Primary trading totals and order mix for the selected date window."
                 />
-                <div className="flex flex-wrap gap-3">
-                  <OpsActionButton
-                    type="button"
-                    onClick={() =>
+                <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <MetricBlock label="Total Sales" value={formatCurrency(reports.salesSummary.total_sales)} tone="success" />
+                  <MetricBlock label="Avg. Order Value" value={formatCurrency(reports.salesSummary.average_order_value)} />
+                  <MetricBlock label="Discount" value={formatCurrency(reports.salesSummary.total_discount)} />
+                  <MetricBlock label="Delivery Charge" value={formatCurrency(reports.salesSummary.total_delivery_charge)} />
+                  <MetricBlock label="Paid Orders" value={String(reports.salesSummary.paid_orders)} tone="success" />
+                  <MetricBlock label="Unpaid Orders" value={String(reports.salesSummary.unpaid_orders)} tone="warning" />
+                  <MetricBlock label="Cancelled Orders" value={String(reports.salesSummary.cancelled_orders)} tone="danger" />
+                  <MetricBlock label="Returned Orders" value={String(reports.salesSummary.returned_orders)} tone="danger" />
+                </div>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Revenue Overview"
+                    description="Date-grouped sales with a lightweight visual weight bar."
+                  />
+                  <div className="mt-6">
+                    {reports.revenueByDate.length === 0 ? (
+                      <EmptyState title="No revenue rows" description="Sales totals will appear here once orders exist." />
+                    ) : (
+                      <DataTable columns={["Date", "Orders", "Sales", "Weight"]}>
+                        {reports.revenueByDate.map((item) => (
+                          <div
+                            key={item.report_date}
+                            className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 lg:grid-cols-[140px_120px_160px_minmax(180px,1fr)] lg:items-center"
+                          >
+                            <span className="font-medium text-slate-950">{formatDate(item.report_date)}</span>
+                            <span>{item.order_count} orders</span>
+                            <span>{formatCurrency(item.total_sales)}</span>
+                            <div className="flex items-center gap-3">
+                              <div className="h-2 flex-1 rounded-full bg-slate-200">
+                                <div
+                                  className="h-2 rounded-full bg-slate-950"
+                                  style={{ width: `${getBarWidth(numberValue(item.total_sales), revenueMax)}%` }}
+                                />
+                              </div>
+                              <span className="w-12 text-right text-xs font-semibold text-slate-500">
+                                {getBarWidth(numberValue(item.total_sales), revenueMax)}%
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </DataTable>
+                    )}
+                  </div>
+                </article>
+
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Top Products"
+                    description="Best-selling products by quantity and revenue."
+                    exportLabel="Export CSV"
+                    onExport={() =>
                       downloadCsv(
-                        "integration-summary.csv",
-                        ["metric", "value"],
-                        [
-                          ["woocommerce_orders_count", integrationSummary.woocommerce_orders_count],
-                          ["woocommerce_products_count", integrationSummary.woocommerce_products_count],
-                          ["woo_recent_sync_failures", integrationSummary.woo_recent_sync_failures],
-                          ["woo_last_product_sync_at", integrationSummary.woo_last_product_sync_at],
-                          ["woo_last_order_sync_at", integrationSummary.woo_last_order_sync_at],
-                          ["courier_sent_count", integrationSummary.courier_sent_count],
-                          ["courier_recent_failures", integrationSummary.courier_recent_failures],
-                          ["courier_external_delivered_count", integrationSummary.courier_external_delivered_count],
-                          ["courier_external_failed_returned_count", integrationSummary.courier_external_failed_returned_count],
-                          ["pending_integration_actions", integrationSummary.pending_integration_actions],
-                        ],
-                      )
-                    }
-                  >
-                    <Download className="h-4 w-4" />
-                    Export Summary CSV
-                  </OpsActionButton>
-                  <OpsActionButton
-                    type="button"
-                    onClick={() =>
-                      downloadCsv(
-                        "courier-failures.csv",
-                        ["provider", "action", "status", "external_id", "message", "created_at"],
-                        reports.courierFailures.map((item) => [
-                          item.provider,
-                          item.action,
-                          item.status,
-                          item.external_id,
-                          item.message,
-                          item.created_at,
+                        "top-products-report.csv",
+                        ["product_id", "product_name", "sku", "total_quantity", "total_revenue"],
+                        reports.topProducts.map((item) => [
+                          item.product_id,
+                          item.product_name,
+                          item.sku,
+                          item.total_quantity,
+                          item.total_revenue,
                         ]),
                       )
                     }
-                  >
-                    <Download className="h-4 w-4" />
-                    Export Courier Failures
-                  </OpsActionButton>
-                  <OpsActionButton
-                    type="button"
-                    onClick={() =>
+                  />
+                  <div className="mt-6">
+                    {reports.topProducts.length === 0 ? (
+                      <EmptyState title="No top products yet" description="Create orders to populate this ranking." />
+                    ) : (
+                      <DataTable columns={["Product", "SKU", "Qty", "Revenue"]}>
+                        {reports.topProducts.map((item) => (
+                          <div
+                            key={`${item.product_id ?? item.product_name}-${item.sku ?? "no-sku"}`}
+                            className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-4"
+                          >
+                            <span className="font-medium text-slate-950">{item.product_name}</span>
+                            <span>{item.sku || "No SKU"}</span>
+                            <span>{item.total_quantity}</span>
+                            <span>{formatCurrency(item.total_revenue)}</span>
+                          </div>
+                        ))}
+                      </DataTable>
+                    )}
+                  </div>
+                </article>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-2">
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Order Status"
+                    description="Status count and total amount with quick visual weighting."
+                    exportLabel="Export CSV"
+                    onExport={() =>
                       downloadCsv(
-                        "woocommerce-imported-orders.csv",
-                        ["order_number", "external_status", "external_synced_at", "total"],
-                        reports.wooImportedOrders.map((item) => [
-                          item.order_number,
-                          item.external_status,
-                          item.external_synced_at,
-                          item.total,
-                        ]),
+                        "order-status-report.csv",
+                        ["status", "count", "total_amount"],
+                        reports.orderStatus.map((item) => [item.status, item.count, item.total_amount]),
                       )
                     }
-                  >
-                    <Download className="h-4 w-4" />
-                    Export Woo Orders
-                  </OpsActionButton>
-                </div>
-              </div>
+                  />
+                  <div className="mt-6 space-y-3">
+                    {reports.orderStatus.length === 0 ? (
+                      <EmptyState title="No order status data" description="Create orders to build the status breakdown." />
+                    ) : (
+                      reports.orderStatus.map((item) => (
+                        <div key={item.status} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-[160px]">
+                              <StatusBadge status={item.status} />
+                            </div>
+                            <div className="w-full lg:max-w-[220px]">
+                              <div className="h-2 rounded-full bg-slate-200">
+                                <div
+                                  className="h-2 rounded-full bg-slate-950"
+                                  style={{ width: `${getBarWidth(item.count, orderStatusMax)}%` }}
+                                />
+                              </div>
+                            </div>
+                            <p className="text-sm text-slate-600">{item.count} orders</p>
+                            <p className="text-sm font-semibold text-slate-950">{formatCurrency(item.total_amount)}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </article>
 
-              <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-[20px] border border-violet-200 bg-violet-50 px-4 py-4 text-sm text-violet-900">
-                  <p className="ops-micro-label text-violet-600">Woo Orders</p>
-                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.woocommerce_orders_count}</p>
-                </div>
-                <div className="rounded-[20px] border border-indigo-200 bg-indigo-50 px-4 py-4 text-sm text-indigo-900">
-                  <p className="ops-micro-label text-indigo-600">Woo Products</p>
-                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.woocommerce_products_count}</p>
-                </div>
-                <div className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900">
-                  <p className="ops-micro-label text-rose-600">Woo Failures</p>
-                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.woo_recent_sync_failures}</p>
-                </div>
-                <div className="rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                  <p className="ops-micro-label text-emerald-600">Courier Sent</p>
-                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.courier_sent_count}</p>
-                </div>
-                <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                  <p className="ops-micro-label text-amber-600">Pending Actions</p>
-                  <p className="mt-2 text-2xl font-semibold">{integrationSummary.pending_integration_actions}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  Woo last product sync: <span className="font-semibold text-slate-950">{integrationSummary.woo_last_product_sync_at ? formatDateTime(integrationSummary.woo_last_product_sync_at) : "Never"}</span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  Woo last order sync: <span className="font-semibold text-slate-950">{integrationSummary.woo_last_order_sync_at ? formatDateTime(integrationSummary.woo_last_order_sync_at) : "Never"}</span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  Courier failures: <span className="font-semibold text-slate-950">{integrationSummary.courier_recent_failures}</span>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  External delivered / failed-returned: <span className="font-semibold text-slate-950">{integrationSummary.courier_external_delivered_count} / {integrationSummary.courier_external_failed_returned_count}</span>
-                </div>
-              </div>
-            </section>
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Payment Status"
+                    description="Paid and unpaid mix for the same report window."
+                  />
+                  <div className="mt-6 space-y-3">
+                    {reports.paymentStatus.length === 0 ? (
+                      <EmptyState title="No payment status data" description="Create orders to build the payment breakdown." />
+                    ) : (
+                      reports.paymentStatus.map((item) => (
+                        <div key={item.payment_status} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-[160px]">
+                              <StatusBadge status={item.payment_status} />
+                            </div>
+                            <div className="w-full lg:max-w-[220px]">
+                              <div className="h-2 rounded-full bg-slate-200">
+                                <div
+                                  className="h-2 rounded-full bg-sky-600"
+                                  style={{ width: `${getBarWidth(item.count, paymentStatusMax)}%` }}
+                                />
+                              </div>
+                            </div>
+                            <p className="text-sm text-slate-600">{item.count} orders</p>
+                            <p className="text-sm font-semibold text-slate-950">{formatCurrency(item.total_amount)}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </article>
+              </section>
+            </div>
           ) : null}
 
-          {showSales && (
-          <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <PageHeader
-                  eyebrow="Revenue Overview"
-                  title="Revenue by date"
-                  description="A lightweight visual view of revenue and order count over the selected date range."
+          {showAssets ? (
+            <div className="space-y-5">
+              <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                <SectionHeader
+                  title="Inventory Value"
+                  description="Asset-level inventory counts, units, and cost visibility."
                 />
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <TrendingUp className="h-5 w-5" />
+                <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <MetricBlock label="Inventory Value (Cost)" value={formatCurrency(reports.inventoryReport.inventory_value_at_cost)} tone="success" />
+                  <MetricBlock label="Products" value={String(reports.inventoryReport.total_products)} />
+                  <MetricBlock label="Inventory Rows" value={String(reports.inventoryReport.total_inventory_items)} />
+                  <MetricBlock label="Stock Units" value={String(reports.inventoryReport.total_stock_units)} />
+                  <MetricBlock label="Out of Stock" value={String(reports.inventoryReport.out_of_stock_count)} tone="danger" />
                 </div>
-              </div>
+              </section>
 
-              <div className="mt-6 space-y-3">
-                {reports.revenueByDate.length === 0 ? (
-                  <EmptyState title="No revenue data yet" description="Create orders inside the selected date range to build the revenue overview." />
-                ) : (
-                  reports.revenueByDate.map((item) => (
-                    <div key={item.report_date} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-950">{formatDate(item.report_date)}</p>
-                          <p className="mt-1 text-xs text-slate-500">{item.order_count} orders</p>
-                        </div>
-                        <div className="w-full md:max-w-[280px]">
-                          <div className="h-3 rounded-full bg-slate-200">
-                            <div
-                              className="h-3 rounded-full bg-slate-950 transition-all"
-                              style={{ width: `${getBarWidth(Number(item.total_sales), revenueMax)}%` }}
-                            />
+              <section className="grid gap-5 xl:grid-cols-[1.02fr_0.98fr]">
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Low Stock Products"
+                    description="Products at or below threshold with warehouse context."
+                    exportLabel="Export CSV"
+                    onExport={() =>
+                      downloadCsv(
+                        "low-stock-products.csv",
+                        ["product_name", "sku", "warehouse_name", "quantity", "low_stock_threshold", "stock_status"],
+                        reports.lowStockProducts.map((item) => [
+                          item.product_name,
+                          item.sku,
+                          item.warehouse_name,
+                          item.quantity,
+                          item.low_stock_threshold,
+                          item.stock_status,
+                        ]),
+                      )
+                    }
+                  />
+                  <div className="mt-6">
+                    {reports.lowStockProducts.length === 0 ? (
+                      <EmptyState title="No low stock products" description="Rows at or below threshold will appear here." />
+                    ) : (
+                      <DataTable columns={["Product", "Warehouse", "Qty", "Threshold", "Status"]}>
+                        {reports.lowStockProducts.map((item) => (
+                          <div
+                            key={item.inventory_item_id}
+                            className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-5"
+                          >
+                            <div>
+                              <p className="font-medium text-slate-950">{item.product_name}</p>
+                              <p className="mt-1 text-xs text-slate-500">{item.sku || "No SKU"}</p>
+                            </div>
+                            <span>{item.warehouse_name || "Unknown warehouse"}</span>
+                            <span>{item.quantity}</span>
+                            <span>{item.low_stock_threshold}</span>
+                            <span>
+                              <StatusBadge status={item.stock_status} label={formatLabel(item.stock_status)} />
+                            </span>
                           </div>
-                        </div>
-                        <p className="text-sm font-semibold text-slate-950">{formatCurrency(item.total_sales)}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </article>
-
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <PageHeader
-                  eyebrow="Sales Summary"
-                  title="Core order metrics"
-                  description="Quick headline sales numbers for the selected date range."
-                />
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <BarChart3 className="h-5 w-5" />
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Total orders: <span className="font-semibold text-slate-950">{reports.salesSummary.total_orders}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Total sales: <span className="font-semibold text-slate-950">{formatCurrency(reports.salesSummary.total_sales)}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Discount: <span className="font-semibold text-slate-950">{formatCurrency(reports.salesSummary.total_discount)}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Delivery charge: <span className="font-semibold text-slate-950">{formatCurrency(reports.salesSummary.total_delivery_charge)}</span></div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">Paid: <span className="font-semibold">{reports.salesSummary.paid_orders}</span></div>
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">Unpaid: <span className="font-semibold">{reports.salesSummary.unpaid_orders}</span></div>
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-800">Cancelled: <span className="font-semibold">{reports.salesSummary.cancelled_orders}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Returned: <span className="font-semibold text-slate-950">{reports.salesSummary.returned_orders}</span></div>
-              </div>
-            </article>
-          </section>
-          )}
-
-          {showSales && (
-          <section className="grid gap-4 xl:grid-cols-2">
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <PageHeader eyebrow="Order Status" title="Order status breakdown" description="Status count and total amount with quick visual weighting." />
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadCsv(
-                      "order-status-report.csv",
-                      ["status", "count", "total_amount"],
-                      reports.orderStatus.map((item) => [item.status, item.count, item.total_amount]),
-                    )
-                  }
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                >
-                  <Download className="h-4 w-4" />
-                  Export CSV
-                </button>
-              </div>
-              <div className="mt-6 space-y-3">
-                {reports.orderStatus.length === 0 ? (
-                  <EmptyState title="No order status data" description="Create orders to build the status breakdown." />
-                ) : (
-                  reports.orderStatus.map((item) => (
-                    <div key={item.status} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-[160px]">
-                          <StatusBadge status={item.status} />
-                        </div>
-                        <div className="w-full md:max-w-[260px]">
-                          <div className="h-3 rounded-full bg-slate-200">
-                            <div
-                              className="h-3 rounded-full bg-slate-950 transition-all"
-                              style={{ width: `${getBarWidth(item.count, orderStatusMax)}%` }}
-                            />
-                          </div>
-                        </div>
-                        <p className="text-sm text-slate-600">{item.count} orders</p>
-                        <p className="text-sm font-semibold text-slate-950">{formatCurrency(item.total_amount)}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </article>
-
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <PageHeader eyebrow="Payment Status" title="Payment status breakdown" description="Track paid and unpaid mix over the selected date range." />
-              <div className="mt-6 space-y-3">
-                {reports.paymentStatus.length === 0 ? (
-                  <EmptyState title="No payment status data" description="Create orders to build the payment status breakdown." />
-                ) : (
-                  reports.paymentStatus.map((item) => (
-                    <div key={item.payment_status} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-[160px]">
-                          <StatusBadge status={item.payment_status} />
-                        </div>
-                        <div className="w-full md:max-w-[260px]">
-                          <div className="h-3 rounded-full bg-slate-200">
-                            <div
-                              className="h-3 rounded-full bg-sky-600 transition-all"
-                              style={{ width: `${getBarWidth(item.count, paymentStatusMax)}%` }}
-                            />
-                          </div>
-                        </div>
-                        <p className="text-sm text-slate-600">{item.count} orders</p>
-                        <p className="text-sm font-semibold text-slate-950">{formatCurrency(item.total_amount)}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </article>
-          </section>
-          )}
-
-          {(showSales || showInventory) && (
-          <section className="grid gap-4 xl:grid-cols-[1.02fr_0.98fr]">
-            {showSales ? (
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <PageHeader eyebrow="Top Selling Products" title="Best sellers" description="Top products by quantity sold and revenue." />
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadCsv(
-                      "top-products-report.csv",
-                      ["product_id", "product_name", "sku", "total_quantity", "total_revenue"],
-                      reports.topProducts.map((item) => [
-                        item.product_id,
-                        item.product_name,
-                        item.sku,
-                        item.total_quantity,
-                        item.total_revenue,
-                      ]),
-                    )
-                  }
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                >
-                  <Download className="h-4 w-4" />
-                  Export CSV
-                </button>
-              </div>
-
-              <div className="mt-6">
-                {reports.topProducts.length === 0 ? (
-                  <EmptyState title="No top products yet" description="Create orders to populate the top selling products table." />
-                ) : (
-                  <DataTable columns={["Product", "SKU", "Quantity", "Revenue"]}>
-                    {reports.topProducts.map((item) => (
-                      <div key={`${item.product_id ?? item.product_name}-${item.sku ?? "no-sku"}`} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-4 md:gap-4">
-                        <span className="font-medium text-slate-950">{item.product_name}</span>
-                        <span>{item.sku || "No SKU"}</span>
-                        <span>{item.total_quantity}</span>
-                        <span>{formatCurrency(item.total_revenue)}</span>
-                      </div>
-                    ))}
-                  </DataTable>
-                )}
-              </div>
-            </article>
-            ) : null}
-
-            {showInventory ? (
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <PageHeader eyebrow="Low Stock Products" title="Reorder risk" description="Products at or below threshold with warehouse context." />
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        downloadCsv(
-                          "low-stock-products.csv",
-                          ["product_name", "sku", "warehouse_name", "quantity", "low_stock_threshold", "stock_status"],
-                          reports.lowStockProducts.map((item) => [
-                            item.product_name,
-                            item.sku,
-                            item.warehouse_name,
-                            item.quantity,
-                            item.low_stock_threshold,
-                            item.stock_status,
-                          ]),
-                        )
-                      }
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                    >
-                      <Download className="h-4 w-4" />
-                      Export CSV
-                    </button>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                      <PackageSearch className="h-5 w-5" />
-                    </div>
+                        ))}
+                      </DataTable>
+                    )}
                   </div>
-                </div>
+                </article>
 
-              <div className="mt-6">
-                {reports.lowStockProducts.length === 0 ? (
-                  <EmptyState title="No low stock products" description="Inventory rows at or below threshold will appear here." />
-                ) : (
-                  <DataTable columns={["Product", "Warehouse", "Quantity", "Threshold", "Status"]}>
-                    {reports.lowStockProducts.map((item) => (
-                      <div key={item.inventory_item_id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-5 md:gap-4">
-                        <div>
-                          <p className="font-medium text-slate-950">{item.product_name}</p>
-                          <p className="mt-1 text-xs text-slate-500">{item.sku || "No SKU"}</p>
-                        </div>
-                        <span>{item.warehouse_name || "Unknown warehouse"}</span>
-                        <span>{item.quantity}</span>
-                        <span>{item.low_stock_threshold}</span>
-                        <span>
-                          <StatusBadge status={item.stock_status} label={formatLabel(item.stock_status)} />
-                        </span>
-                      </div>
-                    ))}
-                  </DataTable>
-                )}
-              </div>
-            </article>
-            ) : null}
-          </section>
-          )}
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Stock Movement Summary"
+                    description="Grouped movement counts and quantities over the selected date range."
+                    exportLabel="Export CSV"
+                    onExport={() =>
+                      downloadCsv(
+                        "stock-movement-summary.csv",
+                        ["movement_type", "movement_count", "total_quantity"],
+                        reports.stockMovementSummary.map((item) => [
+                          item.movement_type,
+                          item.movement_count,
+                          item.total_quantity,
+                        ]),
+                      )
+                    }
+                  />
+                  <div className="mt-6">
+                    {reports.stockMovementSummary.length === 0 ? (
+                      <EmptyState title="No stock movement summary yet" description="Stock activity will populate this table." />
+                    ) : (
+                      <DataTable columns={["Movement Type", "Movement Count", "Total Quantity"]}>
+                        {reports.stockMovementSummary.map((item) => (
+                          <div
+                            key={item.movement_type}
+                            className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-3"
+                          >
+                            <span>
+                              <StatusBadge status={item.movement_type} label={formatLabel(item.movement_type)} />
+                            </span>
+                            <span>{item.movement_count}</span>
+                            <span>{item.total_quantity}</span>
+                          </div>
+                        ))}
+                      </DataTable>
+                    )}
+                  </div>
+                </article>
+              </section>
+            </div>
+          ) : null}
 
-          {(showSales || showInventory) && (
-          <section className="grid gap-4 xl:grid-cols-[0.98fr_1.02fr]">
-              {showSales ? (
-              <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <PageHeader eyebrow="Recent Orders" title="Recent order activity" description="Latest order creation activity for admin monitoring." />
-                  <button
-                    type="button"
-                    onClick={() =>
+          {showPeople ? (
+            <div className="space-y-5">
+              <section className="grid gap-5 xl:grid-cols-[0.98fr_1.02fr]">
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Customer CRM"
+                    description="Customer segmentation and follow-up exposure."
+                  />
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <MetricBlock label="Total Customers" value={String(reports.customerReport.total_customers)} />
+                    <MetricBlock label="With Follow-up" value={String(reports.customerReport.customers_with_follow_up)} tone="warning" />
+                    <MetricBlock label="VIP" value={String(reports.customerReport.vip_customers)} tone="success" />
+                    <MetricBlock label="Wholesale" value={String(reports.customerReport.wholesale_customers)} />
+                    <MetricBlock label="Reseller" value={String(reports.customerReport.reseller_customers)} />
+                    <MetricBlock label="Blocked" value={String(reports.customerReport.blocked_customers)} tone="danger" />
+                  </div>
+                </article>
+
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Logistics"
+                    description="Shipment and reconciliation totals for operational monitoring."
+                  />
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <MetricBlock label="Total Shipments" value={String(reports.logisticsReport.total_shipments)} />
+                    <MetricBlock label="Pending" value={String(reports.logisticsReport.pending_shipments)} tone="warning" />
+                    <MetricBlock label="Shipped" value={String(reports.logisticsReport.shipped_shipments)} />
+                    <MetricBlock label="Delivered" value={String(reports.logisticsReport.delivered_shipments)} tone="success" />
+                    <MetricBlock label="Failed" value={String(reports.logisticsReport.failed_shipments)} tone="danger" />
+                    <MetricBlock label="Unsettled" value={String(reports.logisticsReport.unsettled_reconciliations)} tone="warning" />
+                    <MetricBlock label="COD Amount" value={formatCurrency(reports.logisticsReport.total_cod_amount)} />
+                    <MetricBlock label="Courier Charge" value={formatCurrency(reports.logisticsReport.total_courier_charge)} />
+                  </div>
+                </article>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[1.02fr_0.98fr]">
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Recent Order Activity"
+                    description="Latest order creation activity for monitoring."
+                    exportLabel="Export CSV"
+                    onExport={() =>
                       downloadCsv(
                         "recent-order-activity.csv",
                         ["order_number", "customer_name", "status", "payment_status", "total", "created_at"],
@@ -869,110 +917,146 @@ export default function ReportsPage() {
                         ]),
                       )
                     }
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                  >
-                    <Download className="h-4 w-4" />
-                    Export CSV
-                  </button>
-                </div>
-                <div className="mt-6">
-                {reports.recentOrderActivity.length === 0 ? (
-                  <EmptyState title="No recent order activity" description="Recent orders will appear here once the system is active." />
-                ) : (
-                  <DataTable columns={["Order", "Customer", "Status", "Payment", "Total", "Created"]}>
-                    {reports.recentOrderActivity.map((item) => (
-                      <div key={item.order_id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-6 2xl:gap-4">
-                        <span className="font-medium text-slate-950">{item.order_number}</span>
-                        <span>{item.customer_name || "Guest customer"}</span>
-                        <span><StatusBadge status={item.status} /></span>
-                        <span><StatusBadge status={item.payment_status} /></span>
-                        <span>{formatCurrency(item.total)}</span>
-                        <span>{formatDate(item.created_at)}</span>
+                  />
+                  <div className="mt-6">
+                    {reports.recentOrderActivity.length === 0 ? (
+                      <EmptyState title="No recent order activity" description="Recent orders will appear here once the system is active." />
+                    ) : (
+                      <DataTable columns={["Order", "Customer", "Status", "Payment", "Total", "Created"]}>
+                        {reports.recentOrderActivity.map((item) => (
+                          <div
+                            key={item.order_id}
+                            className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-6"
+                          >
+                            <span className="font-medium text-slate-950">{item.order_number}</span>
+                            <span>{item.customer_name || "Guest customer"}</span>
+                            <span>
+                              <StatusBadge status={item.status} />
+                            </span>
+                            <span>
+                              <StatusBadge status={item.payment_status} />
+                            </span>
+                            <span>{formatCurrency(item.total)}</span>
+                            <span>{formatDate(item.created_at)}</span>
+                          </div>
+                        ))}
+                      </DataTable>
+                    )}
+                  </div>
+                </article>
+
+                <article className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
+                  <SectionHeader
+                    title="Integration Health"
+                    description="Safe visibility into WooCommerce imports and courier API failures."
+                    exportLabel="Export Summary CSV"
+                    onExport={() =>
+                      downloadCsv(
+                        "integration-summary.csv",
+                        ["metric", "value"],
+                        reports.integrationSummary
+                          ? [
+                              ["woocommerce_orders_count", reports.integrationSummary.woocommerce_orders_count],
+                              ["woocommerce_products_count", reports.integrationSummary.woocommerce_products_count],
+                              ["woo_recent_sync_failures", reports.integrationSummary.woo_recent_sync_failures],
+                              ["woo_last_product_sync_at", reports.integrationSummary.woo_last_product_sync_at],
+                              ["woo_last_order_sync_at", reports.integrationSummary.woo_last_order_sync_at],
+                              ["courier_sent_count", reports.integrationSummary.courier_sent_count],
+                              ["courier_recent_failures", reports.integrationSummary.courier_recent_failures],
+                              ["courier_external_delivered_count", reports.integrationSummary.courier_external_delivered_count],
+                              [
+                                "courier_external_failed_returned_count",
+                                reports.integrationSummary.courier_external_failed_returned_count,
+                              ],
+                              ["pending_integration_actions", reports.integrationSummary.pending_integration_actions],
+                            ]
+                          : [],
+                      )
+                    }
+                  />
+                  <div className="mt-6 space-y-4">
+                    {reports.integrationSummary ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <MetricBlock
+                          label="Woo Orders"
+                          value={String(reports.integrationSummary.woocommerce_orders_count)}
+                        />
+                        <MetricBlock
+                          label="Woo Products"
+                          value={String(reports.integrationSummary.woocommerce_products_count)}
+                        />
+                        <MetricBlock
+                          label="Woo Failures"
+                          value={String(reports.integrationSummary.woo_recent_sync_failures)}
+                          tone={reports.integrationSummary.woo_recent_sync_failures > 0 ? "danger" : "success"}
+                        />
+                        <MetricBlock
+                          label="Pending Actions"
+                          value={String(reports.integrationSummary.pending_integration_actions)}
+                          tone={reports.integrationSummary.pending_integration_actions > 0 ? "warning" : "success"}
+                        />
                       </div>
-                    ))}
-                  </DataTable>
-                )}
-              </div>
-            </article>
-              ) : null}
+                    ) : (
+                      <EmptyState title="No integration summary" description="Integration totals are currently unavailable." />
+                    )}
 
-            {showInventory ? (
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <PageHeader eyebrow="Stock Movement Summary" title="Movement rollup" description="Grouped stock movement counts and quantities over the selected date range." />
-                <button
-                  type="button"
-                  onClick={() =>
-                    downloadCsv(
-                      "stock-movement-summary.csv",
-                      ["movement_type", "movement_count", "total_quantity"],
-                      reports.stockMovementSummary.map((item) => [
-                        item.movement_type,
-                        item.movement_count,
-                        item.total_quantity,
-                      ]),
-                    )
-                  }
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                >
-                  <Download className="h-4 w-4" />
-                  Export CSV
-                </button>
-              </div>
-
-              <div className="mt-6">
-                {reports.stockMovementSummary.length === 0 ? (
-                  <EmptyState title="No stock movement summary yet" description="Stock activity will populate this table." />
-                ) : (
-                  <DataTable columns={["Movement Type", "Movement Count", "Total Quantity"]}>
-                    {reports.stockMovementSummary.map((item) => (
-                      <div key={item.movement_type} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-3 md:gap-4">
-                        <span><StatusBadge status={item.movement_type} label={formatLabel(item.movement_type)} /></span>
-                        <span>{item.movement_count}</span>
-                        <span>{item.total_quantity}</span>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center gap-2">
+                        <Wifi className="h-4 w-4 text-slate-600" />
+                        <h3 className="text-sm font-bold text-slate-950">Courier API Logs</h3>
                       </div>
-                    ))}
-                  </DataTable>
-                )}
-              </div>
-            </article>
-            ) : null}
-          </section>
-          )}
+                      <div className="mt-4 space-y-3">
+                        {reports.courierFailures.length === 0 ? (
+                          <p className="text-sm text-slate-500">No recent courier failures.</p>
+                        ) : (
+                          reports.courierFailures.slice(0, 4).map((item) => (
+                            <div key={item.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-950">
+                                    {formatLabel(item.provider)} · {formatLabel(item.action)}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500">{item.message || "No message available."}</p>
+                                </div>
+                                <div className="text-right">
+                                  <StatusBadge status={item.status} />
+                                  <p className="mt-2 text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
 
-          {(showCustomers || showLogistics) && (
-          <section className="grid gap-4 xl:grid-cols-2">
-            {showCustomers ? (
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <PageHeader eyebrow="Customer CRM" title="Customer mix" description="Simple segmentation and follow-up visibility for admin reporting." />
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Total customers: <span className="font-semibold text-slate-950">{reports.customerReport.total_customers}</span></div>
-                <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-800">With follow-up: <span className="font-semibold">{reports.customerReport.customers_with_follow_up}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">VIP: <span className="font-semibold text-slate-950">{reports.customerReport.vip_customers}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Wholesale: <span className="font-semibold text-slate-950">{reports.customerReport.wholesale_customers}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Reseller: <span className="font-semibold text-slate-950">{reports.customerReport.reseller_customers}</span></div>
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-800">Blocked: <span className="font-semibold">{reports.customerReport.blocked_customers}</span></div>
-              </div>
-            </article>
-            ) : null}
-
-            {showLogistics ? (
-            <article className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <PageHeader eyebrow="Logistics" title="Logistics summary" description="Shipment and reconciliation totals for operations leadership." />
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Total shipments: <span className="font-semibold text-slate-950">{reports.logisticsReport.total_shipments}</span></div>
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">Pending: <span className="font-semibold">{reports.logisticsReport.pending_shipments}</span></div>
-                <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-800">Shipped: <span className="font-semibold">{reports.logisticsReport.shipped_shipments}</span></div>
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">Delivered: <span className="font-semibold">{reports.logisticsReport.delivered_shipments}</span></div>
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-800">Failed: <span className="font-semibold">{reports.logisticsReport.failed_shipments}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Unsettled: <span className="font-semibold text-slate-950">{reports.logisticsReport.unsettled_reconciliations}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">COD total: <span className="font-semibold text-slate-950">{formatCurrency(reports.logisticsReport.total_cod_amount)}</span></div>
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">Courier charge: <span className="font-semibold text-slate-950">{formatCurrency(reports.logisticsReport.total_courier_charge)}</span></div>
-              </div>
-            </article>
-            ) : null}
-          </section>
-          )}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h3 className="text-sm font-bold text-slate-950">WooCommerce Orders</h3>
+                      <div className="mt-4 space-y-3">
+                        {reports.wooImportedOrders.length === 0 ? (
+                          <p className="text-sm text-slate-500">No WooCommerce-imported orders in the current sample.</p>
+                        ) : (
+                          reports.wooImportedOrders.slice(0, 4).map((item) => (
+                            <div key={item.id} className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-950">{item.order_number}</p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {item.external_synced_at ? formatDateTime(item.external_synced_at) : "Not synced yet"}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <StatusBadge status={item.external_status || "unknown"} label={formatLabel(item.external_status || "unknown")} />
+                                <p className="mt-2 text-sm font-semibold text-slate-950">{formatCurrency(item.total)}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              </section>
+            </div>
+          ) : null}
         </>
       ) : null}
     </div>
