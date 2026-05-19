@@ -360,7 +360,7 @@ export default function OrderDetailPage() {
             <div className="mt-3"><StatusBadge status={order.source} label={order.source === "woocommerce" ? "WooCommerce" : formatLabel(order.source)} /></div>
           </div>
           <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
-            <p className="ops-micro-label">Woo Status</p>
+            <p className="ops-micro-label">WooCommerce Status</p>
             <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">
               {order.external_status ? formatLabel(order.external_status) : "Not linked"}
             </p>

@@ -1,6 +1,6 @@
 # Exact V1 Clone Audit
 
-Last reviewed: 2026-05-18
+Last reviewed: 2026-05-19
 
 ## Scope
 
@@ -32,6 +32,8 @@ This document resets frontend parity planning around the client's updated requir
 - CRM now uses the v1 split-pane workspace pattern again on `/dashboard/customers`, with the restored left customer directory, right selected-customer detail pane, v1-style four-card header summary, client-side CSV export, modal add/edit customer flow, and in-pane order/history activity context powered by the Phase `15F-support` backend aliases.
 - Logistics now uses the v1 unified command-center pattern again on `/dashboard/logistics`, with the restored shipment-first tab flow, pending dispatch queue, courier cards, reconciliation table, and embedded API logs powered by the Phase `15G-support` backend aliases.
 - Settings, Team, Activity Logs, and Admin Tools now follow the v1 control-center model more closely again, with the restored settings tab order, team members/activity workspace, legacy permission matrix, denser audit table, and safe admin/data-management framing powered by the Phase `15H-support` backend aliases.
+- Reports, Finance, POS, HR, and WooCommerce exposure now follow the exact-v1 parity direction closely enough for final QA, using the `15I-support` compatibility payloads and restored v1 screen rhythms on their primary routes.
+- Phase `15J` final parity QA has completed the code-level wording, consistency, and docs sweep, while the remaining full browser/operator checklist is still manual.
 
 ## Match Scale
 
@@ -798,13 +800,13 @@ Match: `Partial`
 10. current v2 equivalent
    `/dashboard/hr`
 11. exact gaps
-   v2 HR is capable but route card structure differs from v1 tab labels, modal loops, and screen density.
+   Remaining gaps are now limited: v2 keeps separate `Salary Advances` and `Salary Records` sections instead of one broad `Payroll` tab, and intentionally excludes biometric attendance/device integration and hidden payroll automation.
 12. implementation difficulty
    Medium
 13. recommended clone phase
    `15I`
 
-Match: `Partial`
+Match: `Near Match`
 
 ### POS
 
@@ -953,13 +955,13 @@ Match: `Near match`
 10. current v2 equivalent
    `/dashboard/woocommerce`
 11. exact gaps
-   Need a follow-up decision: if the client wants exact v1 behavior, v2 may need to de-emphasize or hide the standalone WooCommerce route unless a matching v1 entry point is confirmed.
+   Standalone WooCommerce remains a secondary visibility workspace rather than a proven first-class v1 route. The current parity decision is to expose it clearly but conservatively, while keeping the main WooCommerce context embedded across orders, products, reports, and settings.
 12. implementation difficulty
    Medium
 13. recommended clone phase
    `15I`
 
-Match: `Uncertain`
+Match: `Partial`
 
 ### Courier Integrations
 

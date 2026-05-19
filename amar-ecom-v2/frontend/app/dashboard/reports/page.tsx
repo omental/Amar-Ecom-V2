@@ -978,15 +978,15 @@ export default function ReportsPage() {
                     {reports.integrationSummary ? (
                       <div className="grid gap-3 sm:grid-cols-2">
                         <MetricBlock
-                          label="Woo Orders"
+                          label="WooCommerce Orders"
                           value={String(reports.integrationSummary.woocommerce_orders_count)}
                         />
                         <MetricBlock
-                          label="Woo Products"
+                          label="WooCommerce Products"
                           value={String(reports.integrationSummary.woocommerce_products_count)}
                         />
                         <MetricBlock
-                          label="Woo Failures"
+                          label="WooCommerce Failures"
                           value={String(reports.integrationSummary.woo_recent_sync_failures)}
                           tone={reports.integrationSummary.woo_recent_sync_failures > 0 ? "danger" : "success"}
                         />

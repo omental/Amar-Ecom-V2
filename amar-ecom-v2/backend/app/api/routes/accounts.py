@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy import select
@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 def _generate_account_code(account_name: str, account_type: str) -> str:
     prefix = "".join(part[:3].upper() for part in account_type.replace("_", " ").split()) or "ACC"
     suffix = "".join(ch for ch in account_name.upper() if ch.isalnum())[:6] or "AUTO"
-    return f"{prefix}-{suffix}"
+    return f"{prefix}-{suffix}-{uuid4().hex[:4].upper()}"
 
 
 @router.get("", response_model=list[AccountRead])

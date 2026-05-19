@@ -167,10 +167,10 @@ class EmployeeRead(ORMBaseSchema):
     def joiningDate(self) -> date | None:
         return self.joining_date
 
-    @computed_field(return_type=Decimal)
+    @computed_field(return_type=str)
     @property
-    def baseSalary(self) -> Decimal:
-        return self.salary
+    def baseSalary(self) -> str:
+        return f"{self.salary:.2f}"
 
     @computed_field(return_type=str)
     @property
@@ -415,25 +415,25 @@ class SalaryRecordRead(ORMBaseSchema):
     def month(self) -> str:
         return self.salary_month
 
-    @computed_field(return_type=Decimal)
+    @computed_field(return_type=str)
     @property
-    def basicSalary(self) -> Decimal:
-        return self.basic_salary
+    def basicSalary(self) -> str:
+        return f"{self.basic_salary:.2f}"
 
-    @computed_field(return_type=Decimal)
+    @computed_field(return_type=str)
     @property
-    def advanceDeduction(self) -> Decimal:
-        return self.advance_deduction
+    def advanceDeduction(self) -> str:
+        return f"{self.advance_deduction:.2f}"
 
-    @computed_field(return_type=Decimal)
+    @computed_field(return_type=str)
     @property
-    def otherDeductions(self) -> Decimal:
-        return self.other_deductions
+    def otherDeductions(self) -> str:
+        return f"{self.other_deductions:.2f}"
 
-    @computed_field(return_type=Decimal)
+    @computed_field(return_type=str)
     @property
-    def netSalary(self) -> Decimal:
-        return self.net_salary
+    def netSalary(self) -> str:
+        return f"{self.net_salary:.2f}"
 
     @computed_field(return_type=datetime | None)
     @property

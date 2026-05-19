@@ -2902,6 +2902,8 @@ def test_customer_crm_activity_flow() -> None:
 def test_customer_crm_summary_filters_and_alias_inputs() -> None:
     try:
         headers = auth_headers()
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+        activity_due_at = f"{today_iso}T09:00:00Z"
 
         with TestClient(app) as client:
             customer_response = client.post(
@@ -2916,7 +2918,7 @@ def test_customer_crm_summary_filters_and_alias_inputs() -> None:
                     "customerType": "regular",
                     "tags": ["crm", "dhaka"],
                     "notes": "Alias input coverage",
-                    "followUpDate": "2026-05-18",
+                    "followUpDate": today_iso,
                 },
             )
             assert customer_response.status_code == 201, customer_response.text
@@ -2927,7 +2929,7 @@ def test_customer_crm_summary_filters_and_alias_inputs() -> None:
             assert customer["tagList"] == ["crm", "dhaka"]
 
             list_response = client.get(
-                "/api/v1/customers?segment=new&follow_up_due=true&tag=crm&city=dhaka&created_from=2026-05-01T00:00:00Z&created_to=2026-05-31T00:00:00Z",
+                "/api/v1/customers?segment=new&follow_up_due=true&tag=crm&city=dhaka&created_from=2000-01-01T00:00:00Z&created_to=2100-01-01T00:00:00Z",
                 headers=headers,
             )
             assert list_response.status_code == 200, list_response.text
@@ -2948,14 +2950,14 @@ def test_customer_crm_summary_filters_and_alias_inputs() -> None:
                     "activityType": "note",
                     "title": "Send onboarding message",
                     "description": "CRM alias activity test",
-                    "dueDate": "2026-05-19T09:00:00Z",
+                    "dueDate": activity_due_at,
                 },
             )
             assert activity_response.status_code == 201, activity_response.text
             activity = activity_response.json()
             assert activity["activity_type"] == "note"
             assert activity["activityType"] == "note"
-            assert activity["dueDate"] == "2026-05-19T09:00:00Z"
+            assert activity["dueDate"] == activity_due_at
 
             detail_response = client.get(f"/api/v1/customers/{customer['id']}", headers=headers)
             assert detail_response.status_code == 200, detail_response.text
@@ -5052,6 +5054,7 @@ def test_reports_foundation_endpoints() -> None:
 def test_phase_15i_support_finance_hr_pos_aliases() -> None:
     headers = auth_headers()
     try:
+        supplier_voucher_no = f"VCHR-ALIAS-{uuid.uuid4().hex[:8]}"
         with TestClient(app) as client:
             designation_response = client.post(
                 "/api/v1/designations",
@@ -5199,7 +5202,7 @@ def test_phase_15i_support_finance_hr_pos_aliases() -> None:
                 json={
                     "supplierId": supplier["id"],
                     "accountId": bank_account["id"],
-                    "voucherNo": "VCHR-ALIAS-1",
+                    "voucherNo": supplier_voucher_no,
                     "paidAmount": 125,
                     "paymentType": "Bank",
                     "remark": "Alias supplier payment",
@@ -5207,7 +5210,7 @@ def test_phase_15i_support_finance_hr_pos_aliases() -> None:
             )
             assert supplier_payment_response.status_code == 201, supplier_payment_response.text
             supplier_payment = supplier_payment_response.json()
-            assert supplier_payment["voucherNo"] == "VCHR-ALIAS-1"
+            assert supplier_payment["voucherNo"] == supplier_voucher_no
             assert supplier_payment["supplierName"] == "Alias Supplier"
             assert supplier_payment["paidAmount"] == "125.00"
 

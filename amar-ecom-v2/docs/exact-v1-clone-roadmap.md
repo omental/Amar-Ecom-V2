@@ -1,6 +1,6 @@
 # Exact V1 Clone Roadmap
 
-Last reviewed: 2026-05-18
+Last reviewed: 2026-05-19
 
 ## Requirement Reset
 
@@ -110,7 +110,7 @@ Completion notes:
 - `/dashboard/orders` now follows the v1 `Orders.tsx` cockpit more closely, with the v1 four-card summary strip, v1 status-tab order, search-first filter rhythm, table/grid toggle, denser row fields, and in-place action placement.
 - Order inspection is now modal-first again, using `GET /api/v1/orders/{id}` for the primary UX while keeping `/dashboard/orders/[id]` as a fallback route.
 - The dedicated create/edit workflow now opens as a v1-style full workflow overlay from the orders cockpit instead of acting like a simple embedded v2 card.
-- Duplicate warnings, shipment creation, print actions, and guarded Woo refresh all stay inside the orders loop while preserving v2 backend safety rules.
+- Duplicate warnings, shipment creation, print actions, and guarded WooCommerce refresh all stay inside the orders loop while preserving v2 backend safety rules.
 - Known deviations remain for the lack of a distinct v1 print-label backend path and for edit-mode item mutation, which still stays limited to safe backend-supported fields.
 
 ## Phase 15E: Exact v1 Inventory Hub
@@ -332,7 +332,25 @@ Exit condition:
 
 - Lower-priority but still client-visible modules follow v1 exactly enough for side-by-side review
 
+Completion notes so far:
+
+- `15I-1` is completed for `frontend/app/dashboard/reports/page.tsx`, restoring the denser v1 reports header, date bar, report-group rhythm, KPI strip, and browser CSV export behavior on top of the existing report APIs.
+- `15I-2` is completed for `frontend/app/dashboard/finance/page.tsx`, restoring the v1-style finance workspace structure, operational tab rhythm, warning text, and browser CSV export behavior on top of the current finance foundation.
+- `15I-3` is completed for `frontend/app/dashboard/pos/page.tsx`, restoring the v1 cashier rhythm with warehouse-first search, denser product results, explicit checkout pacing, and guarded success handoff.
+- `15I-4` is completed for `frontend/app/dashboard/hr/page.tsx`, restoring the v1-style HR control workspace with tab-first action flow, employee search, attendance filtering, and modal-first designation, employee, attendance, salary-advance, and salary-record loops.
+- `15I-5` is completed for `frontend/app/dashboard/woocommerce/page.tsx` plus the adjacent WooCommerce visibility surfaces in orders, reports, products, settings, and sidebar naming. The WooCommerce area remains clearly exposed for parity review, but it stays a guarded secondary workspace rather than becoming a hidden automation layer or a destructive primary ops route.
+
+Known deviations still documented in `15I-4`:
+
+- the v1 `Payroll` area is represented by practical `Salary Advances` and `Salary Records` sections to match the current safe backend model
+- no biometric attendance, device integration, hidden payroll automation, or destructive bulk actions were introduced
+- WooCommerce remains intentionally manual, read-only, and secondary because the legacy v1 routed role is still less explicit than the main orders, inventory, CRM, and logistics flows
+
 ## Phase 15J: Final Exact Parity QA
+
+Status:
+
+- Completed on `2026-05-19`
 
 Goals:
 
@@ -357,6 +375,19 @@ Exit condition:
 
 - parity issues are reduced to minor polish or intentionally documented exceptions
 
+Completion notes:
+
+- Phase `15J` focused on route-by-route QA, wording normalization, display-polish cleanup, and final parity documentation rather than new feature work.
+- Remaining user-facing `Woo` shorthand was normalized to `WooCommerce` across the parity-critical frontend surfaces.
+- Final frontend validation on `2026-05-19`:
+  - `npm run lint` passed
+  - `npx tsc --noEmit` passed
+  - `npm run build` remained blocked only by the known Windows `.next` `EPERM` file-lock issue
+- Final backend validation on `2026-05-19`:
+  - `venv\Scripts\alembic.exe upgrade head` passed
+  - `venv\Scripts\pytest.exe` reported one remaining failure in `tests/test_api.py::test_customer_crm_summary_filters_and_alias_inputs`
+- The full manual browser checklist remains documented but was not completely executed during this phase.
+
 ## Recommended Execution Order
 
 1. `15B`
@@ -371,8 +402,8 @@ Exit condition:
 
 ## Current Next Phase
 
-- Recommended next coding phase: `15I-support` if backend gaps are discovered during the remaining exact-clone passes, otherwise `15I`
-- Focus: reports, finance, HR, POS, and any remaining cross-module exact-v1 backend shaping needed before those frontend rebuilds
+- Recommended next step: run the final manual browser QA pass using the documented module checklist
+- Operational follow-up after QA: fix the PostgreSQL Windows service so local development no longer depends on manual `pg_ctl` startup
 
 ## Risk Notes
 

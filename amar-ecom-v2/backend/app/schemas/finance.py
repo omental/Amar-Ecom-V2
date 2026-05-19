@@ -448,10 +448,10 @@ class SupplierPaymentRead(ORMBaseSchema):
     def paymentType(self) -> str | None:
         return self.payment_method
 
-    @computed_field(return_type=Decimal)
+    @computed_field(return_type=str)
     @property
-    def paidAmount(self) -> Decimal:
-        return self.amount
+    def paidAmount(self) -> str:
+        return f"{self.amount:.2f}"
 
     @computed_field(return_type=str | None)
     @property

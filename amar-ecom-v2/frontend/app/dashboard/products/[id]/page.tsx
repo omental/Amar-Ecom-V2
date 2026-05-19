@@ -418,7 +418,7 @@ export default function ProductDetailPage() {
             {product.source === "woocommerce" ? (
               <div className="flex flex-wrap items-center gap-3">
                 <StatusBadge status="woocommerce" label="WooCommerce" />
-                {product.external_status ? <StatusBadge status={product.external_status} label={`Woo ${product.external_status}`} /> : null}
+                {product.external_status ? <StatusBadge status={product.external_status} label={`WooCommerce ${product.external_status}`} /> : null}
                 {product.external_synced_at ? (
                   <span className="text-sm text-slate-500">Last synced {formatDate(product.external_synced_at)}</span>
                 ) : null}
@@ -456,7 +456,7 @@ export default function ProductDetailPage() {
               </div>
             </div>
             <div className="rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-4">
-              <p className="ops-micro-label">Woo Stock</p>
+              <p className="ops-micro-label">WooCommerce Stock</p>
               <p className="mt-3 text-sm font-semibold text-[var(--color-txt-pri)]">{product.external_stock_quantity ?? "-"}</p>
             </div>
             </div>
@@ -466,7 +466,7 @@ export default function ProductDetailPage() {
 
       {product.source === "woocommerce" ? (
         <div className="rounded-[28px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-800 shadow-[var(--shadow-soft)]">
-          Refresh updates Woo metadata safely and does not overwrite local inventory.
+          Refresh updates WooCommerce metadata safely and does not overwrite local inventory.
         </div>
       ) : null}
 

@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 def _generate_employee_code(full_name: str) -> str:
     stamp = "".join(ch for ch in full_name.upper() if ch.isalnum())[:4] or "EMP"
-    return f"EMP-{stamp}"
+    return f"EMP-{stamp}-{uuid4().hex[:4].upper()}"
 
 
 def _employee_query():

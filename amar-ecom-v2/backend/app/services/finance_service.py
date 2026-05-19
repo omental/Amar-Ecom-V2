@@ -223,7 +223,7 @@ async def record_supplier_payment(
     apply_account_balance(account, amount=payment_in.amount, direction="out")
 
     payment = SupplierPayment(
-        **payment_in.model_dump(exclude={"payment_date"}),
+        **payment_in.model_dump(exclude={"payment_date", "payment_number"}),
         payment_number=payment_number,
         payment_date=payment_in.payment_date or _now(),
     )
@@ -303,7 +303,7 @@ async def record_petty_cash_entry(
             apply_account_balance(account, amount=entry_in.amount, direction="out")
 
     entry = PettyCashEntry(
-        **entry_in.model_dump(exclude={"entry_date"}),
+        **entry_in.model_dump(exclude={"entry_date", "entry_number"}),
         entry_number=entry_number,
         entry_date=entry_in.entry_date or _now(),
     )

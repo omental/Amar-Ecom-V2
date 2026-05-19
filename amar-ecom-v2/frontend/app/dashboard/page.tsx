@@ -141,7 +141,7 @@ const YEAR_OPTIONS = [2024, 2025, 2026];
 
 function getCurrencySymbol(currency: string) {
   if (currency === "BDT") {
-    return "৳";
+    return "BDT ";
   }
 
   if (currency === "USD") {
@@ -149,7 +149,7 @@ function getCurrencySymbol(currency: string) {
   }
 
   if (currency === "EUR") {
-    return "€";
+    return "EUR ";
   }
 
   return `${currency} `;

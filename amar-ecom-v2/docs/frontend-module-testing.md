@@ -1,5 +1,13 @@
 # Frontend Module Testing
 
+Manual QA status note on `2026-05-19`:
+
+- The exact-v1 clone code passes the current frontend static validation:
+  - `npm run lint`
+  - `npx tsc --noEmit`
+- `npm run build` is still vulnerable to the known Windows `.next` `EPERM` lock issue.
+- The full browser/manual checklist below remains the source of truth for the final operator pass and was not completely executed during Phase `15J`.
+
 ## Phase 15B Shell Clone Checks
 
 1. Open `http://localhost:3000/login` and confirm login succeeds without breaking the existing token flow.
@@ -146,7 +154,7 @@
    - `Print Label`
    - `Edit`
    - `Ship Order`
-   - `Refresh Woo`
+   - `Refresh WooCommerce`
 12. Confirm `Open Full Page` still exists only as a fallback path, not the primary workflow.
 13. Click `New Order` and confirm a dedicated v1-style create workflow overlay opens from `/dashboard/orders` rather than a small embedded card.
 14. In the create flow, confirm these v1-style sections are present:
@@ -162,7 +170,7 @@
    - the row appears in the orders list
    - totals and status render correctly
    - the shell does not overflow
-17. Open an editable non-Woo order and confirm edit mode uses the same dedicated workflow overlay.
+17. Open an editable non-WooCommerce order and confirm edit mode uses the same dedicated workflow overlay.
 18. Confirm edit mode clearly warns that item mutation is still limited to safe backend-supported fields in this pass.
 19. Create a shipment from the row action or modal action and confirm it still uses the safe internal shipment-creation path rather than destructive external courier automation.
 20. For WooCommerce-sourced orders, confirm any refresh action remains guarded and manual, and that no automatic stock deduction or push-back behavior is introduced.
@@ -514,6 +522,38 @@
    - no new supplier ledger or finance-grade balance area was added
    - standalone shipment and courier-integration routes remain fallback-only
 
+## Phase 15J Final QA Checks
+
+1. Open the completed primary routes and confirm the Phase `15B` shell still behaves consistently:
+   - `/dashboard`
+   - `/dashboard/orders`
+   - `/dashboard/inventory`
+   - `/dashboard/customers`
+   - `/dashboard/logistics`
+   - `/dashboard/reports`
+   - `/dashboard/finance`
+   - `/dashboard/pos`
+   - `/dashboard/hr`
+   - `/dashboard/woocommerce`
+   - `/dashboard/settings`
+   - `/dashboard/users`
+   - `/dashboard/activity-logs`
+   - `/dashboard/admin-tools`
+2. Confirm user-facing naming now consistently says `WooCommerce` rather than older mixed `Woo` shorthand where the integration is exposed directly to operators.
+3. Confirm all primary routes still show clear loading, empty, success, and error states and do not imply fake automation.
+4. Confirm create/edit modal flows remain safe and do not surface unsupported destructive actions.
+5. Confirm no full-page horizontal overflow appears on the primary routes, while dense tables may still scroll locally inside their own containers.
+6. Confirm the final known intentional deviations remain visibly accurate:
+   - frontend-local inventory attributes
+   - URL-based image handling
+   - frontend-generated barcode/label output
+   - CRM points and messages remain placeholder-only
+   - logistics location and ETA remain frontend-derived
+   - courier sync remains manual and warning-first
+   - team pending and inactive both still map to backend `is_active=false`
+   - WooCommerce remains manual, read-only, and secondary
+7. If `npm run build` fails with a Windows `.next` `EPERM` lock, document it as an environment issue unless a separate compile error is also present.
+
 ## Prerequisites
 
 1. Start the backend:
@@ -864,7 +904,7 @@ npm run dev
 3. Change the module filter
 4. Confirm the table refreshes with matching entries
 5. Change the user filter if desired
-6. Confirm the table narrows to that user’s activity
+6. Confirm the table narrows to that userâ€™s activity
 
 ## Create Supplier
 
@@ -1499,15 +1539,23 @@ npm run dev
 1. Apply the latest backend migration:
    - `venv\Scripts\alembic.exe upgrade head`
 2. Open `http://localhost:3000/dashboard/hr`
-3. Confirm the page loads tabs for:
-   - `Overview`
-   - `Designations`
+3. Confirm the page now follows the denser v1-style HR workspace with:
+   - broad HR header
+   - KPI summary strip
+   - tab-first action row
+   - context-sensitive `Add Employee`, `Add Designation`, `Mark Attendance`, `Salary Advance`, and `Generate Salary` button behavior
+4. Confirm the page loads tabs for:
    - `Employees`
+   - `Designations`
    - `Attendance`
    - `Salary Advances`
    - `Salary Records`
-4. In `Designations`, create a designation and confirm it appears in the list
-5. In `Employees`, create an employee with:
+5. In `Employees`, confirm the dense list supports:
+   - employee search
+   - status filter
+   - designation filter
+   - modal-first add/edit flow
+6. Create an employee with:
    - employee code
    - full name
    - optional email/phone/address
@@ -1516,25 +1564,31 @@ npm run dev
    - joining date
    - salary
    - employment status
-6. Confirm the employee appears in the list
-7. In `Attendance`, create an attendance record
-8. Confirm duplicate attendance for the same employee and date shows a clean error
-9. Use attendance filters for:
+7. Confirm the employee appears in the list
+8. In `Designations`, create a designation and confirm it appears in the list
+9. In `Attendance`, create an attendance record
+10. Confirm duplicate attendance for the same employee and date shows a clean error
+11. Use attendance filters for:
    - employee
    - status
    - date range
-10. Confirm the list refreshes correctly
-11. In `Salary Advances`, create an advance
-12. Confirm the warning explains approval does not post a finance transaction yet
-13. Change the advance status to `Approved`
-14. Confirm the row shows approved timing and approver information when available
-15. In `Salary Records`, create a salary record
-16. Confirm the net salary preview updates before save
-17. Save the salary record and confirm the backend-calculated `net salary` appears in the list
-18. Mark the salary record `Paid`
-19. Confirm the row shows `paid at`
-20. Open `http://localhost:3000/dashboard`
-21. Confirm the dashboard includes:
+12. Confirm the list refreshes correctly
+13. In `Salary Advances`, create an advance
+14. Confirm the warning explains approval does not post a finance transaction yet
+15. Change the advance status to `Approved`
+16. Confirm the row shows approved timing and approver information when available
+17. In `Salary Records`, create a salary record
+18. Confirm the net salary preview updates before save
+19. Save the salary record and confirm the backend-calculated `net salary` appears in the list
+20. Mark the salary record `Paid`
+21. Confirm the row shows `paid at`
+22. Confirm there is no full-page horizontal overflow on `/dashboard/hr`, while local table scrolling remains acceptable
+23. Note these intentional Phase `15I-4` deviations:
+   - v1 `Payroll` is represented by `Salary Advances` and `Salary Records`
+   - no biometric attendance or device integration exists
+   - no hidden payroll automation or destructive bulk actions were added
+24. Open `http://localhost:3000/dashboard`
+25. Confirm the dashboard includes:
    - an `Employees` card
    - an HR snapshot
    - an `Open HR` link
@@ -1731,7 +1785,7 @@ Release-candidate audit result on 2026-05-16:
    - duplicate status badge
    - local product link when matched
    - price
-   - Woo stock when available
+   - WooCommerce stock when available
    - status
    - category
 22. Confirm existing product matches are disabled by default unless `Include existing matches` is enabled
@@ -1917,8 +1971,8 @@ Release-candidate audit result on 2026-05-16:
    - `Open Orders`
    - `Ready to Ship`
    - `Need Shipment`
-   - `Woo Orders`
-   - `Need Woo Refresh`
+   - `WooCommerce Orders`
+   - `Need WooCommerce Refresh`
    - `Unprinted`
 4. Use filters for:
    - status tabs
@@ -1943,7 +1997,7 @@ Release-candidate audit result on 2026-05-16:
    - `View`
    - `Print`
    - `Create Shipment` when dispatch-ready
-   - `Refresh Woo` only for WooCommerce-linked rows with `external_id`
+   - `Refresh WooCommerce` only for WooCommerce-linked rows with `external_id`
    - `Open Logistics`
 9. Select one or more visible rows
 10. Confirm a batch action bar appears
@@ -1962,7 +2016,7 @@ Release-candidate audit result on 2026-05-16:
 2. Confirm the detail page now shows a denser operations header with:
    - status cluster
    - payment cluster
-   - source or Woo state
+   - source or WooCommerce state
    - print or sync metadata
 3. Confirm the page still surfaces:
    - customer and shipping cards
@@ -2013,7 +2067,7 @@ Release-candidate audit result on 2026-05-16:
 3. Confirm the KPI strip shows:
    - total products
    - active products
-   - Woo products
+   - WooCommerce products
    - variant rows
 4. Use the local search and status filter
 5. Confirm the visible product table narrows without runtime errors
@@ -2023,14 +2077,14 @@ Release-candidate audit result on 2026-05-16:
    - category
    - brand
    - price
-   - source or Woo badge
+   - source or WooCommerce badge
    - external status when present
    - synced hint when present
    - variants count
 7. Confirm actions still work for:
    - `Edit`
    - `Manage Variants`
-   - `Refresh Woo` when applicable
+   - `Refresh WooCommerce` when applicable
 
 ## Product Detail UI Checks
 
@@ -2039,7 +2093,7 @@ Release-candidate audit result on 2026-05-16:
    - SKU
    - price
    - active status
-   - Woo stock when available
+   - WooCommerce stock when available
 3. For WooCommerce-sourced products, confirm the refresh button and safety note still appear
 4. Confirm the page still shows:
    - edit product form
@@ -2139,9 +2193,9 @@ Release-candidate audit result on 2026-05-16:
 2. Confirm the `Integration Health` section shows:
    - WooCommerce orders count
    - WooCommerce products count
-   - Woo recent sync failures
-   - Woo last product sync
-   - Woo last order sync
+   - WooCommerce recent sync failures
+   - WooCommerce last product sync
+   - WooCommerce last order sync
    - courier sent count
    - courier recent failures
    - external delivered count
@@ -2151,7 +2205,7 @@ Release-candidate audit result on 2026-05-16:
    - integration summary
    - courier failures
    - WooCommerce imported orders
-4. Confirm the management widget shows last Woo sync timestamps clearly and uses semantic badges or KPI styling for failure and pending-action counts
+4. Confirm the management widget shows last WooCommerce sync timestamps clearly and uses semantic badges or KPI styling for failure and pending-action counts
 
 ## Dashboard Ops Snapshot Checks
 
@@ -2159,6 +2213,6 @@ Release-candidate audit result on 2026-05-16:
 2. Confirm the dashboard now surfaces:
    - `Ready to Ship`
    - `Need Shipment`
-   - `Woo Sync Health`
+   - `WooCommerce Sync Health`
    - `Courier Sync Health`
 3. Confirm the cards stay compact and do not crowd out the existing dashboard content

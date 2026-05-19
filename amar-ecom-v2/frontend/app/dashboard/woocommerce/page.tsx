@@ -248,6 +248,33 @@ function duplicateStatusLabel(status: ProductPreview["duplicate_status"] | Order
   }
 }
 
+function SummaryTile({
+  label,
+  value,
+  helper,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  tone?: "default" | "success" | "warning" | "danger";
+}) {
+  const toneClasses = {
+    default: "border-slate-200 bg-white text-slate-950",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    warning: "border-amber-200 bg-amber-50 text-amber-900",
+    danger: "border-rose-200 bg-rose-50 text-rose-900",
+  };
+
+  return (
+    <div className={`rounded-[24px] border px-5 py-4 shadow-[var(--shadow-soft)] ${toneClasses[tone]}`}>
+      <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">{label}</p>
+      <p className="mt-3 text-2xl font-black tracking-tight">{value}</p>
+      <p className="mt-2 text-xs font-medium text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
 function LocalEntityLink({ type, id }: { type: "product" | "order"; id: string | null }) {
   if (!id) {
     return <span className="text-slate-400">-</span>;
@@ -311,6 +338,11 @@ export default function WooCommercePage() {
   const [refreshImportedOrdersStatus, setRefreshImportedOrdersStatus] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const latestLog = syncLogs[0] || syncStatus?.recent_sync_logs?.[0] || null;
+  const connectionTone = settings?.last_test_success ? "success" : settings?.last_tested_at ? "warning" : "default";
+  const failureTone = (syncStatus?.failed_sync_count ?? 0) > 0 ? "danger" : "success";
+  const readinessTone = syncStatus?.ready_to_sync ? "success" : "warning";
 
   async function refreshLogs(nextFilters: SyncLogFilters = logFilters) {
     const query = new URLSearchParams();
@@ -661,9 +693,9 @@ export default function WooCommercePage() {
     <div className="space-y-4">
       <section className="card-base p-6 sm:p-8">
         <OpsPageHeader
-          eyebrow="WooCommerce Console"
+          eyebrow="WooCommerce"
           title="WooCommerce workspace"
-          description="Configure a safer read-only WooCommerce connection, store sync schedule preferences, run manual sync safely, preview duplicate risk before import, refresh imported Woo products and orders, and inspect sync-log details."
+          description="Review connection state, run guarded manual sync actions, inspect imported WooCommerce products and orders, and keep external store visibility in one safe control surface."
           meta="Read-only"
         />
       </section>
@@ -674,6 +706,60 @@ export default function WooCommercePage() {
       <div className="rounded-[28px] border border-sky-200 bg-sky-50 px-5 py-4 text-sm leading-6 text-sky-800 shadow-[var(--shadow-soft)]">
         Manual import only. This will not modify your WooCommerce store.
       </div>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <SummaryTile
+          label="Connection"
+          value={settings?.last_test_success ? "Connected" : settings?.last_tested_at ? "Needs Review" : "Not Tested"}
+          helper={settings?.last_tested_at ? `Last tested ${formatDateTime(settings.last_tested_at)}` : "Run a connection test first"}
+          tone={connectionTone}
+        />
+        <SummaryTile
+          label="Sync Readiness"
+          value={syncStatus?.ready_to_sync ? "Ready" : "Blocked"}
+          helper={syncStatus?.readiness_warnings?.[0] || "Safe manual sync is available"}
+          tone={readinessTone}
+        />
+        <SummaryTile
+          label="Imported Products"
+          value={String(syncStatus?.imported_woocommerce_products_count ?? 0)}
+          helper={syncStatus?.last_product_refresh_at ? `Last refresh ${formatDateTime(syncStatus.last_product_refresh_at)}` : "No product refresh yet"}
+        />
+        <SummaryTile
+          label="Imported Orders"
+          value={String(syncStatus?.imported_woocommerce_orders_count ?? 0)}
+          helper={syncStatus?.last_order_refresh_at ? `Last refresh ${formatDateTime(syncStatus.last_order_refresh_at)}` : "No order refresh yet"}
+        />
+        <SummaryTile
+          label="Recent Failures"
+          value={String(syncStatus?.failed_sync_count ?? 0)}
+          helper={latestLog ? `${formatLabel(latestLog.sync_type)} - ${formatDateTime(latestLog.created_at)}` : "No sync activity yet"}
+          tone={failureTone}
+        />
+      </section>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-[var(--shadow-soft)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Exposure</p>
+            <h2 className="mt-2 text-lg font-black tracking-tight text-slate-950">WooCommerce visibility stays manual and guarded.</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Orders, products, reports, and settings point back to this read-only WooCommerce workspace instead of duplicating risky sync controls elsewhere.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/dashboard/reports" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              Open Reports
+            </Link>
+            <Link href="/dashboard/orders" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              Open Orders
+            </Link>
+            <Link href="/dashboard/products" className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              Open Products
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {error ? <ErrorAlert message={error} /> : null}
       {success ? (
@@ -836,10 +922,10 @@ export default function WooCommercePage() {
                 Interval: <span className="font-semibold text-slate-950">{settingsForm.sync_interval_minutes} minutes</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Imported Woo products: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_products_count ?? 0}</span>
+                Imported WooCommerce products: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_products_count ?? 0}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Imported Woo orders: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_orders_count ?? 0}</span>
+                Imported WooCommerce orders: <span className="font-semibold text-slate-950">{syncStatus?.imported_woocommerce_orders_count ?? 0}</span>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Last product refresh: <span className="font-semibold text-slate-950">{syncStatus?.last_product_refresh_at ? formatDateTime(syncStatus.last_product_refresh_at) : "Never"}</span>
@@ -1158,7 +1244,7 @@ export default function WooCommercePage() {
                         <th className="px-4 py-3">Duplicate status</th>
                         <th className="px-4 py-3">Local product</th>
                         <th className="px-4 py-3">Price</th>
-                        <th className="px-4 py-3">Woo stock</th>
+                        <th className="px-4 py-3">WooCommerce stock</th>
                         <th className="px-4 py-3">Status</th>
                       </tr>
                     </thead>
@@ -1230,7 +1316,7 @@ export default function WooCommercePage() {
                   value={refreshImportedProductsSearch}
                   onChange={(event) => setRefreshImportedProductsSearch(event.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-                  placeholder="Search Woo product name or SKU"
+                  placeholder="Search WooCommerce product name or SKU"
                 />
               </label>
               <div className="flex items-end">
@@ -1452,7 +1538,7 @@ export default function WooCommercePage() {
                 </select>
               </label>
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Woo status filter</span>
+                <span className="mb-2 block text-sm font-medium text-slate-700">WooCommerce status filter</span>
                 <select value={refreshImportedOrdersStatus} onChange={(event) => setRefreshImportedOrdersStatus(event.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
                   <option value="">All statuses</option>
                   {["pending", "processing", "completed", "cancelled", "refunded", "failed", "on-hold"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}

@@ -1635,7 +1635,7 @@ export default function OrdersPage() {
                                   #{order.orderNumber}
                                 </button>
                                 {order.source?.toLowerCase() === "woocommerce" ? (
-                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-blue-700">Woo</span>
+                                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-blue-700">WooCommerce</span>
                                 ) : null}
                               </div>
                               <div className="text-[11px] font-medium text-[var(--color-txt-sec)]">{formatDate(order.createdAt)}</div>
@@ -2141,7 +2141,7 @@ export default function OrdersPage() {
                           ) : null}
                           {detailOrder.action_flags.can_refresh_woo ? (
                             <button onClick={refreshWooOrder} disabled={isRefreshingWoo} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)] disabled:opacity-60">
-                              {isRefreshingWoo ? "Refreshing..." : "Refresh Woo"}
+                              {isRefreshingWoo ? "Refreshing..." : "Refresh WooCommerce"}
                             </button>
                           ) : null}
                           <Link href={`/dashboard/orders/${detailOrder.id}`} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)]">

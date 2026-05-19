@@ -243,7 +243,7 @@ export default function ProductsPage() {
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <OpsSummaryCard eyebrow="Catalog" label="Total Products" value={products.length} icon={Boxes} />
             <OpsSummaryCard eyebrow="Status" label="Active Products" value={products.filter((product) => product.status === "active").length} icon={Tag} tone="success" />
-            <OpsSummaryCard eyebrow="Channel" label="Woo Products" value={products.filter((product) => product.source === "woocommerce").length} icon={RefreshCw} tone="info" />
+            <OpsSummaryCard eyebrow="Channel" label="WooCommerce Products" value={products.filter((product) => product.source === "woocommerce").length} icon={RefreshCw} tone="info" />
             <OpsSummaryCard eyebrow="Variants" label="Variant Rows" value={products.reduce((sum, product) => sum + (product.variants?.length || 0), 0)} icon={Rows3} />
           </div>
       </section>
@@ -707,7 +707,7 @@ export default function ProductsPage() {
           <OpsPageHeader
             eyebrow="Saved Records"
             title="Existing products"
-            description="Review the catalog with denser row metadata, local filtering, Woo markers, and direct actions into product detail or variant management."
+            description="Review the catalog with denser row metadata, local filtering, WooCommerce markers, and direct actions into product detail or variant management."
           />
 
           <div className="mt-6 space-y-4">
@@ -768,7 +768,7 @@ export default function ProductsPage() {
                       {product.source === "woocommerce" ? (
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                           <StatusBadge status="woocommerce" label="WooCommerce" />
-                          {product.external_status ? <StatusBadge status={product.external_status} label={`Woo ${product.external_status}`} /> : null}
+                          {product.external_status ? <StatusBadge status={product.external_status} label={`WooCommerce ${product.external_status}`} /> : null}
                         </div>
                       ) : null}
                       {product.external_synced_at ? (
@@ -805,7 +805,7 @@ export default function ProductsPage() {
                           className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
                         >
                           <RefreshCw className="h-3.5 w-3.5" />
-                          Refresh Woo
+                          Refresh WooCommerce
                         </Link>
                       ) : null}
                     </div>
