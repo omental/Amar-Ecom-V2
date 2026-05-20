@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -18,7 +18,7 @@ router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _generate_transaction_number(transaction_type: str) -> str:
-    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     return f"TXN-{transaction_type.replace('_', '-').upper()}-{stamp}"
 
 
