@@ -14,7 +14,36 @@ export type OnlineStoreSettings = {
   phone?: string | null;
   email?: string | null;
   address?: string | null;
+  active_template_key?: "live_shopping_classic" | "minimal_fashion" | "electronics_deals";
+  typography_preset?:
+    | "default_sans"
+    | "modern_commerce"
+    | "elegant_fashion"
+    | "bold_deal_store"
+    | "premium_editorial";
+  color_preset?:
+    | "live_red"
+    | "premium_black"
+    | "fashion_rose"
+    | "electronics_blue"
+    | "organic_green"
+    | "luxury_gold";
+  animation_preset?:
+    | "none"
+    | "subtle_fade"
+    | "slide_up"
+    | "scale_in"
+    | "premium_smooth"
+    | "deal_pop";
+  product_card_style?: "compact_deal" | "image_first" | "premium_card" | "minimal_grid";
+  button_style?: "sharp" | "rounded" | "pill" | "bold_block";
+  header_layout?: "search_heavy" | "minimal" | "centered_logo" | "category_first";
+  footer_layout?: "simple" | "multi_column" | "brand_story";
+  spacing_density?: "compact" | "balanced" | "airy";
+  corner_radius?: "sharp" | "soft" | "rounded";
+  shadow_style?: "none" | "soft" | "premium";
   primary_color: string;
+  accent_color?: string | null;
   secondary_color?: string | null;
   currency: string;
   show_topbar: boolean;
@@ -130,6 +159,30 @@ export type OnlineStoreCoupon = {
   usage_count?: number;
   created_at?: string;
   updated_at?: string;
+};
+
+export type OnlineStoreTemplatePreset = {
+  key: "live_shopping_classic" | "minimal_fashion" | "electronics_deals";
+  name: string;
+  description: string;
+  best_for: string;
+  recommended_typography_preset: NonNullable<OnlineStoreSettings["typography_preset"]>;
+  recommended_color_preset: NonNullable<OnlineStoreSettings["color_preset"]>;
+  recommended_animation_preset: NonNullable<OnlineStoreSettings["animation_preset"]>;
+  header_layout: NonNullable<OnlineStoreSettings["header_layout"]>;
+  footer_layout: NonNullable<OnlineStoreSettings["footer_layout"]>;
+  product_card_style: NonNullable<OnlineStoreSettings["product_card_style"]>;
+  button_style: NonNullable<OnlineStoreSettings["button_style"]>;
+  spacing_density: NonNullable<OnlineStoreSettings["spacing_density"]>;
+  corner_radius: NonNullable<OnlineStoreSettings["corner_radius"]>;
+  shadow_style: NonNullable<OnlineStoreSettings["shadow_style"]>;
+  default_homepage_sections: Array<{
+    type: string;
+    title?: string | null;
+    subtitle?: string | null;
+    settings?: Record<string, unknown> | null;
+    content?: Record<string, unknown> | null;
+  }>;
 };
 
 export type PublicStorefrontResponse = {
@@ -253,12 +306,35 @@ export async function deleteAdminStorefrontCoupon(couponId: string) {
   });
 }
 
+export async function fetchAdminStorefrontTemplates() {
+  return fetchAdminJson<OnlineStoreTemplatePreset[]>("/admin/storefront/templates");
+}
+
+export async function applyAdminStorefrontTemplate(templateKey: string, replaceHomepage = true) {
+  return fetchAdminJson<OnlineStorePage>(`/admin/storefront/templates/${templateKey}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ replace_homepage: replaceHomepage }),
+  });
+}
+
 export const FALLBACK_STOREFRONT_SETTINGS: OnlineStoreSettings = {
   brand_name: "Amar-eCom",
   phone: "+880 1711-000000",
   email: "email@amar-ecom.com",
   address: "Dhaka, Bangladesh",
+  active_template_key: "live_shopping_classic",
+  typography_preset: "modern_commerce",
+  color_preset: "live_red",
+  animation_preset: "subtle_fade",
+  product_card_style: "compact_deal",
+  button_style: "rounded",
+  header_layout: "search_heavy",
+  footer_layout: "multi_column",
+  spacing_density: "compact",
+  corner_radius: "soft",
+  shadow_style: "soft",
   primary_color: "#db011c",
+  accent_color: "#111111",
   currency: "BDT",
   show_topbar: true,
   show_search: true,

@@ -853,14 +853,38 @@ def test_storefront_settings_get_and_update() -> None:
                 headers=headers,
                 json={
                     "brand_name": "Amar-eCom Live",
+                    "active_template_key": "minimal_fashion",
+                    "typography_preset": "elegant_fashion",
+                    "color_preset": "fashion_rose",
+                    "animation_preset": "premium_smooth",
+                    "product_card_style": "premium_card",
+                    "button_style": "pill",
+                    "header_layout": "centered_logo",
+                    "footer_layout": "brand_story",
+                    "spacing_density": "airy",
+                    "corner_radius": "rounded",
+                    "shadow_style": "premium",
                     "primary_color": "#111111",
+                    "accent_color": "#d9465f",
                     "show_search": False,
                 },
             )
             assert update_response.status_code == 200, update_response.text
             updated = update_response.json()
             assert updated["brand_name"] == "Amar-eCom Live"
+            assert updated["active_template_key"] == "minimal_fashion"
+            assert updated["typography_preset"] == "elegant_fashion"
+            assert updated["color_preset"] == "fashion_rose"
+            assert updated["animation_preset"] == "premium_smooth"
+            assert updated["product_card_style"] == "premium_card"
+            assert updated["button_style"] == "pill"
+            assert updated["header_layout"] == "centered_logo"
+            assert updated["footer_layout"] == "brand_story"
+            assert updated["spacing_density"] == "airy"
+            assert updated["corner_radius"] == "rounded"
+            assert updated["shadow_style"] == "premium"
             assert updated["primary_color"] == "#111111"
+            assert updated["accent_color"] == "#d9465f"
             assert updated["show_search"] is False
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if "storefront_" in str(exc).lower():
@@ -983,6 +1007,61 @@ def test_storefront_pages_sections_and_public_visibility() -> None:
             assert isinstance(home_payload["page"]["sections"], list)
             assert "id" not in home_payload["page"]
             assert "id" not in home_payload["settings"]
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if "storefront_" in str(exc).lower():
+            pytest.skip("Apply the storefront builder migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_storefront_templates_list_and_apply() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            templates_response = client.get("/api/v1/admin/storefront/templates", headers=headers)
+            assert templates_response.status_code == 200, templates_response.text
+            templates = templates_response.json()
+            assert any(item["key"] == "live_shopping_classic" for item in templates)
+            assert any(item["key"] == "minimal_fashion" for item in templates)
+            assert any(item["key"] == "electronics_deals" for item in templates)
+
+            reject_response = client.post(
+                "/api/v1/admin/storefront/templates/minimal_fashion/apply",
+                headers=headers,
+                json={"replace_homepage": False},
+            )
+            assert reject_response.status_code == 400, reject_response.text
+
+            apply_response = client.post(
+                "/api/v1/admin/storefront/templates/minimal_fashion/apply",
+                headers=headers,
+                json={"replace_homepage": True},
+            )
+            assert apply_response.status_code == 200, apply_response.text
+            homepage = apply_response.json()
+            assert homepage["slug"] == "home"
+            assert len(homepage["sections"]) >= 3
+            assert homepage["sections"][0]["type"] == "hero_slider"
+
+            settings_response = client.get("/api/v1/admin/storefront/settings", headers=headers)
+            assert settings_response.status_code == 200, settings_response.text
+            settings = settings_response.json()
+            assert settings["active_template_key"] == "minimal_fashion"
+            assert settings["typography_preset"] == "elegant_fashion"
+            assert settings["color_preset"] == "fashion_rose"
+            assert settings["product_card_style"] == "premium_card"
+            assert settings["button_style"] == "pill"
+
+            public_home_response = client.get("/api/v1/public/storefront/pages/home")
+            assert public_home_response.status_code == 200, public_home_response.text
+            public_home = public_home_response.json()
+            assert public_home["settings"]["active_template_key"] == "minimal_fashion"
+            assert public_home["settings"]["typography_preset"] == "elegant_fashion"
+            assert public_home["settings"]["color_preset"] == "fashion_rose"
+            assert public_home["page"]["slug"] == "home"
+            assert any(section["type"] == "newsletter" for section in public_home["page"]["sections"])
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if "storefront_" in str(exc).lower():
             pytest.skip("Apply the storefront builder migration before running this test.")

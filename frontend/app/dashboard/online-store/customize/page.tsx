@@ -10,22 +10,8 @@ import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
-import type { OnlineStorePage, OnlineStoreSection } from "@/lib/online-store";
-
-const sectionTypes = [
-  "hero_slider",
-  "product_grid",
-  "category_grid",
-  "banner_grid",
-  "single_banner",
-  "flash_sale",
-  "best_selling",
-  "new_arrivals",
-  "featured_collection",
-  "text_block",
-  "image_text",
-  "newsletter",
-] as const;
+import type { OnlineStorePage, OnlineStoreSection, OnlineStoreSettings } from "@/lib/online-store";
+import { buildSectionFromPreset, getSectionPreset, storefrontSectionPresets } from "@/lib/storefront-section-presets";
 
 type PublicCategory = {
   id: string;
@@ -51,7 +37,8 @@ function stringifyIdTextarea(values: unknown) {
 export default function OnlineStoreCustomizePage() {
   const [page, setPage] = useState<OnlineStorePage | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [newSectionType, setNewSectionType] = useState<(typeof sectionTypes)[number]>(sectionTypes[0]);
+  const [newSectionType, setNewSectionType] = useState<string>(storefrontSectionPresets[0].type);
+  const [settings, setSettings] = useState<OnlineStoreSettings | null>(null);
   const [categories, setCategories] = useState<PublicCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -75,6 +62,7 @@ export default function OnlineStoreCustomizePage() {
         if (!mounted) return;
         const [categoryPayload] = await Promise.all([
           api.get<PublicCategory[]>("/public/categories").catch(() => []),
+          api.get<OnlineStoreSettings>("/admin/storefront/settings").then(setSettings),
           loadPage(),
         ]);
         if (!mounted) return;
@@ -164,19 +152,33 @@ export default function OnlineStoreCustomizePage() {
 
   async function createSection() {
     if (!page?.id) return;
+    const payload = buildSectionFromPreset(newSectionType);
     try {
       await api.post(`/admin/storefront/pages/${page.id}/sections`, {
-        type: newSectionType,
-        title: toPrettyLabel(newSectionType),
-        subtitle: "",
-        is_enabled: true,
-        settings: {},
-        content: {},
+        ...payload,
       });
       await loadPage();
       setSuccess("Section added.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add section.");
+    }
+  }
+
+  async function duplicateSection(section: OnlineStoreSection) {
+    if (!page?.id) return;
+    try {
+      await api.post(`/admin/storefront/pages/${page.id}/sections`, {
+        type: section.type,
+        title: section.title,
+        subtitle: section.subtitle,
+        is_enabled: section.is_enabled ?? true,
+        settings: section.settings || {},
+        content: section.content || {},
+      });
+      await loadPage();
+      setSuccess("Section duplicated.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to duplicate section.");
     }
   }
 
@@ -507,6 +509,50 @@ export default function OnlineStoreCustomizePage() {
       );
     }
 
+    if (section.type === "faq" || section.type === "testimonials" || section.type === "brand_strip") {
+      const items = Array.isArray(content.items) ? (content.items as Array<Record<string, unknown>>) : [];
+      const textareaValue = items
+        .map((item) =>
+          section.type === "faq"
+            ? `${String(item.question || "")} | ${String(item.answer || "")}`
+            : section.type === "testimonials"
+              ? `${String(item.quote || "")} | ${String(item.author || "")}`
+              : String(item.label || ""),
+        )
+        .join("\n");
+
+      return (
+        <div className="space-y-4">
+          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+          <textarea
+            value={textareaValue}
+            onChange={(e) =>
+              updateSelectedContent({
+                items: e.target.value
+                  .split("\n")
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line) => {
+                    const [left, right] = line.split("|").map((part) => part.trim());
+                    if (section.type === "faq") return { question: left, answer: right || "" };
+                    if (section.type === "testimonials") return { quote: left, author: right || "" };
+                    return { label: left };
+                  }),
+              })
+            }
+            placeholder={
+              section.type === "faq"
+                ? "Question | Answer"
+                : section.type === "testimonials"
+                  ? "Quote | Author"
+                  : "Brand label"
+            }
+            className="min-h-32 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
+          />
+        </div>
+      );
+    }
+
     return (
       <p className="text-sm text-[var(--color-txt-sec)]">
         This section does not have a dedicated structured editor yet. Use the advanced settings below.
@@ -530,6 +576,9 @@ export default function OnlineStoreCustomizePage() {
               page.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
             }`}>
               {page.status === "published" ? "Published" : "Draft"}
+            </span>
+            <span className="rounded-full bg-[var(--color-surf-hover)] px-3 py-1 text-xs font-semibold text-[var(--color-txt-pri)]">
+              Template: {(settings?.active_template_key || "live_shopping_classic").replace(/_/g, " ")}
             </span>
             {page.last_published_at ? (
               <span className="text-xs text-[var(--color-txt-sec)]">
@@ -570,8 +619,8 @@ export default function OnlineStoreCustomizePage() {
             description="Reorder, hide, and manage the predefined sections that make up the public storefront home page."
             action={(
               <div className="flex gap-2">
-                <select value={newSectionType} onChange={(e) => setNewSectionType(e.target.value as (typeof sectionTypes)[number])} className="rounded-full border border-[var(--color-brd)] bg-[var(--color-surf)] px-4 py-2 text-sm">
-                  {sectionTypes.map((type) => <option key={type} value={type}>{toPrettyLabel(type)}</option>)}
+                <select value={newSectionType} onChange={(e) => setNewSectionType(e.target.value)} className="rounded-full border border-[var(--color-brd)] bg-[var(--color-surf)] px-4 py-2 text-sm">
+                  {storefrontSectionPresets.map((preset) => <option key={preset.type} value={preset.type}>{preset.label}</option>)}
                 </select>
                 <button type="button" onClick={() => void createSection()} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">
                   Add Section
@@ -584,11 +633,13 @@ export default function OnlineStoreCustomizePage() {
                 <div key={section.id} className={`rounded-[18px] border p-4 ${selectedSectionId === section.id ? "border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_8%,white)]" : "border-[var(--color-brd)] bg-[var(--color-surf-hover)]"}`}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-[var(--color-txt-pri)]">[{toPrettyLabel(section.type)}] {section.title || "Untitled section"}</p>
+                      <p className="text-sm font-semibold text-[var(--color-txt-pri)]">[{getSectionPreset(section.type)?.label || toPrettyLabel(section.type)}] {section.title || "Untitled section"}</p>
+                      <p className="mt-1 text-xs text-[var(--color-txt-sec)]">{getSectionPreset(section.type)?.description || "Storefront section block"}</p>
                       <p className="mt-1 text-xs text-[var(--color-txt-sec)]">{section.is_enabled ? "Visible" : "Hidden"}</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => setSelectedSectionId(section.id || null)} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">Edit</button>
+                      <button type="button" onClick={() => void duplicateSection(section)} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">Duplicate</button>
                       <button type="button" onClick={() => void saveSection({ ...section, is_enabled: !section.is_enabled })} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">{section.is_enabled ? "Hide" : "Show"}</button>
                       <button type="button" disabled={index === 0} onClick={() => void moveSection(section.id!, "up")} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
                       <button type="button" disabled={index === page.sections.length - 1} onClick={() => void moveSection(section.id!, "down")} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>

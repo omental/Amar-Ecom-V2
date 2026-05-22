@@ -17,6 +17,7 @@ from app.models.storefront import (
     StorefrontMenuItem,
     StorefrontPage,
     StorefrontSection,
+    StorefrontSetting,
 )
 from app.models.user import User
 from app.schemas.storefront import (
@@ -46,6 +47,8 @@ from app.schemas.storefront import (
     StorefrontSectionUpdate,
     StorefrontSettingRead,
     StorefrontSettingUpdate,
+    StorefrontTemplateApplyInput,
+    StorefrontTemplatePresetRead,
 )
 from app.services.activity_log_service import log_activity
 from app.services.storefront_html_service import sanitize_storefront_html
@@ -57,6 +60,7 @@ from app.services.storefront_service import (
     is_admin_user,
     save_storefront_media,
 )
+from app.services.storefront_template_service import apply_template_preset, list_template_presets
 from datetime import datetime, timezone
 
 
@@ -110,6 +114,10 @@ def _coupon_read(coupon: StorefrontCoupon) -> StorefrontCouponRead:
     )
 
 
+def _setting_read(settings: StorefrontSetting) -> StorefrontSettingRead:
+    return StorefrontSettingRead.model_validate(settings)
+
+
 @router.get("/overview", response_model=StorefrontOverviewRead)
 async def get_storefront_overview(
     db: DBSession,
@@ -150,7 +158,7 @@ async def get_storefront_settings(
 ) -> StorefrontSettingRead:
     _ensure_admin(current_user)
     await ensure_storefront_defaults(db)
-    return await get_or_create_storefront_settings(db)
+    return _setting_read(await get_or_create_storefront_settings(db))
 
 
 @router.put("/settings", response_model=StorefrontSettingRead)
@@ -178,7 +186,31 @@ async def update_storefront_settings(
     )
     await commit_or_409(db, "Could not update storefront settings")
     await db.refresh(settings)
-    return settings
+    return _setting_read(settings)
+
+
+@router.get("/templates", response_model=list[StorefrontTemplatePresetRead])
+async def get_storefront_templates(
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontTemplatePresetRead]:
+    _ensure_admin(current_user)
+    return list_template_presets()
+
+
+@router.post("/templates/{template_key}/apply", response_model=StorefrontPageRead)
+async def apply_storefront_template(
+    template_key: str,
+    payload: StorefrontTemplateApplyInput,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontPage:
+    _ensure_admin(current_user)
+    page = await apply_template_preset(
+        db,
+        template_key=template_key,
+        replace_homepage=payload.replace_homepage,
+    )
+    return await _get_page_or_404(db, page.id)
 
 
 @router.get("/menus", response_model=list[StorefrontMenuRead])

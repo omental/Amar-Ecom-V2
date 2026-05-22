@@ -121,7 +121,19 @@ async def get_or_create_storefront_settings(db: AsyncSession) -> StorefrontSetti
             phone="+880 1711-000000",
             email="email@amar-ecom.com",
             address="Dhaka, Bangladesh",
+            active_template_key="live_shopping_classic",
+            typography_preset="modern_commerce",
+            color_preset="live_red",
+            animation_preset="subtle_fade",
+            product_card_style="compact_deal",
+            button_style="rounded",
+            header_layout="search_heavy",
+            footer_layout="multi_column",
+            spacing_density="compact",
+            corner_radius="soft",
+            shadow_style="soft",
             primary_color="#db011c",
+            accent_color="#111111",
             currency="BDT",
             show_topbar=True,
             show_search=True,
@@ -135,6 +147,29 @@ async def get_or_create_storefront_settings(db: AsyncSession) -> StorefrontSetti
         db.add(settings)
         await commit_or_409(db, "Could not initialize storefront settings")
         await db.refresh(settings)
+    else:
+        defaults = {
+            "active_template_key": "live_shopping_classic",
+            "typography_preset": "modern_commerce",
+            "color_preset": "live_red",
+            "animation_preset": "subtle_fade",
+            "product_card_style": "compact_deal",
+            "button_style": "rounded",
+            "header_layout": "search_heavy",
+            "footer_layout": "multi_column",
+            "spacing_density": "compact",
+            "corner_radius": "soft",
+            "shadow_style": "soft",
+            "accent_color": "#111111",
+        }
+        dirty = False
+        for field, value in defaults.items():
+            if getattr(settings, field, None) in (None, ""):
+                setattr(settings, field, value)
+                dirty = True
+        if dirty:
+            await commit_or_409(db, "Could not upgrade storefront design defaults")
+            await db.refresh(settings)
 
     return settings
 

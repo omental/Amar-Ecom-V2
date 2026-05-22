@@ -31,8 +31,22 @@ SECTION_TYPES = (
     "text_block",
     "image_text",
     "newsletter",
+    "faq",
+    "testimonials",
+    "brand_strip",
 )
 MEDIA_TYPES = ("logo", "favicon", "banner", "category", "product", "section", "general")
+TEMPLATE_KEYS = ("live_shopping_classic", "minimal_fashion", "electronics_deals")
+TYPOGRAPHY_PRESETS = ("default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial")
+COLOR_PRESETS = ("live_red", "premium_black", "fashion_rose", "electronics_blue", "organic_green", "luxury_gold")
+ANIMATION_PRESETS = ("none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop")
+PRODUCT_CARD_STYLES = ("compact_deal", "image_first", "premium_card", "minimal_grid")
+BUTTON_STYLES = ("sharp", "rounded", "pill", "bold_block")
+HEADER_LAYOUTS = ("search_heavy", "minimal", "centered_logo", "category_first")
+FOOTER_LAYOUTS = ("simple", "multi_column", "brand_story")
+SPACING_DENSITIES = ("compact", "balanced", "airy")
+CORNER_RADII = ("sharp", "soft", "rounded")
+SHADOW_STYLES = ("none", "soft", "premium")
 
 
 def _validate_choice(value: str, field_name: str, allowed: tuple[str, ...]) -> str:
@@ -48,7 +62,19 @@ class StorefrontSettingBase(BaseModel):
     phone: str | None = None
     email: EmailStr | None = None
     address: str | None = None
+    active_template_key: str | None = None
+    typography_preset: str | None = None
+    color_preset: str | None = None
+    animation_preset: str | None = None
+    product_card_style: str | None = None
+    button_style: str | None = None
+    header_layout: str | None = None
+    footer_layout: str | None = None
+    spacing_density: str | None = None
+    corner_radius: str | None = None
+    shadow_style: str | None = None
     primary_color: str | None = None
+    accent_color: str | None = None
     secondary_color: str | None = None
     currency: str | None = None
     show_topbar: bool | None = None
@@ -77,6 +103,83 @@ class StorefrontSettingBase(BaseModel):
             raise ValueError("Amount cannot be negative")
         return value
 
+    @field_validator("active_template_key")
+    @classmethod
+    def validate_template_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "template key", TEMPLATE_KEYS)
+
+    @field_validator("typography_preset")
+    @classmethod
+    def validate_typography_preset(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "typography preset", TYPOGRAPHY_PRESETS)
+
+    @field_validator("color_preset")
+    @classmethod
+    def validate_color_preset(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "color preset", COLOR_PRESETS)
+
+    @field_validator("animation_preset")
+    @classmethod
+    def validate_animation_preset(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "animation preset", ANIMATION_PRESETS)
+
+    @field_validator("product_card_style")
+    @classmethod
+    def validate_product_card_style(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "product card style", PRODUCT_CARD_STYLES)
+
+    @field_validator("button_style")
+    @classmethod
+    def validate_button_style(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "button style", BUTTON_STYLES)
+
+    @field_validator("header_layout")
+    @classmethod
+    def validate_header_layout(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "header layout", HEADER_LAYOUTS)
+
+    @field_validator("footer_layout")
+    @classmethod
+    def validate_footer_layout(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "footer layout", FOOTER_LAYOUTS)
+
+    @field_validator("spacing_density")
+    @classmethod
+    def validate_spacing_density(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "spacing density", SPACING_DENSITIES)
+
+    @field_validator("corner_radius")
+    @classmethod
+    def validate_corner_radius(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "corner radius", CORNER_RADII)
+
+    @field_validator("shadow_style")
+    @classmethod
+    def validate_shadow_style(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "shadow style", SHADOW_STYLES)
+
 
 class StorefrontSettingUpdate(StorefrontSettingBase):
     pass
@@ -90,7 +193,19 @@ class StorefrontSettingRead(ORMBaseSchema):
     phone: str | None = None
     email: EmailStr | None = None
     address: str | None = None
+    active_template_key: Literal["live_shopping_classic", "minimal_fashion", "electronics_deals"]
+    typography_preset: Literal["default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial"]
+    color_preset: Literal["live_red", "premium_black", "fashion_rose", "electronics_blue", "organic_green", "luxury_gold"]
+    animation_preset: Literal["none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop"]
+    product_card_style: Literal["compact_deal", "image_first", "premium_card", "minimal_grid"]
+    button_style: Literal["sharp", "rounded", "pill", "bold_block"]
+    header_layout: Literal["search_heavy", "minimal", "centered_logo", "category_first"]
+    footer_layout: Literal["simple", "multi_column", "brand_story"]
+    spacing_density: Literal["compact", "balanced", "airy"]
+    corner_radius: Literal["sharp", "soft", "rounded"]
+    shadow_style: Literal["none", "soft", "premium"]
     primary_color: str
+    accent_color: str | None = None
     secondary_color: str | None = None
     currency: str
     show_topbar: bool
@@ -499,7 +614,19 @@ class PublicStorefrontSetting(BaseModel):
     phone: str | None = None
     email: EmailStr | None = None
     address: str | None = None
+    active_template_key: Literal["live_shopping_classic", "minimal_fashion", "electronics_deals"]
+    typography_preset: Literal["default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial"]
+    color_preset: Literal["live_red", "premium_black", "fashion_rose", "electronics_blue", "organic_green", "luxury_gold"]
+    animation_preset: Literal["none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop"]
+    product_card_style: Literal["compact_deal", "image_first", "premium_card", "minimal_grid"]
+    button_style: Literal["sharp", "rounded", "pill", "bold_block"]
+    header_layout: Literal["search_heavy", "minimal", "centered_logo", "category_first"]
+    footer_layout: Literal["simple", "multi_column", "brand_story"]
+    spacing_density: Literal["compact", "balanced", "airy"]
+    corner_radius: Literal["sharp", "soft", "rounded"]
+    shadow_style: Literal["none", "soft", "premium"]
     primary_color: str
+    accent_color: str | None = None
     secondary_color: str | None = None
     currency: str
     show_topbar: bool
@@ -638,6 +765,36 @@ class PublicStorefrontCouponValidateResponse(BaseModel):
     delivery_charge: float
     total: float
     message: str | None = None
+
+
+class StorefrontTemplateSectionPreset(BaseModel):
+    type: str
+    title: str | None = None
+    subtitle: str | None = None
+    settings: dict[str, Any] | None = None
+    content: dict[str, Any] | None = None
+
+
+class StorefrontTemplatePresetRead(BaseModel):
+    key: Literal["live_shopping_classic", "minimal_fashion", "electronics_deals"]
+    name: str
+    description: str
+    best_for: str
+    recommended_typography_preset: Literal["default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial"]
+    recommended_color_preset: Literal["live_red", "premium_black", "fashion_rose", "electronics_blue", "organic_green", "luxury_gold"]
+    recommended_animation_preset: Literal["none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop"]
+    header_layout: Literal["search_heavy", "minimal", "centered_logo", "category_first"]
+    footer_layout: Literal["simple", "multi_column", "brand_story"]
+    product_card_style: Literal["compact_deal", "image_first", "premium_card", "minimal_grid"]
+    button_style: Literal["sharp", "rounded", "pill", "bold_block"]
+    spacing_density: Literal["compact", "balanced", "airy"]
+    corner_radius: Literal["sharp", "soft", "rounded"]
+    shadow_style: Literal["none", "soft", "premium"]
+    default_homepage_sections: list[StorefrontTemplateSectionPreset]
+
+
+class StorefrontTemplateApplyInput(BaseModel):
+    replace_homepage: bool = False
 
 
 StorefrontMenuItemRead.model_rebuild()

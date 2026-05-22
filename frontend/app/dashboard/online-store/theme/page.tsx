@@ -18,7 +18,19 @@ const initialSettings: OnlineStoreSettings = {
   phone: "",
   email: "",
   address: "",
+  active_template_key: "live_shopping_classic",
+  typography_preset: "modern_commerce",
+  color_preset: "live_red",
+  animation_preset: "subtle_fade",
+  product_card_style: "compact_deal",
+  button_style: "rounded",
+  header_layout: "search_heavy",
+  footer_layout: "multi_column",
+  spacing_density: "compact",
+  corner_radius: "soft",
+  shadow_style: "soft",
   primary_color: "#db011c",
+  accent_color: "#111111",
   currency: "BDT",
   show_topbar: true,
   show_search: true,
@@ -106,7 +118,7 @@ export default function OnlineStoreThemePage() {
       <OpsPageHeader
         eyebrow="Online Store"
         title="Theme Settings"
-        description="Update storefront branding, visibility toggles, and contact details without changing dashboard modules."
+        description="Update storefront branding, presets, visibility toggles, and contact details without changing dashboard modules."
       />
       <OnlineStoreTabs />
       {loading ? <LoadingState label="Loading storefront theme settings..." /> : null}
@@ -169,6 +181,85 @@ export default function OnlineStoreThemePage() {
                   {label}
                 </label>
               ))}
+            </div>
+          </FormCard>
+
+          <FormCard title="Design Presets" description="These presets control the public storefront design system. Keep it fast, safe, and consistent across homepage sections.">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <PresetSelect
+                label="Active template"
+                value={settings.active_template_key || "live_shopping_classic"}
+                options={["live_shopping_classic", "minimal_fashion", "electronics_deals"]}
+                onChange={(value) => setSettings((c) => ({ ...c, active_template_key: value as OnlineStoreSettings["active_template_key"] }))}
+              />
+              <PresetSelect
+                label="Typography"
+                value={settings.typography_preset || "modern_commerce"}
+                options={["default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial"]}
+                onChange={(value) => setSettings((c) => ({ ...c, typography_preset: value as OnlineStoreSettings["typography_preset"] }))}
+              />
+              <PresetSelect
+                label="Color preset"
+                value={settings.color_preset || "live_red"}
+                options={["live_red", "premium_black", "fashion_rose", "electronics_blue", "organic_green", "luxury_gold"]}
+                onChange={(value) => setSettings((c) => ({ ...c, color_preset: value as OnlineStoreSettings["color_preset"] }))}
+              />
+              <PresetSelect
+                label="Animation"
+                value={settings.animation_preset || "subtle_fade"}
+                options={["none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop"]}
+                onChange={(value) => setSettings((c) => ({ ...c, animation_preset: value as OnlineStoreSettings["animation_preset"] }))}
+              />
+              <PresetSelect
+                label="Product card style"
+                value={settings.product_card_style || "compact_deal"}
+                options={["compact_deal", "image_first", "premium_card", "minimal_grid"]}
+                onChange={(value) => setSettings((c) => ({ ...c, product_card_style: value as OnlineStoreSettings["product_card_style"] }))}
+              />
+              <PresetSelect
+                label="Button style"
+                value={settings.button_style || "rounded"}
+                options={["sharp", "rounded", "pill", "bold_block"]}
+                onChange={(value) => setSettings((c) => ({ ...c, button_style: value as OnlineStoreSettings["button_style"] }))}
+              />
+              <PresetSelect
+                label="Header layout"
+                value={settings.header_layout || "search_heavy"}
+                options={["search_heavy", "minimal", "centered_logo", "category_first"]}
+                onChange={(value) => setSettings((c) => ({ ...c, header_layout: value as OnlineStoreSettings["header_layout"] }))}
+              />
+              <PresetSelect
+                label="Footer layout"
+                value={settings.footer_layout || "multi_column"}
+                options={["simple", "multi_column", "brand_story"]}
+                onChange={(value) => setSettings((c) => ({ ...c, footer_layout: value as OnlineStoreSettings["footer_layout"] }))}
+              />
+              <PresetSelect
+                label="Spacing density"
+                value={settings.spacing_density || "compact"}
+                options={["compact", "balanced", "airy"]}
+                onChange={(value) => setSettings((c) => ({ ...c, spacing_density: value as OnlineStoreSettings["spacing_density"] }))}
+              />
+              <PresetSelect
+                label="Corner radius"
+                value={settings.corner_radius || "soft"}
+                options={["sharp", "soft", "rounded"]}
+                onChange={(value) => setSettings((c) => ({ ...c, corner_radius: value as OnlineStoreSettings["corner_radius"] }))}
+              />
+              <PresetSelect
+                label="Shadow style"
+                value={settings.shadow_style || "soft"}
+                options={["none", "soft", "premium"]}
+                onChange={(value) => setSettings((c) => ({ ...c, shadow_style: value as OnlineStoreSettings["shadow_style"] }))}
+              />
+              <label className="block text-sm">
+                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Primary brand color</span>
+                <input type="color" value={settings.primary_color} onChange={(e) => setSettings((c) => ({ ...c, primary_color: e.target.value }))} className="h-12 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-2 py-2" />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Accent color</span>
+                <input type="color" value={settings.accent_color || "#111111"} onChange={(e) => setSettings((c) => ({ ...c, accent_color: e.target.value }))} className="h-12 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-2 py-2" />
+              </label>
             </div>
           </FormCard>
 
@@ -279,5 +370,34 @@ export default function OnlineStoreThemePage() {
         </form>
       ) : null}
     </div>
+  );
+}
+
+function PresetSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option.replace(/_/g, " ")}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

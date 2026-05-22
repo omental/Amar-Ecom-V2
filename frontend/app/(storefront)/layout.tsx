@@ -13,6 +13,7 @@ import {
   fetchPublicStorefrontMenus,
   fetchPublicStorefrontSettings,
 } from "@/lib/online-store";
+import { getStorefrontTheme } from "@/lib/storefront-theme";
 
 export const metadata: Metadata = {
   title: "Storefront",
@@ -62,12 +63,17 @@ async function StorefrontShell({
       ? menusResult.value
       : FALLBACK_STOREFRONT_MENUS;
 
+  const theme = getStorefrontTheme(settings);
+
   return (
     <>
       <StoreTopBar settings={settings} />
       <StoreHeader settings={settings} navigation={menus.main_nav || FALLBACK_STOREFRONT_MENUS.main_nav} />
       <StoreCategoryNav items={menus.category_nav || FALLBACK_STOREFRONT_MENUS.category_nav} />
-      <main className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 py-4 sm:px-5 sm:py-5">
+      <main
+        className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-6 px-4 py-4 sm:px-5 sm:py-5"
+        style={theme.cssVars}
+      >
         {children}
       </main>
       <StoreFooter

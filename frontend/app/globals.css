@@ -293,7 +293,10 @@ select {
 .storefront-shell {
   --store-accent: #db011c;
   --store-accent-soft: rgba(219, 1, 28, 0.1);
+  --store-text-accent: #111111;
+  --store-font-family: "Plus Jakarta Sans", "Outfit", system-ui, sans-serif;
   background: #ffffff;
+  font-family: var(--store-font-family);
 }
 
 .store-eyebrow {
@@ -325,6 +328,55 @@ select {
     transform 180ms ease,
     box-shadow 180ms ease,
     background-color 180ms ease;
+}
+
+.store-animate-fade {
+  animation: fadeIn 360ms ease-out both;
+}
+
+.store-animate-slide-up {
+  animation: storeSlideUp 420ms ease-out both;
+}
+
+.store-animate-scale-in {
+  animation: storeScaleIn 360ms ease-out both;
+}
+
+.store-animate-deal-pop {
+  animation: storeDealPop 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes storeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes storeScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes storeDealPop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .store-primary-button:hover {

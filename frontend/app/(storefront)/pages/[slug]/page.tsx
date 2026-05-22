@@ -64,7 +64,7 @@ export default async function StorefrontContentPage({
 
       {page.sections.map((section, index) => (
         <div key={`${section.type}-${section.title || index}`}>
-          <StorefrontSectionRenderer section={section} />
+          <StorefrontSectionRenderer section={section} settings={storefront.settings} />
         </div>
       ))}
     </div>
