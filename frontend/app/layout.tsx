@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Amar eCom v2",
-  description: "Modern admin dashboard for Amar eCom",
+  title: {
+    default: "Amar eCom V2",
+    template: "%s | Amar eCom V2",
+  },
+  description: "Premium Bangladesh-focused public storefront and protected Amar eCom admin dashboard.",
 };
 
 export default function RootLayout({

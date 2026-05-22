@@ -15,6 +15,15 @@ from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product, ProductVariant
 from app.models.return_request import ReturnItem, ReturnRequest
 from app.models.stock_movement import StockMovement
+from app.models.storefront import (
+    StorefrontBanner,
+    StorefrontMedia,
+    StorefrontMenu,
+    StorefrontMenuItem,
+    StorefrontPage,
+    StorefrontSection,
+    StorefrontSetting,
+)
 from app.models.supplier import PurchaseOrder, PurchaseOrderItem, Supplier
 from app.models.task import Task
 from app.models.user import User
@@ -60,6 +69,13 @@ __all__ = [
     "ShipmentEvent",
     "Supplier",
     "StockMovement",
+    "StorefrontBanner",
+    "StorefrontMedia",
+    "StorefrontMenu",
+    "StorefrontMenuItem",
+    "StorefrontPage",
+    "StorefrontSection",
+    "StorefrontSetting",
     "Task",
     "User",
     "UserPermission",

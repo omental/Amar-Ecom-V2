@@ -186,6 +186,7 @@ const modulePermissionMap: Record<string, string> = {
   settings: "settings.view",
   admin_tools: "settings.view",
   courier_integrations: "couriers.view",
+  online_store: "online_store.view",
 };
 
 const legacyModuleMap: Record<string, keyof LegacyPermissions> = {

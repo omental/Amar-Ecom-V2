@@ -335,6 +335,265 @@ def test_protected_route_accepts_with_token() -> None:
     assert isinstance(response.json(), list)
 
 
+def test_public_storefront_routes_expose_only_active_products() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Public Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"public-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Public category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category = category_response.json()
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Public Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"public-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Public brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand = brand_response.json()
+
+            active_product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Storefront Active Product",
+                    "slug": f"storefront-active-{uuid.uuid4().hex[:8]}",
+                    "sku": f"STORE-{uuid.uuid4().hex[:8]}",
+                    "description": "Visible in the storefront public feed.",
+                    "category_id": category["id"],
+                    "brand_id": brand["id"],
+                    "price": 950.00,
+                    "cost_price": 600.00,
+                    "image_url": "https://example.com/active-product.jpg",
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert active_product_response.status_code == 201, active_product_response.text
+            active_product = active_product_response.json()
+
+            inactive_product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Storefront Hidden Product",
+                    "slug": f"storefront-hidden-{uuid.uuid4().hex[:8]}",
+                    "sku": f"HIDDEN-{uuid.uuid4().hex[:8]}",
+                    "description": "Should stay out of public feeds.",
+                    "category_id": category["id"],
+                    "brand_id": brand["id"],
+                    "price": 850.00,
+                    "cost_price": 500.00,
+                    "image_url": "https://example.com/hidden-product.jpg",
+                    "status": "draft",
+                    "variants": [],
+                },
+            )
+            assert inactive_product_response.status_code == 201, inactive_product_response.text
+
+            public_products_response = client.get("/api/v1/public/products")
+            assert public_products_response.status_code == 200, public_products_response.text
+            public_products = public_products_response.json()
+            public_ids = {item["id"] for item in public_products["items"]}
+            assert active_product["id"] in public_ids
+            assert not any(item["id"] == inactive_product_response.json()["id"] for item in public_products["items"])
+
+            storefront_product = next(item for item in public_products["items"] if item["id"] == active_product["id"])
+            assert storefront_product["name"] == active_product["name"]
+            assert storefront_product["category"]["slug"] == category["slug"]
+            assert storefront_product["brand"]["slug"] == brand["slug"]
+            assert storefront_product["is_public"] is True
+            assert "cost_price" not in storefront_product
+            assert "supplier_cost" not in storefront_product
+
+            public_detail_response = client.get(f"/api/v1/public/products/{active_product['id']}")
+            assert public_detail_response.status_code == 200, public_detail_response.text
+            assert public_detail_response.json()["id"] == active_product["id"]
+
+            categories_response = client.get("/api/v1/public/categories")
+            assert categories_response.status_code == 200, categories_response.text
+            assert any(item["id"] == category["id"] for item in categories_response.json())
+
+            brands_response = client.get("/api/v1/public/brands")
+            assert brands_response.status_code == 200, brands_response.text
+            assert any(item["id"] == brand["id"] for item in brands_response.json())
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        lowered = str(exc).lower()
+        if any(token in lowered for token in ["products.source", "products.external_id", "products.external_status", "undefinedcolumnerror"]):
+            pytest.skip("Apply the latest WooCommerce product sync migration before running this test.")
+        if any(token in lowered for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_storefront_settings_get_and_update() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            get_response = client.get("/api/v1/admin/storefront/settings", headers=headers)
+            assert get_response.status_code == 200, get_response.text
+            settings = get_response.json()
+            assert settings["brand_name"]
+            assert settings["show_topbar"] is True
+
+            update_response = client.put(
+                "/api/v1/admin/storefront/settings",
+                headers=headers,
+                json={
+                    "brand_name": "Amar-eCom Live",
+                    "primary_color": "#111111",
+                    "show_search": False,
+                },
+            )
+            assert update_response.status_code == 200, update_response.text
+            updated = update_response.json()
+            assert updated["brand_name"] == "Amar-eCom Live"
+            assert updated["primary_color"] == "#111111"
+            assert updated["show_search"] is False
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if "storefront_" in str(exc).lower():
+            pytest.skip("Apply the storefront builder migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_storefront_menus_and_items_and_public_filtering() -> None:
+    headers = auth_headers()
+    unique_label = f"Seasonal Deals {uuid.uuid4().hex[:8]}"
+    unique_url = f"/seasonal-deals-{uuid.uuid4().hex[:8]}"
+
+    try:
+        with TestClient(app) as client:
+            menus_response = client.get("/api/v1/admin/storefront/menus", headers=headers)
+            assert menus_response.status_code == 200, menus_response.text
+            menus = menus_response.json()
+            main_nav = next(item for item in menus if item["location"] == "main_nav")
+
+            create_item_response = client.post(
+                f"/api/v1/admin/storefront/menus/{main_nav['id']}/items",
+                headers=headers,
+                json={
+                    "label": unique_label,
+                    "url": unique_url,
+                    "target": "_self",
+                    "sort_order": 99,
+                    "is_active": True,
+                },
+            )
+            assert create_item_response.status_code == 201, create_item_response.text
+            created_item = create_item_response.json()
+
+            disable_item_response = client.delete(
+                f"/api/v1/admin/storefront/menu-items/{created_item['id']}",
+                headers=headers,
+            )
+            assert disable_item_response.status_code == 204, disable_item_response.text
+
+            public_menus_response = client.get("/api/v1/public/storefront/menus")
+            assert public_menus_response.status_code == 200, public_menus_response.text
+            public_menus = public_menus_response.json()
+            assert "main_nav" in public_menus
+            assert not any(item["label"] == unique_label for item in public_menus["main_nav"])
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if "storefront_" in str(exc).lower():
+            pytest.skip("Apply the storefront builder migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
+def test_storefront_pages_sections_and_public_visibility() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            create_page_response = client.post(
+                "/api/v1/admin/storefront/pages",
+                headers=headers,
+                json={
+                    "title": "Draft Promo Page",
+                    "slug": f"draft-promo-{uuid.uuid4().hex[:8]}",
+                    "page_type": "landing",
+                    "content": "Draft content",
+                    "status": "draft",
+                    "seo_title": "Draft Promo",
+                    "seo_description": "Draft promo description",
+                    "is_system": False,
+                },
+            )
+            assert create_page_response.status_code == 201, create_page_response.text
+            page = create_page_response.json()
+
+            section_response = client.post(
+                f"/api/v1/admin/storefront/pages/{page['id']}/sections",
+                headers=headers,
+                json={
+                    "type": "text_block",
+                    "title": "Draft block",
+                    "subtitle": "Not yet public",
+                    "sort_order": 0,
+                    "is_enabled": True,
+                    "settings": {"align": "left"},
+                    "content": {"body": "Safe draft text"},
+                },
+            )
+            assert section_response.status_code == 201, section_response.text
+            section = section_response.json()
+
+            public_draft_response = client.get(f"/api/v1/public/storefront/pages/{page['slug']}")
+            assert public_draft_response.status_code == 404, public_draft_response.text
+
+            publish_response = client.put(
+                f"/api/v1/admin/storefront/pages/{page['id']}",
+                headers=headers,
+                json={"status": "published"},
+            )
+            assert publish_response.status_code == 200, publish_response.text
+
+            disable_section_response = client.put(
+                f"/api/v1/admin/storefront/sections/{section['id']}",
+                headers=headers,
+                json={"is_enabled": False},
+            )
+            assert disable_section_response.status_code == 200, disable_section_response.text
+
+            public_page_response = client.get(f"/api/v1/public/storefront/pages/{page['slug']}")
+            assert public_page_response.status_code == 200, public_page_response.text
+            public_page = public_page_response.json()
+            assert public_page["page"]["slug"] == page["slug"]
+            assert public_page["page"]["sections"] == []
+
+            home_response = client.get("/api/v1/public/storefront/pages/home")
+            assert home_response.status_code == 200, home_response.text
+            home_payload = home_response.json()
+            assert home_payload["page"]["slug"] == "home"
+            assert isinstance(home_payload["page"]["sections"], list)
+            assert "id" not in home_payload["page"]
+            assert "id" not in home_payload["settings"]
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        if "storefront_" in str(exc).lower():
+            pytest.skip("Apply the storefront builder migration before running this test.")
+        raise
+
+    dispose_engine()
+
+
 def test_admin_tools_endpoints() -> None:
     headers = auth_headers()
     staff_email = unique_email()

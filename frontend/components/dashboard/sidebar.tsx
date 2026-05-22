@@ -125,6 +125,7 @@ const primaryNavGroups: NavGroup[] = [
       { label: "Tasks", href: "/dashboard/tasks", icon: ClipboardList, moduleKey: "tasks" },
       { label: "Finance", href: "/dashboard/finance", icon: Wallet, moduleKey: "finance" },
       { label: "HR", href: "/dashboard/hr", icon: Users, moduleKey: "hr" },
+      { label: "Online Store", href: "/dashboard/online-store", icon: Store, moduleKey: "online_store", matchers: ["/dashboard/online-store"] },
       { label: "Team", href: "/dashboard/users", icon: UserPlus, moduleKey: "users", matchers: ["/dashboard/users", "/dashboard/activity-logs"] },
       { label: "Settings", href: "/dashboard/settings", icon: Settings, moduleKey: "settings", matchers: ["/dashboard/settings", "/dashboard/admin-tools"] },
     ],

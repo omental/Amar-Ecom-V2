@@ -1,0 +1,435 @@
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from app.schemas.common import ORMBaseSchema
+
+
+MENU_LOCATIONS = (
+    "main_nav",
+    "category_nav",
+    "footer_services",
+    "footer_join_us",
+    "footer_social",
+    "footer_quick_links",
+)
+
+PAGE_TYPES = ("home", "custom", "policy", "landing")
+PAGE_STATUSES = ("draft", "published")
+SECTION_TYPES = (
+    "hero_slider",
+    "product_grid",
+    "category_grid",
+    "banner_grid",
+    "single_banner",
+    "flash_sale",
+    "best_selling",
+    "new_arrivals",
+    "featured_collection",
+    "text_block",
+    "image_text",
+    "newsletter",
+)
+MEDIA_TYPES = ("logo", "favicon", "banner", "category", "product", "section", "general")
+
+
+def _validate_choice(value: str, field_name: str, allowed: tuple[str, ...]) -> str:
+    if value not in allowed:
+        raise ValueError(f"Invalid {field_name}. Allowed values: {', '.join(allowed)}")
+    return value
+
+
+class StorefrontSettingBase(BaseModel):
+    brand_name: str | None = None
+    logo_url: str | None = None
+    favicon_url: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    address: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    currency: str | None = None
+    show_topbar: bool | None = None
+    show_search: bool | None = None
+    show_cart: bool | None = None
+    show_track_order: bool | None = None
+    footer_description: str | None = None
+    footer_copyright_text: str | None = None
+    social_share_image_url: str | None = None
+    social_links: dict[str, Any] | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    is_active: bool | None = None
+
+
+class StorefrontSettingUpdate(StorefrontSettingBase):
+    pass
+
+
+class StorefrontSettingRead(ORMBaseSchema):
+    id: UUID
+    brand_name: str
+    logo_url: str | None = None
+    favicon_url: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    address: str | None = None
+    primary_color: str
+    secondary_color: str | None = None
+    currency: str
+    show_topbar: bool
+    show_search: bool
+    show_cart: bool
+    show_track_order: bool
+    footer_description: str | None = None
+    footer_copyright_text: str | None = None
+    social_share_image_url: str | None = None
+    social_links: dict[str, Any] | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontMenuItemBase(BaseModel):
+    label: str
+    url: str
+    target: str = "_self"
+    sort_order: int = 0
+    parent_id: UUID | None = None
+    is_active: bool = True
+
+
+class StorefrontMenuItemCreate(StorefrontMenuItemBase):
+    pass
+
+
+class StorefrontMenuItemUpdate(BaseModel):
+    label: str | None = None
+    url: str | None = None
+    target: str | None = None
+    sort_order: int | None = None
+    parent_id: UUID | None = None
+    is_active: bool | None = None
+
+
+class StorefrontMenuBase(BaseModel):
+    name: str
+    location: str
+    is_active: bool = True
+
+    @field_validator("location")
+    @classmethod
+    def validate_location(cls, value: str) -> str:
+        return _validate_choice(value, "menu location", MENU_LOCATIONS)
+
+
+class StorefrontMenuCreate(StorefrontMenuBase):
+    pass
+
+
+class StorefrontMenuUpdate(BaseModel):
+    name: str | None = None
+    location: str | None = None
+    is_active: bool | None = None
+
+    @field_validator("location")
+    @classmethod
+    def validate_location(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "menu location", MENU_LOCATIONS)
+
+
+class StorefrontMenuItemRead(ORMBaseSchema):
+    id: UUID
+    label: str
+    url: str
+    target: str
+    sort_order: int
+    parent_id: UUID | None = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    children: list["StorefrontMenuItemRead"] = []
+
+
+class StorefrontMenuRead(ORMBaseSchema):
+    id: UUID
+    name: str
+    location: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    items: list[StorefrontMenuItemRead] = []
+
+
+class MenuItemsReorderInput(BaseModel):
+    ordered_ids: list[UUID] = Field(default_factory=list)
+
+
+class StorefrontPageBase(BaseModel):
+    title: str
+    slug: str
+    page_type: str = "custom"
+    content: str | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    status: str = "draft"
+    is_system: bool = False
+
+    @field_validator("page_type")
+    @classmethod
+    def validate_page_type(cls, value: str) -> str:
+        return _validate_choice(value, "page type", PAGE_TYPES)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        return _validate_choice(value, "page status", PAGE_STATUSES)
+
+
+class StorefrontPageCreate(StorefrontPageBase):
+    pass
+
+
+class StorefrontPageUpdate(BaseModel):
+    title: str | None = None
+    slug: str | None = None
+    page_type: str | None = None
+    content: str | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    status: str | None = None
+
+    @field_validator("page_type")
+    @classmethod
+    def validate_page_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "page type", PAGE_TYPES)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "page status", PAGE_STATUSES)
+
+
+class StorefrontSectionBase(BaseModel):
+    type: str
+    title: str | None = None
+    subtitle: str | None = None
+    sort_order: int = 0
+    is_enabled: bool = True
+    settings: dict[str, Any] | None = None
+    content: dict[str, Any] | None = None
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        return _validate_choice(value, "section type", SECTION_TYPES)
+
+
+class StorefrontSectionCreate(StorefrontSectionBase):
+    pass
+
+
+class StorefrontSectionUpdate(BaseModel):
+    type: str | None = None
+    title: str | None = None
+    subtitle: str | None = None
+    sort_order: int | None = None
+    is_enabled: bool | None = None
+    settings: dict[str, Any] | None = None
+    content: dict[str, Any] | None = None
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return _validate_choice(value, "section type", SECTION_TYPES)
+
+
+class SectionsReorderInput(BaseModel):
+    ordered_ids: list[UUID] = Field(default_factory=list)
+
+
+class StorefrontSectionRead(ORMBaseSchema):
+    id: UUID
+    page_id: UUID
+    type: str
+    title: str | None = None
+    subtitle: str | None = None
+    sort_order: int
+    is_enabled: bool
+    settings: dict[str, Any] | None = None
+    content: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontPageRead(ORMBaseSchema):
+    id: UUID
+    title: str
+    slug: str
+    page_type: str
+    content: str | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+    status: str
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+    sections: list[StorefrontSectionRead] = []
+
+
+class StorefrontBannerBase(BaseModel):
+    title: str
+    subtitle: str | None = None
+    image_url: str
+    mobile_image_url: str | None = None
+    button_text: str | None = None
+    button_url: str | None = None
+    location: str | None = None
+    sort_order: int = 0
+    is_active: bool = True
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class StorefrontBannerCreate(StorefrontBannerBase):
+    pass
+
+
+class StorefrontBannerUpdate(BaseModel):
+    title: str | None = None
+    subtitle: str | None = None
+    image_url: str | None = None
+    mobile_image_url: str | None = None
+    button_text: str | None = None
+    button_url: str | None = None
+    location: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class StorefrontBannerRead(ORMBaseSchema):
+    id: UUID
+    title: str
+    subtitle: str | None = None
+    image_url: str
+    mobile_image_url: str | None = None
+    button_text: str | None = None
+    button_url: str | None = None
+    location: str | None = None
+    sort_order: int
+    is_active: bool
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontMediaRead(ORMBaseSchema):
+    id: UUID
+    file_name: str
+    original_name: str
+    mime_type: str
+    file_size: int
+    url: str
+    storage_path: str
+    media_type: str
+    alt_text: str | None = None
+    uploaded_by_id: UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontMediaUploadResponse(StorefrontMediaRead):
+    pass
+
+
+class PublicStorefrontMenuItem(BaseModel):
+    label: str
+    url: str
+    target: str = "_self"
+    children: list["PublicStorefrontMenuItem"] = []
+
+
+class PublicStorefrontSection(BaseModel):
+    type: str
+    title: str | None = None
+    subtitle: str | None = None
+    settings: dict[str, Any] | None = None
+    content: dict[str, Any] | None = None
+    products: list["PublicStorefrontProductCard"] = []
+
+
+class PublicStorefrontPage(BaseModel):
+    title: str
+    slug: str
+    seo_title: str | None = None
+    seo_description: str | None = None
+    content: str | None = None
+    sections: list[PublicStorefrontSection] = []
+
+
+class PublicStorefrontResponse(BaseModel):
+    settings: "PublicStorefrontSetting"
+    menus: dict[str, list[PublicStorefrontMenuItem]]
+    page: PublicStorefrontPage
+
+
+class PublicStorefrontSetting(BaseModel):
+    brand_name: str
+    logo_url: str | None = None
+    favicon_url: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    address: str | None = None
+    primary_color: str
+    secondary_color: str | None = None
+    currency: str
+    show_topbar: bool
+    show_search: bool
+    show_cart: bool
+    show_track_order: bool
+    footer_description: str | None = None
+    footer_copyright_text: str | None = None
+    social_share_image_url: str | None = None
+    social_links: dict[str, Any] | None = None
+    seo_title: str | None = None
+    seo_description: str | None = None
+
+
+class StorefrontOverviewRead(BaseModel):
+    storefront_status: Literal["active", "inactive"]
+    homepage_sections_count: int
+    menus_count: int
+    published_pages_count: int
+    banners_count: int
+
+
+class PublicStorefrontProductCard(BaseModel):
+    id: str
+    slug: str
+    name: str
+    image_url: str | None = None
+    price: float
+    old_price: float | None = None
+    category: str | None = None
+    badge: str | None = None
+    stock_status: Literal["in_stock", "low_stock", "out_of_stock"]
+
+
+StorefrontMenuItemRead.model_rebuild()
+PublicStorefrontMenuItem.model_rebuild()
+PublicStorefrontSection.model_rebuild()

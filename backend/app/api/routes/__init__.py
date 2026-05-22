@@ -20,6 +20,8 @@ from app.api.routes import (
     petty_cash,
     permissions,
     pos,
+    public,
+    public_storefront,
     designations,
     products,
     purchase_orders,
@@ -33,6 +35,7 @@ from app.api.routes import (
     salary_records,
     stock_transfers,
     stock_movements,
+    storefront_admin,
     suppliers,
     supplier_payments,
     tasks,
@@ -52,6 +55,9 @@ api_router.include_router(activity_logs.router, prefix="/activity-logs", tags=["
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
 api_router.include_router(brands.router, prefix="/brands", tags=["brands"])
+api_router.include_router(public.router, prefix="/public", tags=["public"])
+api_router.include_router(public_storefront.router, prefix="/public/storefront", tags=["public-storefront"])
+api_router.include_router(storefront_admin.router, prefix="/admin/storefront", tags=["storefront-admin"])
 api_router.include_router(couriers.router, prefix="/couriers", tags=["couriers"])
 api_router.include_router(courier_integrations.router, prefix="/courier-integrations", tags=["courier-integrations"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])

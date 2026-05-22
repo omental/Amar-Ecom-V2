@@ -1,0 +1,554 @@
+from pathlib import Path
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import set_committed_value
+from starlette.datastructures import UploadFile
+
+from app.api.deps import DBSession, get_current_user
+from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404
+from app.models.storefront import (
+    StorefrontBanner,
+    StorefrontMedia,
+    StorefrontMenu,
+    StorefrontMenuItem,
+    StorefrontPage,
+    StorefrontSection,
+)
+from app.models.user import User
+from app.schemas.storefront import (
+    MenuItemsReorderInput,
+    SectionsReorderInput,
+    StorefrontBannerCreate,
+    StorefrontBannerRead,
+    StorefrontBannerUpdate,
+    StorefrontMediaUploadResponse,
+    StorefrontMenuCreate,
+    StorefrontMenuItemCreate,
+    StorefrontMenuItemRead,
+    StorefrontMenuItemUpdate,
+    StorefrontMenuRead,
+    StorefrontMenuUpdate,
+    StorefrontOverviewRead,
+    StorefrontPageCreate,
+    StorefrontPageRead,
+    StorefrontPageUpdate,
+    StorefrontSectionCreate,
+    StorefrontSectionRead,
+    StorefrontSectionUpdate,
+    StorefrontSettingRead,
+    StorefrontSettingUpdate,
+)
+from app.services.activity_log_service import log_activity
+from app.services.storefront_service import (
+    build_menu_tree,
+    ensure_storefront_defaults,
+    get_or_create_storefront_settings,
+    is_admin_user,
+    save_storefront_media,
+)
+
+
+router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def _ensure_admin(user: User) -> None:
+    if not is_admin_user(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+
+async def _get_menu_or_404(db: DBSession, menu_id: UUID) -> StorefrontMenu:
+    menu = await fetch_one_or_404(
+        db,
+        select(StorefrontMenu)
+        .options(selectinload(StorefrontMenu.items))
+        .where(StorefrontMenu.id == menu_id),
+        "Storefront menu not found",
+    )
+    set_committed_value(menu, "items", build_menu_tree(list(menu.items), include_inactive=True))
+    return menu
+
+
+async def _get_page_or_404(db: DBSession, page_id: UUID) -> StorefrontPage:
+    page = await fetch_one_or_404(
+        db,
+        select(StorefrontPage)
+        .options(selectinload(StorefrontPage.sections))
+        .where(StorefrontPage.id == page_id),
+        "Storefront page not found",
+    )
+    set_committed_value(page, "sections", sorted(page.sections, key=lambda section: (section.sort_order, section.created_at)))
+    return page
+
+
+@router.get("/overview", response_model=StorefrontOverviewRead)
+async def get_storefront_overview(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontOverviewRead:
+    _ensure_admin(current_user)
+    await ensure_storefront_defaults(db)
+
+    settings = await get_or_create_storefront_settings(db)
+    homepage_sections_count = int(
+        await db.scalar(
+            select(func.count(StorefrontSection.id))
+            .select_from(StorefrontSection)
+            .join(StorefrontPage, StorefrontSection.page_id == StorefrontPage.id)
+            .where(StorefrontPage.slug == "home")
+        )
+        or 0
+    )
+    menus_count = int(await db.scalar(select(func.count(StorefrontMenu.id))) or 0)
+    published_pages_count = int(
+        await db.scalar(select(func.count(StorefrontPage.id)).where(StorefrontPage.status == "published"))
+        or 0
+    )
+    banners_count = int(await db.scalar(select(func.count(StorefrontBanner.id))) or 0)
+    return StorefrontOverviewRead(
+        storefront_status="active" if settings.is_active else "inactive",
+        homepage_sections_count=homepage_sections_count,
+        menus_count=menus_count,
+        published_pages_count=published_pages_count,
+        banners_count=banners_count,
+    )
+
+
+@router.get("/settings", response_model=StorefrontSettingRead)
+async def get_storefront_settings(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontSettingRead:
+    _ensure_admin(current_user)
+    await ensure_storefront_defaults(db)
+    return await get_or_create_storefront_settings(db)
+
+
+@router.put("/settings", response_model=StorefrontSettingRead)
+async def update_storefront_settings(
+    settings_in: StorefrontSettingUpdate,
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontSettingRead:
+    _ensure_admin(current_user)
+    settings = await get_or_create_storefront_settings(db)
+    payload = settings_in.model_dump(exclude_unset=True)
+    for field, value in payload.items():
+        setattr(settings, field, value)
+
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="storefront_settings_updated",
+        module="settings",
+        entity_type="storefront_setting",
+        entity_id=settings.id,
+        message="Updated storefront settings.",
+        request=request,
+    )
+    await commit_or_409(db, "Could not update storefront settings")
+    await db.refresh(settings)
+    return settings
+
+
+@router.get("/menus", response_model=list[StorefrontMenuRead])
+async def list_storefront_menus(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontMenu]:
+    _ensure_admin(current_user)
+    await ensure_storefront_defaults(db)
+    result = await db.execute(select(StorefrontMenu).options(selectinload(StorefrontMenu.items)).order_by(StorefrontMenu.location.asc()))
+    menus = list(result.scalars().unique().all())
+    for menu in menus:
+        set_committed_value(menu, "items", build_menu_tree(list(menu.items), include_inactive=True))
+    return menus
+
+
+@router.post("/menus", response_model=StorefrontMenuRead, status_code=status.HTTP_201_CREATED)
+async def create_storefront_menu(
+    menu_in: StorefrontMenuCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontMenu:
+    _ensure_admin(current_user)
+    menu = StorefrontMenu(**menu_in.model_dump())
+    db.add(menu)
+    await commit_or_409(db, "Could not create storefront menu")
+    await db.refresh(menu)
+    set_committed_value(menu, "items", [])
+    return menu
+
+
+@router.get("/menus/{menu_id}", response_model=StorefrontMenuRead)
+async def get_storefront_menu(
+    menu_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontMenu:
+    _ensure_admin(current_user)
+    return await _get_menu_or_404(db, menu_id)
+
+
+@router.put("/menus/{menu_id}", response_model=StorefrontMenuRead)
+async def update_storefront_menu(
+    menu_id: UUID,
+    menu_in: StorefrontMenuUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontMenu:
+    _ensure_admin(current_user)
+    menu = await fetch_one_or_404(db, select(StorefrontMenu).where(StorefrontMenu.id == menu_id), "Storefront menu not found")
+    for field, value in menu_in.model_dump(exclude_unset=True).items():
+        setattr(menu, field, value)
+    await commit_or_409(db, "Could not update storefront menu")
+    return await _get_menu_or_404(db, menu_id)
+
+
+@router.delete("/menus/{menu_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_menu(
+    menu_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    menu = await fetch_one_or_404(db, select(StorefrontMenu).where(StorefrontMenu.id == menu_id), "Storefront menu not found")
+    menu.is_active = False
+    await commit_or_409(db, "Could not disable storefront menu")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/menus/{menu_id}/items", response_model=StorefrontMenuItemRead, status_code=status.HTTP_201_CREATED)
+async def create_storefront_menu_item(
+    menu_id: UUID,
+    item_in: StorefrontMenuItemCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontMenuItem:
+    _ensure_admin(current_user)
+    await fetch_one_or_404(db, select(StorefrontMenu).where(StorefrontMenu.id == menu_id), "Storefront menu not found")
+    if item_in.parent_id is not None:
+        parent = await fetch_one_or_404(db, select(StorefrontMenuItem).where(StorefrontMenuItem.id == item_in.parent_id), "Parent menu item not found")
+        if parent.menu_id != menu_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent menu item must belong to the same menu")
+    item = StorefrontMenuItem(menu_id=menu_id, **item_in.model_dump())
+    db.add(item)
+    await commit_or_409(db, "Could not create storefront menu item")
+    await db.refresh(item)
+    set_committed_value(item, "children", [])
+    return item
+
+
+@router.put("/menu-items/{item_id}", response_model=StorefrontMenuItemRead)
+async def update_storefront_menu_item(
+    item_id: UUID,
+    item_in: StorefrontMenuItemUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontMenuItem:
+    _ensure_admin(current_user)
+    item = await fetch_one_or_404(db, select(StorefrontMenuItem).where(StorefrontMenuItem.id == item_id), "Storefront menu item not found")
+    payload = item_in.model_dump(exclude_unset=True)
+    if "parent_id" in payload and payload["parent_id"] is not None:
+        if payload["parent_id"] == item.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A menu item cannot be its own parent")
+        parent = await fetch_one_or_404(db, select(StorefrontMenuItem).where(StorefrontMenuItem.id == payload["parent_id"]), "Parent menu item not found")
+        if parent.menu_id != item.menu_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent menu item must belong to the same menu")
+    for field, value in payload.items():
+        setattr(item, field, value)
+    await commit_or_409(db, "Could not update storefront menu item")
+    await db.refresh(item)
+    set_committed_value(item, "children", [])
+    return item
+
+
+@router.delete("/menu-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_menu_item(
+    item_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    item = await fetch_one_or_404(db, select(StorefrontMenuItem).where(StorefrontMenuItem.id == item_id), "Storefront menu item not found")
+    item.is_active = False
+    await commit_or_409(db, "Could not disable storefront menu item")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/menus/{menu_id}/items/reorder", status_code=status.HTTP_200_OK)
+async def reorder_storefront_menu_items(
+    menu_id: UUID,
+    payload: MenuItemsReorderInput,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    _ensure_admin(current_user)
+    menu = await fetch_one_or_404(db, select(StorefrontMenu).where(StorefrontMenu.id == menu_id), "Storefront menu not found")
+    result = await db.execute(select(StorefrontMenuItem).where(StorefrontMenuItem.menu_id == menu.id))
+    items = {item.id: item for item in result.scalars().all()}
+    for index, item_id in enumerate(payload.ordered_ids):
+        item = items.get(item_id)
+        if item is not None:
+            item.sort_order = index
+    await commit_or_409(db, "Could not reorder storefront menu items")
+    return {"message": "Menu items reordered"}
+
+
+@router.get("/pages", response_model=list[StorefrontPageRead])
+async def list_storefront_pages(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontPage]:
+    _ensure_admin(current_user)
+    await ensure_storefront_defaults(db)
+    result = await db.execute(select(StorefrontPage).options(selectinload(StorefrontPage.sections)).order_by(StorefrontPage.created_at.desc()))
+    pages = list(result.scalars().unique().all())
+    for page in pages:
+        set_committed_value(page, "sections", sorted(page.sections, key=lambda section: (section.sort_order, section.created_at)))
+    return pages
+
+
+@router.post("/pages", response_model=StorefrontPageRead, status_code=status.HTTP_201_CREATED)
+async def create_storefront_page(
+    page_in: StorefrontPageCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontPage:
+    _ensure_admin(current_user)
+    await ensure_unique(db, StorefrontPage, "slug", page_in.slug, "Storefront page slug already exists")
+    page = StorefrontPage(**page_in.model_dump())
+    db.add(page)
+    await commit_or_409(db, "Could not create storefront page")
+    await db.refresh(page)
+    set_committed_value(page, "sections", [])
+    return page
+
+
+@router.get("/pages/{page_id}", response_model=StorefrontPageRead)
+async def get_storefront_page(
+    page_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontPage:
+    _ensure_admin(current_user)
+    return await _get_page_or_404(db, page_id)
+
+
+@router.put("/pages/{page_id}", response_model=StorefrontPageRead)
+async def update_storefront_page(
+    page_id: UUID,
+    page_in: StorefrontPageUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontPage:
+    _ensure_admin(current_user)
+    page = await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
+    payload = page_in.model_dump(exclude_unset=True)
+    if "slug" in payload:
+        await ensure_unique(db, StorefrontPage, "slug", payload["slug"], "Storefront page slug already exists", exclude_id=page.id)
+    for field, value in payload.items():
+        setattr(page, field, value)
+    await commit_or_409(db, "Could not update storefront page")
+    return await _get_page_or_404(db, page_id)
+
+
+@router.delete("/pages/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_page(
+    page_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    page = await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
+    if page.is_system:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="System storefront pages cannot be deleted")
+    await db.delete(page)
+    await commit_or_409(db, "Could not delete storefront page")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/pages/{page_id}/sections", response_model=StorefrontSectionRead, status_code=status.HTTP_201_CREATED)
+async def create_storefront_section(
+    page_id: UUID,
+    section_in: StorefrontSectionCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontSection:
+    _ensure_admin(current_user)
+    await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
+    section = StorefrontSection(page_id=page_id, **section_in.model_dump())
+    db.add(section)
+    await commit_or_409(db, "Could not create storefront section")
+    await db.refresh(section)
+    return section
+
+
+@router.put("/sections/{section_id}", response_model=StorefrontSectionRead)
+async def update_storefront_section(
+    section_id: UUID,
+    section_in: StorefrontSectionUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontSection:
+    _ensure_admin(current_user)
+    section = await fetch_one_or_404(db, select(StorefrontSection).where(StorefrontSection.id == section_id), "Storefront section not found")
+    for field, value in section_in.model_dump(exclude_unset=True).items():
+        setattr(section, field, value)
+    await commit_or_409(db, "Could not update storefront section")
+    await db.refresh(section)
+    return section
+
+
+@router.delete("/sections/{section_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_section(
+    section_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    section = await fetch_one_or_404(db, select(StorefrontSection).where(StorefrontSection.id == section_id), "Storefront section not found")
+    await db.delete(section)
+    await commit_or_409(db, "Could not delete storefront section")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/pages/{page_id}/sections/reorder", status_code=status.HTTP_200_OK)
+async def reorder_storefront_sections(
+    page_id: UUID,
+    payload: SectionsReorderInput,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    _ensure_admin(current_user)
+    await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
+    result = await db.execute(select(StorefrontSection).where(StorefrontSection.page_id == page_id))
+    sections = {section.id: section for section in result.scalars().all()}
+    for index, section_id in enumerate(payload.ordered_ids):
+        section = sections.get(section_id)
+        if section is not None:
+            section.sort_order = index
+    await commit_or_409(db, "Could not reorder storefront sections")
+    return {"message": "Sections reordered"}
+
+
+@router.get("/banners", response_model=list[StorefrontBannerRead])
+async def list_storefront_banners(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontBanner]:
+    _ensure_admin(current_user)
+    await ensure_storefront_defaults(db)
+    result = await db.execute(select(StorefrontBanner).order_by(StorefrontBanner.sort_order.asc(), StorefrontBanner.created_at.asc()))
+    return list(result.scalars().all())
+
+
+@router.post("/banners", response_model=StorefrontBannerRead, status_code=status.HTTP_201_CREATED)
+async def create_storefront_banner(
+    banner_in: StorefrontBannerCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontBanner:
+    _ensure_admin(current_user)
+    banner = StorefrontBanner(**banner_in.model_dump())
+    db.add(banner)
+    await commit_or_409(db, "Could not create storefront banner")
+    await db.refresh(banner)
+    return banner
+
+
+@router.get("/banners/{banner_id}", response_model=StorefrontBannerRead)
+async def get_storefront_banner(
+    banner_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontBanner:
+    _ensure_admin(current_user)
+    return await fetch_one_or_404(db, select(StorefrontBanner).where(StorefrontBanner.id == banner_id), "Storefront banner not found")
+
+
+@router.put("/banners/{banner_id}", response_model=StorefrontBannerRead)
+async def update_storefront_banner(
+    banner_id: UUID,
+    banner_in: StorefrontBannerUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontBanner:
+    _ensure_admin(current_user)
+    banner = await fetch_one_or_404(db, select(StorefrontBanner).where(StorefrontBanner.id == banner_id), "Storefront banner not found")
+    for field, value in banner_in.model_dump(exclude_unset=True).items():
+        setattr(banner, field, value)
+    await commit_or_409(db, "Could not update storefront banner")
+    await db.refresh(banner)
+    return banner
+
+
+@router.delete("/banners/{banner_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_banner(
+    banner_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    banner = await fetch_one_or_404(db, select(StorefrontBanner).where(StorefrontBanner.id == banner_id), "Storefront banner not found")
+    banner.is_active = False
+    await commit_or_409(db, "Could not disable storefront banner")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/media/upload", response_model=StorefrontMediaUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_storefront_media(
+    db: DBSession,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontMedia:
+    _ensure_admin(current_user)
+    form = await request.form()
+    file = form.get("file")
+    media_type = str(form.get("media_type") or "")
+    alt_text_raw = form.get("alt_text")
+    alt_text = str(alt_text_raw) if alt_text_raw is not None else None
+
+    if not isinstance(file, UploadFile):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Upload file is required")
+
+    return await save_storefront_media(
+        db,
+        file=file,
+        media_type=media_type,
+        alt_text=alt_text,
+        uploaded_by=current_user,
+    )
+
+
+@router.get("/media", response_model=list[StorefrontMediaUploadResponse])
+async def list_storefront_media(
+    db: DBSession,
+    media_type: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontMedia]:
+    _ensure_admin(current_user)
+    stmt = select(StorefrontMedia).order_by(StorefrontMedia.created_at.desc())
+    if media_type:
+        stmt = stmt.where(StorefrontMedia.media_type == media_type)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+@router.delete("/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_media(
+    media_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    media = await fetch_one_or_404(db, select(StorefrontMedia).where(StorefrontMedia.id == media_id), "Storefront media not found")
+    storage_path = Path(media.storage_path)
+    if storage_path.exists() and storage_path.is_file():
+        storage_path.unlink()
+    await db.delete(media)
+    await commit_or_409(db, "Could not delete storefront media")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

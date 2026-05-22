@@ -46,6 +46,8 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("hr", "view"),
     ("settings", "view"),
     ("settings", "update"),
+    ("online_store", "view"),
+    ("online_store", "update"),
     ("team", "view"),
     ("team", "create"),
     ("team", "update"),
