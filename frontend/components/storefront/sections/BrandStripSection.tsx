@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 
 import type { OnlineStoreSection, OnlineStoreSettings } from "@/lib/online-store";
@@ -41,12 +40,10 @@ function BrandTile({ item }: { item: Record<string, string> }) {
   const content = (
     <div className="flex min-h-[84px] flex-col items-center justify-center rounded-2xl border border-[#e5e7eb] bg-white px-4 py-5 text-center">
       {item.logo_url ? (
-        <Image
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
           src={item.logo_url}
           alt={item.name || item.label || "Brand logo"}
-          width={120}
-          height={40}
-          unoptimized
           className="mb-3 h-10 w-auto object-contain"
         />
       ) : null}

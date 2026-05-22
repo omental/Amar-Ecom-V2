@@ -10,6 +10,7 @@ import { BannerGridSection } from "./BannerGridSection";
 import { BrandStripSection } from "./BrandStripSection";
 import { CategoryGridSection } from "./CategoryGridSection";
 import { FaqSection } from "./FaqSection";
+import { FlexibleGridSection } from "./FlexibleGridSection";
 import { HeroSection } from "./HeroSection";
 import { ImageTextSection } from "./ImageTextSection";
 import { NewsletterSection } from "./NewsletterSection";
@@ -61,6 +62,8 @@ export function SectionRenderer({
       return <TestimonialsSection section={section} settings={settings} />;
     case "brand_strip":
       return <BrandStripSection section={section} settings={settings} />;
+    case "flexible_grid":
+      return <FlexibleGridSection section={section} settings={settings} />;
     default:
       return <TextBlockSection section={section} settings={settings} />;
   }

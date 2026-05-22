@@ -168,6 +168,31 @@ const SECTION_PRESETS: StorefrontSectionPreset[] = [
     defaultSettings: {},
     defaultContent: { items: [{ label: "Brand One" }, { label: "Brand Two" }, { label: "Brand Three" }] },
   },
+  {
+    type: "flexible_grid",
+    label: "Flexible Grid",
+    description: "Build custom landing-page sections with columns and content blocks.",
+    category: "content",
+    defaultTitle: "Flexible Grid",
+    needsMediaPicker: true,
+    defaultSettings: {
+      layout: "two_column",
+      style: {
+        background_preset: "white",
+        padding_y: "md",
+        max_width: "default",
+        alignment: "left",
+        animation_preset: "inherit",
+      },
+    },
+    defaultContent: {
+      blocks: [
+        { type: "heading", text: "Flexible page builder", level: "h2", align: "left", column: 1 },
+        { type: "paragraph", text: "Use controlled blocks for landing-page storytelling without breaking the storefront design system.", align: "left", column: 1 },
+        { type: "button", label: "Shop Now", href: "/products", style: "primary", align: "left", column: 1 },
+      ],
+    },
+  },
 ];
 
 export const storefrontSectionPresets = SECTION_PRESETS;
@@ -194,7 +219,7 @@ export function buildSectionFromPreset(type: string): Pick<OnlineStoreSection, "
     title: preset.defaultTitle,
     subtitle: preset.defaultSubtitle || "",
     is_enabled: true,
-    settings: { ...preset.defaultSettings },
-    content: { ...preset.defaultContent },
+    settings: JSON.parse(JSON.stringify(preset.defaultSettings)),
+    content: JSON.parse(JSON.stringify(preset.defaultContent)),
   };
 }

@@ -9,6 +9,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
 import type { OnlineStorePage } from "@/lib/online-store";
+import { buildSectionFromPreset, storefrontSectionPresets } from "@/lib/storefront-section-presets";
 
 const initialPage = {
   title: "",
@@ -27,6 +28,7 @@ export default function OnlineStorePagesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [newSectionType, setNewSectionType] = useState("flexible_grid");
 
   async function loadPages() {
     const payload = await api.get<OnlineStorePage[]>("/admin/storefront/pages");
@@ -94,6 +96,42 @@ export default function OnlineStorePagesPage() {
       setSuccess("Page deleted.");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to delete page.");
+    }
+  }
+
+  async function addSectionToPage(page: OnlineStorePage) {
+    if (!page.id) return;
+    try {
+      const payload = buildSectionFromPreset(newSectionType);
+      await api.post(`/admin/storefront/pages/${page.id}/sections`, payload);
+      await loadPages();
+      setSuccess("Section added to page.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to add page section.");
+    }
+  }
+
+  async function saveSection(pageId: string, sectionId: string, title: string, settings: Record<string, unknown> | null, content: Record<string, unknown> | null) {
+    try {
+      await api.put(`/admin/storefront/sections/${sectionId}`, {
+        title,
+        settings,
+        content,
+      });
+      await loadPages();
+      setSuccess("Page section updated.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update page section.");
+    }
+  }
+
+  async function deleteSection(sectionId: string) {
+    try {
+      await api.delete(`/admin/storefront/sections/${sectionId}`);
+      await loadPages();
+      setSuccess("Page section deleted.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to delete page section.");
     }
   }
 
@@ -169,6 +207,51 @@ export default function OnlineStorePagesPage() {
                     <button type="button" onClick={() => void savePage(selectedPage)} className="rounded-full bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white">
                       Save Page
                     </button>
+                  </div>
+                  <div className="space-y-4 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--color-txt-pri)]">Page Sections</p>
+                        <p className="text-xs text-[var(--color-txt-sec)]">Add controlled sections like Flexible Grid to custom and landing pages.</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <select value={newSectionType} onChange={(e) => setNewSectionType(e.target.value)} className="rounded-full border border-[var(--color-brd)] bg-white px-4 py-2 text-sm">
+                          {storefrontSectionPresets.map((preset) => (
+                            <option key={preset.type} value={preset.type}>{preset.label}</option>
+                          ))}
+                        </select>
+                        <button type="button" onClick={() => void addSectionToPage(selectedPage)} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">
+                          Add Section
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {(selectedPage.sections || []).map((section) => (
+                        <div key={section.id} className="space-y-3 rounded-[18px] border border-[var(--color-brd)] bg-white p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-[var(--color-txt-pri)]">{section.type.replace(/_/g, " ")}</span>
+                            {!selectedPage.is_system ? (
+                              <button type="button" onClick={() => void deleteSection(section.id || "")} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
+                          <input value={section.title || ""} onChange={(e) => setPages((current) => current.map((page) => page.id === selectedPage.id ? { ...page, sections: (page.sections || []).map((item) => item.id === section.id ? { ...item, title: e.target.value } : item) } : page))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                          <details className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)]">
+                            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-txt-pri)]">Section JSON</summary>
+                            <div className="space-y-3 border-t border-[var(--color-brd)] p-4">
+                              <textarea value={JSON.stringify(section.settings || {}, null, 2)} onChange={(e) => { try { const parsed = JSON.parse(e.target.value || "{}"); setPages((current) => current.map((page) => page.id === selectedPage.id ? { ...page, sections: (page.sections || []).map((item) => item.id === section.id ? { ...item, settings: parsed } : item) } : page)); } catch {} }} className="min-h-28 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 font-mono text-xs outline-none" />
+                              <textarea value={JSON.stringify(section.content || {}, null, 2)} onChange={(e) => { try { const parsed = JSON.parse(e.target.value || "{}"); setPages((current) => current.map((page) => page.id === selectedPage.id ? { ...page, sections: (page.sections || []).map((item) => item.id === section.id ? { ...item, content: parsed } : item) } : page)); } catch {} }} className="min-h-28 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 font-mono text-xs outline-none" />
+                            </div>
+                          </details>
+                          <div className="flex justify-end">
+                            <button type="button" onClick={() => void saveSection(selectedPage.id || "", section.id || "", section.title || "", section.settings || {}, section.content || {})} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">
+                              Save Section
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : null}

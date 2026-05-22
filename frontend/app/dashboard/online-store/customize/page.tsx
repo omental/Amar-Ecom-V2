@@ -11,6 +11,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
 import type { OnlineStorePage, OnlineStoreSection, OnlineStoreSettings } from "@/lib/online-store";
+import { buildBlockFromPreset, storefrontBlockPresets } from "@/lib/storefront-block-presets";
 import { buildSectionFromPreset, getSectionPreset, storefrontSectionPresets } from "@/lib/storefront-section-presets";
 
 type PublicCategory = {
@@ -51,6 +52,16 @@ function parseIdTextarea(value: string) {
 
 function stringifyIdTextarea(values: unknown) {
   return Array.isArray(values) ? values.map((item) => String(item)).join("\n") : "";
+}
+
+function reorderItems<T>(items: T[], index: number, direction: "up" | "down") {
+  const swapIndex = direction === "up" ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  return next;
 }
 
 export default function OnlineStoreCustomizePage() {
@@ -636,6 +647,119 @@ export default function OnlineStoreCustomizePage() {
             ))}
           </div>
           <button type="button" onClick={() => updateItems([...items, { name: "", logo_url: "", link_url: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add Brand</button>
+        </div>
+      );
+    }
+
+    if (section.type === "flexible_grid") {
+      const blocks = Array.isArray(content.blocks) ? (content.blocks as Array<Record<string, unknown>>) : [];
+      const style = (settings.style || {}) as Record<string, unknown>;
+      const updateBlocks = (nextBlocks: Array<Record<string, unknown>>) => updateSelectedContent({ blocks: nextBlocks });
+      return (
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Section title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+            <select value={String(settings.layout || "two_column")} onChange={(e) => updateSelectedSettings({ layout: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["one_column", "two_column", "three_column", "left_wide", "right_wide"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+          </div>
+          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Section subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <select value={String(style.background_preset || "white")} onChange={(e) => updateSelectedSettings({ style: { ...style, background_preset: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["white", "soft", "dark"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+            <select value={String(style.padding_y || "md")} onChange={(e) => updateSelectedSettings({ style: { ...style, padding_y: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["sm", "md", "lg"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+            <select value={String(style.max_width || "default")} onChange={(e) => updateSelectedSettings({ style: { ...style, max_width: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["narrow", "default", "wide"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+            <select value={String(style.alignment || "left")} onChange={(e) => updateSelectedSettings({ style: { ...style, alignment: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["left", "center", "right"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+            <select value={String(style.animation_preset || "inherit")} onChange={(e) => updateSelectedSettings({ style: { ...style, animation_preset: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["inherit", "none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+          </div>
+          <div className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[var(--color-txt-pri)]">Blocks</p>
+              <div className="flex flex-wrap gap-2">
+                {storefrontBlockPresets.map((preset) => (
+                  <button key={preset.type} type="button" onClick={() => updateBlocks([...blocks, buildBlockFromPreset(preset.type)])} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">
+                    Add {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {blocks.map((block, index) => (
+                <div key={`${String(block.type)}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-[var(--color-txt-pri)]">{toPrettyLabel(String(block.type || "block"))}</span>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={index === 0} onClick={() => updateBlocks(reorderItems(blocks, index, "up"))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
+                      <button type="button" disabled={index === blocks.length - 1} onClick={() => updateBlocks(reorderItems(blocks, index, "down"))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
+                      <button type="button" onClick={() => updateBlocks(blocks.filter((_, blockIndex) => blockIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="block text-sm">
+                      <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Column</span>
+                      <input type="number" min={1} max={3} value={Number(block.column || 1)} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, column: Number(e.target.value) || 1 } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
+                    </label>
+                    {(block.type === "heading" || block.type === "paragraph" || block.type === "button") ? (
+                      <label className="block text-sm">
+                        <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Align</span>
+                        <select value={String(block.align || "left")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, align: e.target.value } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+                          {["left", "center", "right"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                  {block.type === "heading" ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input value={String(block.text || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, text: e.target.value } : entry))} placeholder="Heading text" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                      <select value={String(block.level || "h2")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, level: e.target.value } : entry))} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+                        {["h1", "h2", "h3"].map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+                      </select>
+                    </div>
+                  ) : null}
+                  {block.type === "paragraph" ? (
+                    <textarea value={String(block.text || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, text: e.target.value } : entry))} placeholder="Paragraph text" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
+                  ) : null}
+                  {block.type === "image" ? (
+                    <div className="space-y-3">
+                      <MediaPicker label="Image" mediaType="section" value={String(block.image_url || "")} onChange={(value) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, image_url: value } : entry))} />
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <input value={String(block.alt || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, alt: e.target.value } : entry))} placeholder="Alt text" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                        <input value={String(block.link_url || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, link_url: e.target.value } : entry))} placeholder="Link URL (optional)" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                      </div>
+                    </div>
+                  ) : null}
+                  {block.type === "button" ? (
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <input value={String(block.label || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, label: e.target.value } : entry))} placeholder="Button label" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                      <input value={String(block.href || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, href: e.target.value } : entry))} placeholder="Button href" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                      <select value={String(block.style || "primary")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, style: e.target.value } : entry))} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+                        {["primary", "secondary"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+                      </select>
+                    </div>
+                  ) : null}
+                  {block.type === "spacer" ? (
+                    <select value={String(block.size || "md")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, size: e.target.value } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+                      {["sm", "md", "lg"].map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+                    </select>
+                  ) : null}
+                  {block.type === "divider" ? (
+                    <select value={String(block.style || "subtle")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, style: e.target.value } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+                      {["solid", "dashed", "subtle"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+                    </select>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       );
     }

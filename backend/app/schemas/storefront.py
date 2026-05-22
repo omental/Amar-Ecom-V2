@@ -34,6 +34,7 @@ SECTION_TYPES = (
     "faq",
     "testimonials",
     "brand_strip",
+    "flexible_grid",
 )
 REVISION_TYPES = ("page", "template_apply", "publish", "theme_settings")
 MEDIA_TYPES = ("logo", "favicon", "banner", "category", "product", "section", "general")

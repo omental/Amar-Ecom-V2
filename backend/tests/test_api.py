@@ -965,13 +965,21 @@ def test_storefront_pages_sections_and_public_visibility() -> None:
                 f"/api/v1/admin/storefront/pages/{page['id']}/sections",
                 headers=headers,
                 json={
-                    "type": "text_block",
-                    "title": "Draft block",
+                    "type": "flexible_grid",
+                    "title": "Draft flexible block",
                     "subtitle": "Not yet public",
                     "sort_order": 0,
                     "is_enabled": True,
-                    "settings": {"align": "left"},
-                    "content": {"body": "Safe draft text"},
+                    "settings": {
+                        "layout": "two_column",
+                        "style": {"background_preset": "white", "padding_y": "md"},
+                    },
+                    "content": {
+                        "blocks": [
+                            {"type": "heading", "text": "Landing block", "level": "h2", "align": "left", "column": 1},
+                            {"type": "paragraph", "text": "Safe draft text", "align": "left", "column": 1},
+                        ]
+                    },
                 },
             )
             assert section_response.status_code == 201, section_response.text
