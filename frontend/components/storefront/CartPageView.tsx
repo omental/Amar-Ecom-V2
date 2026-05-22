@@ -17,7 +17,7 @@ export function CartPageView() {
           Your cart is empty
         </h1>
         <p className="mt-3 text-sm leading-7 text-slate-600">
-          Add a few products and they will appear here.
+          যোগ করা পণ্য এখানে দেখাবে। এখনই কিছু অফার-রেডি প্রোডাক্ট বেছে নিন।
         </p>
         <Link href="/products" className="store-primary-button mt-6">
           Continue Shopping
@@ -95,7 +95,8 @@ export function CartPageView() {
                   <button
                     type="button"
                     onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-700"
+                    disabled={item.quantity <= 1}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Minus className="h-3.5 w-3.5" />
                   </button>
@@ -120,7 +121,7 @@ export function CartPageView() {
         </div>
       </div>
 
-      <aside className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <aside className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6 lg:sticky lg:top-6 lg:self-start">
         <p className="text-sm font-semibold text-slate-900">Order Summary</p>
         <div className="mt-5 space-y-3 text-sm">
           <div className="flex items-center justify-between text-slate-500">

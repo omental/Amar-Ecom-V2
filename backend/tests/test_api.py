@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -19,6 +20,7 @@ from app.models.courier import Shipment
 from app.models.courier_integration import CourierApiLog, CourierProviderSetting
 from app.models.order import Order
 from app.models.product import Product
+from app.models.storefront import StorefrontCoupon
 from app.models.woocommerce import WooCommerceSetting
 from app.models.woocommerce import WooCommerceSyncLog
 from app.services.courier_adapters.steadfast import SteadfastCourierAdapter
@@ -442,6 +444,7 @@ def test_public_storefront_routes_expose_only_active_products() -> None:
 
 def test_public_storefront_order_checkout_and_tracking() -> None:
     headers = auth_headers()
+    coupon_code = f"SAVE{uuid.uuid4().hex[:6].upper()}"
 
     try:
         with TestClient(app) as client:
@@ -515,6 +518,41 @@ def test_public_storefront_order_checkout_and_tracking() -> None:
             )
             assert inventory_response.status_code == 201, inventory_response.text
 
+            async def seed_storefront_coupon() -> None:
+                async with AsyncSessionLocal() as session:
+                    coupon = StorefrontCoupon(
+                        code=coupon_code,
+                        type="fixed",
+                        value=Decimal("200.00"),
+                        min_order_amount=Decimal("2000.00"),
+                        is_active=True,
+                    )
+                    session.add(coupon)
+                    await session.commit()
+
+            run_async(seed_storefront_coupon())
+
+            coupon_response = client.post(
+                "/api/v1/public/storefront/coupons/validate",
+                json={
+                    "code": coupon_code,
+                    "delivery_zone": "inside_dhaka",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "quantity": 2,
+                        }
+                    ],
+                },
+            )
+            assert coupon_response.status_code == 200, coupon_response.text
+            coupon_payload = coupon_response.json()
+            assert coupon_payload["code"] == coupon_code
+            assert coupon_payload["discount_total"] == 200.0
+            assert coupon_payload["subtotal"] == 2580.0
+            assert coupon_payload["delivery_charge"] == 70.0
+            assert coupon_payload["total"] == 2450.0
+
             order_response = client.post(
                 "/api/v1/public/storefront/orders",
                 json={
@@ -525,6 +563,8 @@ def test_public_storefront_order_checkout_and_tracking() -> None:
                     "district": "Dhaka",
                     "address": "Banani, Dhaka",
                     "delivery_note": "Call before delivery",
+                    "delivery_zone": "inside_dhaka",
+                    "coupon_code": coupon_code,
                     "payment_method": "cash_on_delivery",
                     "items": [
                         {
@@ -540,8 +580,12 @@ def test_public_storefront_order_checkout_and_tracking() -> None:
             order_payload = order_response.json()
             assert order_payload["tracking_code"].startswith("WEB-")
             assert order_payload["status"] == "pending"
+            assert order_payload["discount_total"] == 200.0
             assert order_payload["subtotal"] == 2580.0
-            assert order_payload["total"] == 2580.0
+            assert order_payload["delivery_charge"] == 70.0
+            assert order_payload["delivery_zone"] == "inside_dhaka"
+            assert order_payload["coupon_code"] == coupon_code
+            assert order_payload["total"] == 2450.0
             assert "id" not in order_payload
 
             tracking_response = client.get(
@@ -554,6 +598,12 @@ def test_public_storefront_order_checkout_and_tracking() -> None:
             assert tracking_payload["items"][0]["product_name"].startswith("Checkout Ready Product")
             assert tracking_payload["items"][0]["quantity"] == 2
             assert tracking_payload["items"][0]["price"] == 1290.0
+            assert tracking_payload["discount_total"] == 200.0
+            assert tracking_payload["delivery_charge"] == 70.0
+            assert tracking_payload["delivery_zone"] == "inside_dhaka"
+            assert tracking_payload["coupon_code"] == coupon_code
+            assert tracking_payload["timeline"][0]["status"] == "pending"
+            assert tracking_payload["timeline"][0]["completed"] is True
             assert "id" not in tracking_payload
             assert "notes" not in tracking_payload
 
@@ -571,7 +621,10 @@ def test_public_storefront_order_checkout_and_tracking() -> None:
                 assert order.source == "storefront"
                 assert order.stock_deducted is False
                 assert order.payment_method == "cash_on_delivery"
-                assert order.total == Decimal("2580.00")
+                assert order.discount == Decimal("200.00")
+                assert order.delivery_charge == Decimal("70.00")
+                assert order.total == Decimal("2450.00")
+                assert order.tags and "inside_dhaka" in order.tags and f"coupon:{coupon_code}" in order.tags
 
         run_async(verify_order_state())
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:

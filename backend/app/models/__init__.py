@@ -17,6 +17,7 @@ from app.models.return_request import ReturnItem, ReturnRequest
 from app.models.stock_movement import StockMovement
 from app.models.storefront import (
     StorefrontBanner,
+    StorefrontCoupon,
     StorefrontMedia,
     StorefrontMenu,
     StorefrontMenuItem,
@@ -70,6 +71,7 @@ __all__ = [
     "Supplier",
     "StockMovement",
     "StorefrontBanner",
+    "StorefrontCoupon",
     "StorefrontMedia",
     "StorefrontMenu",
     "StorefrontMenuItem",

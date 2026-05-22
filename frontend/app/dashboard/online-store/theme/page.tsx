@@ -24,6 +24,9 @@ const initialSettings: OnlineStoreSettings = {
   show_search: true,
   show_cart: true,
   show_track_order: true,
+  inside_dhaka_delivery_charge: 70,
+  outside_dhaka_delivery_charge: 120,
+  free_delivery_minimum: null,
   footer_description: "",
   footer_copyright_text: "",
   social_share_image_url: "",
@@ -139,7 +142,7 @@ export default function OnlineStoreThemePage() {
                 <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Secondary color</span>
                 <input type="color" value={settings.secondary_color || "#000000"} onChange={(e) => setSettings((c) => ({ ...c, secondary_color: e.target.value }))} className="h-12 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-2 py-2" />
               </label>
-              {[
+              {[ 
                 ["show_topbar", "Show topbar"],
                 ["show_search", "Show search"],
                 ["show_cart", "Show cart"],
@@ -154,6 +157,57 @@ export default function OnlineStoreThemePage() {
                   {label}
                 </label>
               ))}
+            </div>
+          </FormCard>
+
+          <FormCard title="Delivery Charges" description="Configure COD delivery estimates for checkout. Public checkout still calculates totals server-side.">
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="block text-sm">
+                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Inside Dhaka</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={settings.inside_dhaka_delivery_charge ?? 70}
+                  onChange={(e) =>
+                    setSettings((c) => ({
+                      ...c,
+                      inside_dhaka_delivery_charge: Number(e.target.value || 0),
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Outside Dhaka</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={settings.outside_dhaka_delivery_charge ?? 120}
+                  onChange={(e) =>
+                    setSettings((c) => ({
+                      ...c,
+                      outside_dhaka_delivery_charge: Number(e.target.value || 0),
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Free delivery minimum</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={settings.free_delivery_minimum ?? ""}
+                  onChange={(e) =>
+                    setSettings((c) => ({
+                      ...c,
+                      free_delivery_minimum: e.target.value ? Number(e.target.value) : null,
+                    }))
+                  }
+                  placeholder="Optional"
+                  className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
+                />
+              </label>
             </div>
           </FormCard>
 

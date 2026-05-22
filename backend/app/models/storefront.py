@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,9 @@ class StorefrontSetting(Base):
     show_search: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     show_cart: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     show_track_order: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    inside_dhaka_delivery_charge: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=70, server_default="70")
+    outside_dhaka_delivery_charge: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=120, server_default="120")
+    free_delivery_minimum: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     footer_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     footer_copyright_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
     social_share_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -141,3 +144,21 @@ class StorefrontMedia(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     uploaded_by = relationship("User")
+
+
+class StorefrontCoupon(Base):
+    __tablename__ = "storefront_coupons"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    min_order_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    max_discount_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    usage_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

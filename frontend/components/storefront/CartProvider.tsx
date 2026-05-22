@@ -94,14 +94,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
         setItems((current) => current.filter((item) => item.id !== itemId));
       },
       updateQuantity(itemId, quantity) {
-        if (quantity <= 0) {
-          setItems((current) => current.filter((item) => item.id !== itemId));
-          return;
-        }
-
         setItems((current) =>
           current.map((item) =>
-            item.id === itemId ? { ...item, quantity } : item,
+            item.id === itemId ? { ...item, quantity: Math.max(1, quantity) } : item,
           ),
         );
       },

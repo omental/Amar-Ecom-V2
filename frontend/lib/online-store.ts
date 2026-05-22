@@ -21,6 +21,9 @@ export type OnlineStoreSettings = {
   show_search: boolean;
   show_cart: boolean;
   show_track_order: boolean;
+  inside_dhaka_delivery_charge?: number;
+  outside_dhaka_delivery_charge?: number;
+  free_delivery_minimum?: number | null;
   footer_description?: string | null;
   footer_copyright_text?: string | null;
   social_share_image_url?: string | null;
@@ -185,6 +188,9 @@ export const FALLBACK_STOREFRONT_SETTINGS: OnlineStoreSettings = {
   show_search: true,
   show_cart: true,
   show_track_order: true,
+  inside_dhaka_delivery_charge: 70,
+  outside_dhaka_delivery_charge: 120,
+  free_delivery_minimum: null,
   footer_description:
     "Amar-eCom brings compact, offer-heavy Bangladesh fashion shopping with fast product discovery and order-first browsing.",
   footer_copyright_text: "Powered by Amar-eCom",

@@ -584,11 +584,20 @@ function PaymentPill({ value }: { value: string }) {
 
 function SourcePill({ source, externalStatus }: { source: string; externalStatus?: string | null }) {
   const value = (source || "").toLowerCase();
+  const isStorefront = value === "storefront";
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-700 ring-1 ring-slate-200">
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] ring-1 ${
+          isStorefront
+            ? "bg-rose-50 text-rose-700 ring-rose-100"
+            : "bg-slate-100 text-slate-700 ring-slate-200"
+        }`}
+      >
         {value === "messenger" || value === "whatsapp" ? (
           <MessageCircle className="h-3.5 w-3.5" />
+        ) : isStorefront ? (
+          <Package className="h-3.5 w-3.5" />
         ) : (
           <Globe className="h-3.5 w-3.5" />
         )}
@@ -601,6 +610,23 @@ function SourcePill({ source, externalStatus }: { source: string; externalStatus
       ) : null}
     </div>
   );
+}
+
+function parseStorefrontOrderMeta(tags?: string | null) {
+  const fragments = (tags || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  const deliveryZone = fragments.includes("outside_dhaka")
+    ? "Outside Dhaka"
+    : fragments.includes("inside_dhaka")
+      ? "Inside Dhaka"
+      : null;
+  const coupon = fragments.find((entry) => entry.startsWith("coupon:"))?.replace("coupon:", "") || null;
+  const cod = fragments.includes("cod");
+
+  return { deliveryZone, coupon, cod };
 }
 
 function SummaryCard({
@@ -2150,6 +2176,23 @@ export default function OrdersPage() {
                         </div>
                       </div>
                     </div>
+
+                    {detailOrder.source?.toLowerCase() === "storefront" ? (
+                      <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-5">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.18em] text-rose-700">Storefront Context</h4>
+                        <div className="mt-3 space-y-2 text-sm font-medium text-rose-900">
+                          <p>Source: {detailOrder.source}</p>
+                          <p>Payment: Cash on Delivery</p>
+                          {parseStorefrontOrderMeta(detailOrder.tags).deliveryZone ? (
+                            <p>Delivery zone: {parseStorefrontOrderMeta(detailOrder.tags).deliveryZone}</p>
+                          ) : null}
+                          {parseStorefrontOrderMeta(detailOrder.tags).coupon ? (
+                            <p>Coupon: {parseStorefrontOrderMeta(detailOrder.tags).coupon}</p>
+                          ) : null}
+                          <p>Tracking code: {detailOrder.orderNumber}</p>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {(detailOrder.source?.toLowerCase() === "woocommerce" || detailOrder.external_status) ? (
                       <div className="rounded-[24px] border border-blue-200 bg-blue-50 p-5">

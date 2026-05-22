@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2, PackageSearch } from "lucide-react";
 
 import { ApiError } from "@/lib/api";
-import { trackStorefrontOrder, type StorefrontTrackedOrder } from "@/lib/storefront-orders";
+import {
+  trackStorefrontOrder,
+  type StorefrontTrackedOrder,
+} from "@/lib/storefront-orders";
 import { formatStoreCurrency } from "@/lib/storefront";
+
+const BN_TRACK_HELP =
+  "\u0986\u09AA\u09A8\u09BE\u09B0 \u099F\u09CD\u09B0\u09CD\u09AF\u09BE\u0995\u09BF\u0982 \u0995\u09CB\u09A1 \u098F\u09AC\u0982 \u09AB\u09CB\u09A8 \u09A8\u09AE\u09CD\u09AC\u09B0 \u09A6\u09BF\u09DF\u09C7 \u0985\u09B0\u09CD\u09A1\u09BE\u09B0\u09C7\u09B0 \u09AC\u09B0\u09CD\u09A4\u09AE\u09BE\u09A8 \u0985\u09AC\u09B8\u09CD\u09A5\u09BE \u09A6\u09C7\u0996\u09C1\u09A8\u0964";
+const BN_TRACK_BUTTON = "\u0985\u09B0\u09CD\u09A1\u09BE\u09B0 \u0996\u09C1\u0981\u099C\u09C1\u09A8";
 
 export function TrackOrderView({
   initialCode = "",
@@ -26,7 +33,7 @@ export function TrackOrderView({
   const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<StorefrontTrackedOrder | null>(null);
 
-  async function handleLookup(event?: FormEvent<HTMLFormElement>) {
+  const handleLookup = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (!code.trim() || !phone.trim()) {
       setError("Tracking code and phone number are required.");
@@ -49,7 +56,7 @@ export function TrackOrderView({
     } finally {
       setLoading(false);
     }
-  }
+  }, [code, phone]);
 
   useEffect(() => {
     if (autoSubmit && seededCode && seededPhone) {
@@ -58,9 +65,7 @@ export function TrackOrderView({
       }, 0);
       return () => window.clearTimeout(timer);
     }
-    // We only want the initial auto-submit behavior for confirmation redirects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSubmit, seededCode, seededPhone]);
+  }, [autoSubmit, handleLookup, seededCode, seededPhone]);
 
   return (
     <section className="mx-auto grid w-full max-w-4xl gap-5">
@@ -71,9 +76,7 @@ export function TrackOrderView({
         <h1 className="mt-3 text-3xl font-black tracking-tight text-black sm:text-4xl">
           Check your order status
         </h1>
-        <p className="mt-3 text-sm leading-7 text-slate-600">
-          আপনার ট্র্যাকিং কোড এবং ফোন নম্বর দিয়ে অর্ডারের বর্তমান অবস্থা দেখুন।
-        </p>
+        <p className="mt-3 text-sm leading-7 text-slate-600">{BN_TRACK_HELP}</p>
 
         <form onSubmit={handleLookup} className="mt-6 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
           <label className="block">
@@ -104,7 +107,7 @@ export function TrackOrderView({
             ) : (
               <PackageSearch className="h-4 w-4" />
             )}
-            <span>অর্ডার খুঁজুন</span>
+            <span>{BN_TRACK_BUTTON}</span>
           </button>
         </form>
 
@@ -126,13 +129,43 @@ export function TrackOrderView({
                 {order.tracking_code}
               </h2>
               <p className="mt-2 text-sm text-slate-600">
-                {order.customer_name || "Customer"} •{" "}
+                {order.customer_name || "Customer"} /{" "}
                 {order.customer_phone_masked || "Phone verified"}
               </p>
             </div>
             <span className="inline-flex rounded-full bg-[#fff1f3] px-4 py-2 text-sm font-semibold text-[#db011c]">
               {order.status.replace(/_/g, " ")}
             </span>
+          </div>
+
+          <div className="mt-6 rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-900">Order timeline</p>
+            <div className="mt-4 grid gap-4">
+              {order.timeline.map((step, index) => (
+                <div key={`${step.status}-${index}`} className="flex items-start gap-3">
+                  <div className="mt-1 flex flex-col items-center">
+                    <span
+                      className={`h-3.5 w-3.5 rounded-full ${
+                        step.completed ? "bg-[#db011c]" : "bg-slate-300"
+                      }`}
+                    />
+                    {index < order.timeline.length - 1 ? (
+                      <span className="mt-1 h-8 w-px bg-slate-300" />
+                    ) : null}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">{step.label}</p>
+                    <p className="text-xs text-slate-500">
+                      {step.timestamp
+                        ? new Date(step.timestamp).toLocaleString("en-BD")
+                        : step.completed
+                          ? "Completed"
+                          : "Pending"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mt-6 grid gap-3">
@@ -144,7 +177,7 @@ export function TrackOrderView({
                 <div>
                   <p className="text-sm font-semibold text-slate-950">{item.product_name}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Qty {item.quantity} • {formatStoreCurrency(item.price)} each
+                    Qty {item.quantity} / {formatStoreCurrency(item.price)} each
                   </p>
                 </div>
                 <p className="text-sm font-semibold text-slate-950">
@@ -159,6 +192,12 @@ export function TrackOrderView({
               <span>Subtotal</span>
               <span className="font-semibold text-slate-950">
                 {formatStoreCurrency(order.subtotal)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Discount</span>
+              <span className="font-semibold text-emerald-700">
+                -{formatStoreCurrency(order.discount_total)}
               </span>
             </div>
             <div className="flex items-center justify-between text-slate-600">

@@ -114,7 +114,8 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
                           <button
                             type="button"
                             onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700"
+                            disabled={item.quantity <= 1}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <Minus className="h-3.5 w-3.5" />
                           </button>

@@ -55,6 +55,9 @@ class StorefrontSettingBase(BaseModel):
     show_search: bool | None = None
     show_cart: bool | None = None
     show_track_order: bool | None = None
+    inside_dhaka_delivery_charge: float | None = None
+    outside_dhaka_delivery_charge: float | None = None
+    free_delivery_minimum: float | None = None
     footer_description: str | None = None
     footer_copyright_text: str | None = None
     social_share_image_url: str | None = None
@@ -83,6 +86,9 @@ class StorefrontSettingRead(ORMBaseSchema):
     show_search: bool
     show_cart: bool
     show_track_order: bool
+    inside_dhaka_delivery_charge: float
+    outside_dhaka_delivery_charge: float
+    free_delivery_minimum: float | None = None
     footer_description: str | None = None
     footer_copyright_text: str | None = None
     social_share_image_url: str | None = None
@@ -409,6 +415,9 @@ class PublicStorefrontSetting(BaseModel):
     show_search: bool
     show_cart: bool
     show_track_order: bool
+    inside_dhaka_delivery_charge: float
+    outside_dhaka_delivery_charge: float
+    free_delivery_minimum: float | None = None
     footer_description: str | None = None
     footer_copyright_text: str | None = None
     social_share_image_url: str | None = None
@@ -470,6 +479,8 @@ class PublicStorefrontOrderCreate(BaseModel):
     district: str = Field(min_length=2, max_length=120)
     address: str = Field(min_length=5, max_length=2000)
     delivery_note: str | None = Field(default=None, max_length=2000)
+    delivery_zone: Literal["inside_dhaka", "outside_dhaka"] = "inside_dhaka"
+    coupon_code: str | None = Field(default=None, max_length=100)
     payment_method: Literal["cash_on_delivery"] = "cash_on_delivery"
     items: list[PublicStorefrontOrderItemInput] = Field(min_length=1)
 
@@ -478,9 +489,12 @@ class PublicStorefrontOrderCreateResponse(BaseModel):
     public_order_code: str
     tracking_code: str
     status: str
+    discount_total: float
     subtotal: float
     delivery_charge: float
     total: float
+    delivery_zone: Literal["inside_dhaka", "outside_dhaka"]
+    coupon_code: str | None = None
     created_at: datetime
 
 
@@ -491,6 +505,13 @@ class PublicStorefrontTrackedOrderItem(BaseModel):
     total: float
 
 
+class PublicStorefrontOrderTimelineItem(BaseModel):
+    label: str
+    status: str
+    completed: bool
+    timestamp: datetime | None = None
+
+
 class PublicStorefrontTrackedOrder(BaseModel):
     tracking_code: str
     status: str
@@ -498,9 +519,34 @@ class PublicStorefrontTrackedOrder(BaseModel):
     customer_name: str | None = None
     customer_phone_masked: str | None = None
     items: list[PublicStorefrontTrackedOrderItem]
+    discount_total: float
     subtotal: float
     delivery_charge: float
     total: float
+    delivery_zone: Literal["inside_dhaka", "outside_dhaka"] = "inside_dhaka"
+    coupon_code: str | None = None
+    timeline: list[PublicStorefrontOrderTimelineItem]
+
+
+class PublicStorefrontCouponValidateItem(BaseModel):
+    product_id: UUID
+    quantity: int = Field(ge=1)
+
+
+class PublicStorefrontCouponValidateInput(BaseModel):
+    code: str = Field(min_length=1, max_length=100)
+    delivery_zone: Literal["inside_dhaka", "outside_dhaka"] = "inside_dhaka"
+    items: list[PublicStorefrontCouponValidateItem] = Field(min_length=1)
+
+
+class PublicStorefrontCouponValidateResponse(BaseModel):
+    code: str
+    discount_type: Literal["fixed", "percentage"]
+    discount_total: float
+    subtotal: float
+    delivery_charge: float
+    total: float
+    message: str | None = None
 
 
 StorefrontMenuItemRead.model_rebuild()

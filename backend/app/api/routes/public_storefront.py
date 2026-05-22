@@ -11,8 +11,17 @@ from app.api.utils import fetch_one_or_404
 from app.models.customer import Customer
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product
-from app.models.storefront import StorefrontBanner, StorefrontMenu, StorefrontPage, StorefrontSection
+from app.models.storefront import (
+    StorefrontBanner,
+    StorefrontCoupon,
+    StorefrontMenu,
+    StorefrontPage,
+    StorefrontSection,
+    StorefrontSetting,
+)
 from app.schemas.storefront import (
+    PublicStorefrontCouponValidateInput,
+    PublicStorefrontCouponValidateResponse,
     PublicStorefrontOrderCreate,
     PublicStorefrontOrderCreateResponse,
     PublicStorefrontMenuItem,
@@ -24,6 +33,11 @@ from app.schemas.storefront import (
     PublicStorefrontTrackedOrderItem,
 )
 from app.services.notification_service import notify_admins
+from app.services.storefront_checkout_service import (
+    calculate_delivery_charge,
+    derive_public_order_timeline,
+    validate_coupon_for_checkout,
+)
 from app.services.storefront_html_service import sanitize_storefront_html
 from app.services.storefront_service import (
     banner_is_currently_active,
@@ -79,6 +93,7 @@ def _public_order_query():
         .options(
             selectinload(Order.items),
             selectinload(Order.customer),
+            selectinload(Order.events),
         )
     )
 
@@ -99,6 +114,50 @@ async def _load_public_products_by_ids(db: DBSession, product_ids: list) -> dict
         if product.status and product.status.lower() in PUBLIC_PRODUCT_STATUSES
     }
     return public_products
+
+
+async def _get_coupon_by_code(db: DBSession, code: str | None) -> StorefrontCoupon | None:
+    normalized = (code or "").strip().upper()
+    if not normalized:
+        return None
+    result = await db.execute(
+        select(StorefrontCoupon).where(StorefrontCoupon.code == normalized).limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _resolve_cart_subtotal(
+    db: DBSession,
+    items: list[tuple[str, int]],
+) -> tuple[Decimal, dict[str, Product]]:
+    product_ids = [product_id for product_id, _quantity in items]
+    public_products = await _load_public_products_by_ids(db, product_ids)
+
+    if len(public_products) != len(set(product_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One or more selected products are not available publicly.",
+        )
+
+    subtotal = Decimal("0.00")
+    for product_id, quantity in items:
+        product = public_products[product_id]
+        available_quantity = get_public_product_available_quantity(product)
+        stock_status = get_public_product_stock_status(product)
+        if stock_status == "out_of_stock" or available_quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{product.name} is currently out of stock.",
+            )
+        if quantity > available_quantity:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Only {available_quantity} unit(s) of {product.name} are available right now.",
+            )
+        _, current_price = get_public_product_prices(product)
+        subtotal += current_price * quantity
+
+    return subtotal, public_products
 
 
 def _public_menu_item(item) -> PublicStorefrontMenuItem:
@@ -173,6 +232,9 @@ def _settings_payload(settings) -> PublicStorefrontSetting:
         show_search=settings.show_search,
         show_cart=settings.show_cart,
         show_track_order=settings.show_track_order,
+        inside_dhaka_delivery_charge=float(settings.inside_dhaka_delivery_charge),
+        outside_dhaka_delivery_charge=float(settings.outside_dhaka_delivery_charge),
+        free_delivery_minimum=float(settings.free_delivery_minimum) if settings.free_delivery_minimum is not None else None,
         footer_description=settings.footer_description,
         footer_copyright_text=settings.footer_copyright_text,
         social_share_image_url=settings.social_share_image_url,
@@ -261,44 +323,57 @@ async def get_public_storefront_page(slug: str, db: DBSession) -> PublicStorefro
     return await _storefront_response_for_page(db, page)
 
 
+@router.post("/coupons/validate", response_model=PublicStorefrontCouponValidateResponse)
+async def validate_public_storefront_coupon(
+    payload: PublicStorefrontCouponValidateInput,
+    db: DBSession,
+) -> PublicStorefrontCouponValidateResponse:
+    settings = await get_or_create_storefront_settings(db)
+    subtotal, _public_products = await _resolve_cart_subtotal(
+        db,
+        [(str(item.product_id), item.quantity) for item in payload.items],
+    )
+    coupon = await _get_coupon_by_code(db, payload.code)
+    if coupon is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found.")
+
+    discount_total = validate_coupon_for_checkout(coupon, subtotal=subtotal)
+    discounted_subtotal = subtotal - discount_total
+    delivery_charge = calculate_delivery_charge(
+        settings,
+        subtotal=discounted_subtotal,
+        delivery_zone=payload.delivery_zone,
+    )
+    total = discounted_subtotal + delivery_charge
+
+    return PublicStorefrontCouponValidateResponse(
+        code=coupon.code,
+        discount_type=coupon.type,
+        discount_total=float(discount_total),
+        subtotal=float(subtotal),
+        delivery_charge=float(delivery_charge),
+        total=float(total),
+        message="Coupon applied successfully.",
+    )
+
+
 @router.post("/orders", response_model=PublicStorefrontOrderCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_public_storefront_order(
     payload: PublicStorefrontOrderCreate,
     db: DBSession,
 ) -> PublicStorefrontOrderCreateResponse:
-    product_ids = [item.product_id for item in payload.items]
-    public_products = await _load_public_products_by_ids(db, product_ids)
-
-    if len(public_products) != len(set(str(product_id) for product_id in product_ids)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="One or more selected products are not available publicly.",
-        )
-
+    settings = await get_or_create_storefront_settings(db)
+    subtotal, public_products = await _resolve_cart_subtotal(
+        db,
+        [(str(item.product_id), item.quantity) for item in payload.items],
+    )
     normalized_phone = _normalize_phone(payload.phone)
-    delivery_charge = Decimal("0.00")
-    subtotal = Decimal("0.00")
     order_items: list[OrderItem] = []
 
     for item in payload.items:
         product = public_products[str(item.product_id)]
-        available_quantity = get_public_product_available_quantity(product)
-        stock_status = get_public_product_stock_status(product)
-
-        if stock_status == "out_of_stock" or available_quantity <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"{product.name} is currently out of stock.",
-            )
-        if item.quantity > available_quantity:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Only {available_quantity} unit(s) of {product.name} are available right now.",
-            )
-
         _, current_price = get_public_product_prices(product)
         line_total = current_price * item.quantity
-        subtotal += line_total
 
         option_suffix = []
         if item.selected_size:
@@ -322,7 +397,15 @@ async def create_public_storefront_order(
             )
         )
 
-    total = subtotal + delivery_charge
+    coupon = await _get_coupon_by_code(db, payload.coupon_code)
+    discount_total = validate_coupon_for_checkout(coupon, subtotal=subtotal) if coupon else Decimal("0.00")
+    discounted_subtotal = subtotal - discount_total
+    delivery_charge = calculate_delivery_charge(
+        settings,
+        subtotal=discounted_subtotal,
+        delivery_zone=payload.delivery_zone,
+    )
+    total = discounted_subtotal + delivery_charge
 
     customer_result = await db.execute(
         select(Customer).where(Customer.phone == payload.phone).limit(1)
@@ -331,8 +414,11 @@ async def create_public_storefront_order(
     customer_notes_parts = []
     if payload.alternative_phone:
         customer_notes_parts.append(f"Alternative phone: {payload.alternative_phone}")
+    customer_notes_parts.append(f"Delivery zone: {payload.delivery_zone}")
     if payload.delivery_note:
         customer_notes_parts.append(f"Delivery note: {payload.delivery_note}")
+    if coupon:
+        customer_notes_parts.append(f"Coupon applied: {coupon.code}")
     customer_notes = "\n".join(customer_notes_parts) if customer_notes_parts else None
 
     if customer is None:
@@ -365,13 +451,22 @@ async def create_public_storefront_order(
         customer_phone=normalized_phone or payload.phone,
         shipping_address=payload.address,
         notes=customer_notes,
-        tags="storefront,cod",
+        tags=",".join(
+            part
+            for part in [
+                "storefront",
+                "cod",
+                payload.delivery_zone,
+                f"coupon:{coupon.code}" if coupon else None,
+            ]
+            if part
+        ),
         status="pending",
         payment_status="unpaid",
         payment_method=payload.payment_method,
         source="storefront",
         subtotal=subtotal,
-        discount=Decimal("0.00"),
+        discount=discount_total,
         delivery_charge=delivery_charge,
         paid_amount=Decimal("0.00"),
         total=total,
@@ -387,6 +482,9 @@ async def create_public_storefront_order(
     )
     db.add(order)
     await db.flush()
+
+    if coupon is not None:
+        coupon.usage_count = (coupon.usage_count or 0) + 1
 
     await notify_admins(
         db,
@@ -405,9 +503,12 @@ async def create_public_storefront_order(
         public_order_code=order.order_number,
         tracking_code=order.order_number,
         status=order.status,
+        discount_total=float(order.discount),
         subtotal=float(order.subtotal),
         delivery_charge=float(order.delivery_charge),
         total=float(order.total),
+        delivery_zone=payload.delivery_zone,
+        coupon_code=coupon.code if coupon else None,
         created_at=order.created_at,
     )
 
@@ -448,7 +549,18 @@ async def track_public_storefront_order(
             )
             for item in order.items
         ],
+        discount_total=float(order.discount),
         subtotal=float(order.subtotal),
         delivery_charge=float(order.delivery_charge),
         total=float(order.total),
+        delivery_zone="outside_dhaka" if "outside_dhaka" in (order.tags or "") else "inside_dhaka",
+        coupon_code=next(
+            (
+                fragment.split(":", 1)[1]
+                for fragment in (order.tags or "").split(",")
+                if fragment.startswith("coupon:")
+            ),
+            None,
+        ),
+        timeline=derive_public_order_timeline(order),
     )
