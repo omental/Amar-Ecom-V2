@@ -11,6 +11,7 @@ from app.api.deps import DBSession, get_current_user
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404
 from app.models.storefront import (
     StorefrontBanner,
+    StorefrontCoupon,
     StorefrontMedia,
     StorefrontMenu,
     StorefrontMenuItem,
@@ -24,6 +25,9 @@ from app.schemas.storefront import (
     StorefrontBannerCreate,
     StorefrontBannerRead,
     StorefrontBannerUpdate,
+    StorefrontCouponCreate,
+    StorefrontCouponRead,
+    StorefrontCouponUpdate,
     StorefrontMediaUploadResponse,
     StorefrontMenuCreate,
     StorefrontMenuItemCreate,
@@ -86,6 +90,24 @@ async def _get_page_or_404(db: DBSession, page_id: UUID) -> StorefrontPage:
     )
     set_committed_value(page, "sections", sorted(page.sections, key=lambda section: (section.sort_order, section.created_at)))
     return page
+
+
+def _coupon_read(coupon: StorefrontCoupon) -> StorefrontCouponRead:
+    return StorefrontCouponRead(
+        id=coupon.id,
+        code=coupon.code,
+        type=coupon.type,
+        value=float(coupon.value),
+        min_order_amount=float(coupon.min_order_amount),
+        max_discount_amount=float(coupon.max_discount_amount) if coupon.max_discount_amount is not None else None,
+        active=coupon.is_active,
+        starts_at=coupon.starts_at,
+        ends_at=coupon.ends_at,
+        usage_limit=coupon.usage_limit,
+        usage_count=coupon.usage_count,
+        created_at=coupon.created_at,
+        updated_at=coupon.updated_at,
+    )
 
 
 @router.get("/overview", response_model=StorefrontOverviewRead)
@@ -417,6 +439,121 @@ async def get_storefront_products_picker(
         limit=limit,
     )
     return StorefrontProductPickerResponse(**payload)
+
+
+@router.get("/coupons", response_model=list[StorefrontCouponRead])
+async def list_storefront_coupons(
+    db: DBSession,
+    q: str | None = Query(default=None),
+    active: bool | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontCouponRead]:
+    _ensure_admin(current_user)
+    stmt = select(StorefrontCoupon).order_by(StorefrontCoupon.created_at.desc())
+    if q:
+        stmt = stmt.where(StorefrontCoupon.code.ilike(f"%{q.strip()}%"))
+    if active is not None:
+        stmt = stmt.where(StorefrontCoupon.is_active.is_(active))
+    result = await db.execute(stmt)
+    return [_coupon_read(coupon) for coupon in result.scalars().all()]
+
+
+@router.post("/coupons", response_model=StorefrontCouponRead, status_code=status.HTTP_201_CREATED)
+async def create_storefront_coupon(
+    coupon_in: StorefrontCouponCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontCouponRead:
+    _ensure_admin(current_user)
+    payload = coupon_in.model_dump()
+    await ensure_unique(db, StorefrontCoupon, "code", payload["code"], "Coupon code already exists")
+    coupon = StorefrontCoupon(
+        code=payload["code"],
+        type=payload["type"],
+        value=payload["value"],
+        min_order_amount=payload["min_order_amount"],
+        max_discount_amount=payload["max_discount_amount"],
+        is_active=payload["active"],
+        starts_at=payload["starts_at"],
+        ends_at=payload["ends_at"],
+        usage_limit=payload["usage_limit"],
+    )
+    db.add(coupon)
+    await commit_or_409(db, "Could not create storefront coupon")
+    await db.refresh(coupon)
+    return _coupon_read(coupon)
+
+
+@router.get("/coupons/{coupon_id}", response_model=StorefrontCouponRead)
+async def get_storefront_coupon(
+    coupon_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontCouponRead:
+    _ensure_admin(current_user)
+    coupon = await fetch_one_or_404(
+        db,
+        select(StorefrontCoupon).where(StorefrontCoupon.id == coupon_id),
+        "Storefront coupon not found",
+    )
+    return _coupon_read(coupon)
+
+
+@router.put("/coupons/{coupon_id}", response_model=StorefrontCouponRead)
+async def update_storefront_coupon(
+    coupon_id: UUID,
+    coupon_in: StorefrontCouponUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontCouponRead:
+    _ensure_admin(current_user)
+    coupon = await fetch_one_or_404(
+        db,
+        select(StorefrontCoupon).where(StorefrontCoupon.id == coupon_id),
+        "Storefront coupon not found",
+    )
+    payload = coupon_in.model_dump(exclude_unset=True)
+    if "code" in payload:
+        await ensure_unique(
+            db,
+            StorefrontCoupon,
+            "code",
+            payload["code"],
+            "Coupon code already exists",
+            exclude_id=coupon.id,
+        )
+    if ("type" in payload and payload["type"] == "percentage" and "value" not in payload and float(coupon.value) > 100) or (
+        "value" in payload and payload.get("type", coupon.type) == "percentage" and payload["value"] > 100
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Percentage coupon value cannot exceed 100",
+        )
+    field_map = {
+        "active": "is_active",
+    }
+    for field, value in payload.items():
+        setattr(coupon, field_map.get(field, field), value)
+    await commit_or_409(db, "Could not update storefront coupon")
+    await db.refresh(coupon)
+    return _coupon_read(coupon)
+
+
+@router.delete("/coupons/{coupon_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_storefront_coupon(
+    coupon_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    coupon = await fetch_one_or_404(
+        db,
+        select(StorefrontCoupon).where(StorefrontCoupon.id == coupon_id),
+        "Storefront coupon not found",
+    )
+    await db.delete(coupon)
+    await commit_or_409(db, "Could not delete storefront coupon")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/pages/{page_id}/sections", response_model=StorefrontSectionRead, status_code=status.HTTP_201_CREATED)

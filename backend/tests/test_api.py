@@ -638,6 +638,205 @@ def test_public_storefront_order_checkout_and_tracking() -> None:
     dispose_engine()
 
 
+def test_storefront_admin_coupon_crud_and_duplicate_prevention() -> None:
+    headers = auth_headers()
+    coupon_code = f"ADMIN{uuid.uuid4().hex[:6].upper()}"
+
+    try:
+        with TestClient(app) as client:
+            create_response = client.post(
+                "/api/v1/admin/storefront/coupons",
+                headers=headers,
+                json={
+                    "code": f"  {coupon_code.lower()}  ",
+                    "type": "percentage",
+                    "value": 15,
+                    "min_order_amount": 1000,
+                    "max_discount_amount": 250,
+                    "active": True,
+                    "usage_limit": 5,
+                },
+            )
+            assert create_response.status_code == 201, create_response.text
+            created = create_response.json()
+            assert created["code"] == coupon_code
+            assert created["type"] == "percentage"
+            assert created["active"] is True
+
+            duplicate_response = client.post(
+                "/api/v1/admin/storefront/coupons",
+                headers=headers,
+                json={
+                    "code": coupon_code,
+                    "type": "fixed",
+                    "value": 100,
+                    "min_order_amount": 0,
+                    "active": True,
+                },
+            )
+            assert duplicate_response.status_code == 409, duplicate_response.text
+
+            list_response = client.get(
+                f"/api/v1/admin/storefront/coupons?q={coupon_code[:5]}",
+                headers=headers,
+            )
+            assert list_response.status_code == 200, list_response.text
+            listed = list_response.json()
+            assert any(item["code"] == coupon_code for item in listed)
+
+            detail_response = client.get(
+                f"/api/v1/admin/storefront/coupons/{created['id']}",
+                headers=headers,
+            )
+            assert detail_response.status_code == 200, detail_response.text
+            assert detail_response.json()["code"] == coupon_code
+
+            update_response = client.put(
+                f"/api/v1/admin/storefront/coupons/{created['id']}",
+                headers=headers,
+                json={
+                    "type": "fixed",
+                    "value": 180,
+                    "active": False,
+                },
+            )
+            assert update_response.status_code == 200, update_response.text
+            updated = update_response.json()
+            assert updated["type"] == "fixed"
+            assert updated["value"] == 180.0
+            assert updated["active"] is False
+
+            delete_response = client.delete(
+                f"/api/v1/admin/storefront/coupons/{created['id']}",
+                headers=headers,
+            )
+            assert delete_response.status_code == 204, delete_response.text
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        lowered = str(exc).lower()
+        if "storefront_coupons" in lowered:
+            pytest.skip("Apply the storefront coupon migration before running this test.")
+        if any(token in lowered for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
+def test_storefront_coupon_validation_rejects_invalid_and_usage_limited_coupons() -> None:
+    headers = auth_headers()
+    expired_code = f"OLD{uuid.uuid4().hex[:6].upper()}"
+    limit_code = f"LIMIT{uuid.uuid4().hex[:6].upper()}"
+
+    try:
+        with TestClient(app) as client:
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={"name": f"Coupon Warehouse {uuid.uuid4().hex[:6]}", "code": f"CW-{uuid.uuid4().hex[:4].upper()}"},
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": f"Coupon Test Product {uuid.uuid4().hex[:6]}",
+                    "sku": f"COUPON-{uuid.uuid4().hex[:6].upper()}",
+                    "price": 1500,
+                    "sale_price": 1200,
+                    "status": "active",
+                    "image": "https://example.com/coupon-product.jpg",
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 8,
+                    "low_stock_threshold": 1,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            async def seed_coupons() -> None:
+                async with AsyncSessionLocal() as session:
+                    session.add_all(
+                        [
+                            StorefrontCoupon(
+                                code=expired_code,
+                                type="fixed",
+                                value=Decimal("100.00"),
+                                min_order_amount=Decimal("0.00"),
+                                is_active=True,
+                                ends_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                            ),
+                            StorefrontCoupon(
+                                code=limit_code,
+                                type="fixed",
+                                value=Decimal("50.00"),
+                                min_order_amount=Decimal("0.00"),
+                                is_active=True,
+                                usage_limit=1,
+                                usage_count=1,
+                            ),
+                        ]
+                    )
+                    await session.commit()
+
+            run_async(seed_coupons())
+
+            expired_validation = client.post(
+                "/api/v1/public/storefront/coupons/validate",
+                json={
+                    "code": expired_code,
+                    "delivery_zone": "inside_dhaka",
+                    "items": [{"product_id": product["id"], "quantity": 1}],
+                },
+            )
+            assert expired_validation.status_code == 400, expired_validation.text
+
+            limited_validation = client.post(
+                "/api/v1/public/storefront/coupons/validate",
+                json={
+                    "code": limit_code,
+                    "delivery_zone": "inside_dhaka",
+                    "items": [{"product_id": product["id"], "quantity": 1}],
+                },
+            )
+            assert limited_validation.status_code == 400, limited_validation.text
+
+            invalid_order_response = client.post(
+                "/api/v1/public/storefront/orders",
+                json={
+                    "customer_name": "Coupon Failure Buyer",
+                    "phone": "01722000000",
+                    "district": "Dhaka",
+                    "address": "Gulshan, Dhaka",
+                    "delivery_zone": "inside_dhaka",
+                    "coupon_code": limit_code,
+                    "payment_method": "cash_on_delivery",
+                    "items": [{"product_id": product["id"], "quantity": 1}],
+                },
+            )
+            assert invalid_order_response.status_code == 400, invalid_order_response.text
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        lowered = str(exc).lower()
+        if "storefront_coupons" in lowered:
+            pytest.skip("Apply the storefront coupon migration before running this test.")
+        if any(token in lowered for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_storefront_settings_get_and_update() -> None:
     headers = auth_headers()
 

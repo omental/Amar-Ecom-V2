@@ -77,6 +77,18 @@ export default function OnlineStoreThemePage() {
     event.preventDefault();
     setError("");
     setSuccess("");
+    if ((settings.inside_dhaka_delivery_charge ?? 0) < 0) {
+      setError("Inside Dhaka delivery charge cannot be negative.");
+      return;
+    }
+    if ((settings.outside_dhaka_delivery_charge ?? 0) < 0) {
+      setError("Outside Dhaka delivery charge cannot be negative.");
+      return;
+    }
+    if ((settings.free_delivery_minimum ?? 0) < 0) {
+      setError("Free delivery minimum cannot be negative.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = await api.put<OnlineStoreSettings>("/admin/storefront/settings", settings);
@@ -160,7 +172,7 @@ export default function OnlineStoreThemePage() {
             </div>
           </FormCard>
 
-          <FormCard title="Delivery Charges" description="Configure COD delivery estimates for checkout. Public checkout still calculates totals server-side.">
+          <FormCard title="Delivery Charges" description="Configure COD delivery estimates for checkout. These values are calculated server-side during checkout.">
             <div className="grid gap-4 md:grid-cols-3">
               <label className="block text-sm">
                 <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Inside Dhaka</span>
@@ -209,6 +221,9 @@ export default function OnlineStoreThemePage() {
                 />
               </label>
             </div>
+            <p className="mt-4 text-sm text-[var(--color-txt-sec)]">
+              These values are calculated server-side during checkout, so storefront totals never rely on browser-side calculations alone.
+            </p>
           </FormCard>
 
           <FormCard title="Logo & Favicon" description="Upload storefront media, reuse uploaded assets, and keep direct URLs as a fallback.">

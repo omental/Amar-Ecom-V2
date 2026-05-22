@@ -398,6 +398,8 @@ async def create_public_storefront_order(
         )
 
     coupon = await _get_coupon_by_code(db, payload.coupon_code)
+    if payload.coupon_code and coupon is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coupon not found.")
     discount_total = validate_coupon_for_checkout(coupon, subtotal=subtotal) if coupon else Decimal("0.00")
     discounted_subtotal = subtotal - discount_total
     delivery_charge = calculate_delivery_charge(

@@ -66,6 +66,17 @@ class StorefrontSettingBase(BaseModel):
     seo_description: str | None = None
     is_active: bool | None = None
 
+    @field_validator(
+        "inside_dhaka_delivery_charge",
+        "outside_dhaka_delivery_charge",
+        "free_delivery_minimum",
+    )
+    @classmethod
+    def validate_non_negative_amount(cls, value: float | None) -> float | None:
+        if value is not None and value < 0:
+            raise ValueError("Amount cannot be negative")
+        return value
+
 
 class StorefrontSettingUpdate(StorefrontSettingBase):
     pass
@@ -347,6 +358,86 @@ class StorefrontBannerRead(ORMBaseSchema):
     is_active: bool
     starts_at: datetime | None = None
     ends_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontCouponBase(BaseModel):
+    code: str
+    type: Literal["fixed", "percentage"]
+    value: float = Field(gt=0)
+    min_order_amount: float = Field(default=0, ge=0)
+    max_discount_amount: float | None = Field(default=None, ge=0)
+    active: bool = True
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    usage_limit: int | None = Field(default=None, gt=0)
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("Coupon code is required")
+        return normalized
+
+    @field_validator("value")
+    @classmethod
+    def validate_value(cls, value: float, info) -> float:
+        coupon_type = info.data.get("type")
+        if coupon_type == "percentage" and value > 100:
+            raise ValueError("Percentage coupon value cannot exceed 100")
+        return value
+
+
+class StorefrontCouponCreate(StorefrontCouponBase):
+    pass
+
+
+class StorefrontCouponUpdate(BaseModel):
+    code: str | None = None
+    type: Literal["fixed", "percentage"] | None = None
+    value: float | None = Field(default=None, gt=0)
+    min_order_amount: float | None = Field(default=None, ge=0)
+    max_discount_amount: float | None = Field(default=None, ge=0)
+    active: bool | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    usage_limit: int | None = Field(default=None, gt=0)
+
+    @field_validator("code")
+    @classmethod
+    def normalize_optional_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("Coupon code is required")
+        return normalized
+
+    @field_validator("value")
+    @classmethod
+    def validate_optional_value(cls, value: float | None, info) -> float | None:
+        if value is None:
+            return value
+        coupon_type = info.data.get("type")
+        if coupon_type == "percentage" and value > 100:
+            raise ValueError("Percentage coupon value cannot exceed 100")
+        return value
+
+
+class StorefrontCouponRead(ORMBaseSchema):
+    id: UUID
+    code: str
+    type: Literal["fixed", "percentage"]
+    value: float
+    min_order_amount: float
+    max_discount_amount: float | None = None
+    active: bool
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    usage_limit: int | None = None
+    usage_count: int
     created_at: datetime
     updated_at: datetime
 

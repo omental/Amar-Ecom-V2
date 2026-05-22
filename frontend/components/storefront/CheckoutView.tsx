@@ -374,29 +374,21 @@ export function CheckoutView({ settings }: { settings: OnlineStoreSettings }) {
                 if (appliedCoupon && nextCode.trim() !== appliedCoupon.code) {
                   setAppliedCoupon(null);
                   setCouponMessage(null);
+                } else if (!appliedCoupon) {
+                  setCouponMessage(null);
                 }
               }}
               placeholder="Enter code"
               className="w-full rounded-[16px] border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
             />
-            {appliedCoupon ? (
-              <button
-                type="button"
-                onClick={handleRemoveCoupon}
-                className="rounded-[16px] border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700"
-              >
-                Remove
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleApplyCoupon()}
-                disabled={couponLoading || !form.coupon_code.trim()}
-                className="rounded-[16px] bg-black px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {couponLoading ? "Applying..." : "Apply"}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => void handleApplyCoupon()}
+              disabled={couponLoading || !form.coupon_code.trim()}
+              className="rounded-[16px] bg-black px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {couponLoading ? "Applying..." : appliedCoupon ? "Reapply" : "Apply"}
+            </button>
           </div>
           {couponMessage ? (
             <p
@@ -406,6 +398,26 @@ export function CheckoutView({ settings }: { settings: OnlineStoreSettings }) {
             >
               {couponMessage}
             </p>
+          ) : null}
+          {appliedCoupon ? (
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
+              <div className="min-w-0">
+                <p className="font-semibold text-emerald-800">{appliedCoupon.code}</p>
+                <p className="text-xs text-emerald-700">
+                  Discount applied: {formatStoreCurrency(appliedCoupon.discount_total)}
+                </p>
+                <p className="mt-1 text-[11px] text-emerald-700">
+                  Final discount is revalidated on order placement.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveCoupon}
+                className="rounded-full border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-800"
+              >
+                Remove
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -420,12 +432,14 @@ export function CheckoutView({ settings }: { settings: OnlineStoreSettings }) {
               {formatStoreCurrency(subtotal)}
             </span>
           </div>
-          <div className="flex items-center justify-between text-slate-600">
-            <span>Discount</span>
-            <span className="font-semibold text-emerald-700">
-              -{formatStoreCurrency(estimatedDiscount)}
-            </span>
-          </div>
+          {appliedCoupon ? (
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Discount</span>
+              <span className="font-semibold text-emerald-700">
+                -{formatStoreCurrency(estimatedDiscount)}
+              </span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between text-slate-600">
             <span>Delivery Charge</span>
             <span className="font-semibold text-slate-950">

@@ -116,6 +116,22 @@ export type OnlineStoreMedia = {
   alt_text?: string | null;
 };
 
+export type OnlineStoreCoupon = {
+  id?: string;
+  code: string;
+  type: "fixed" | "percentage";
+  value: number;
+  min_order_amount: number;
+  max_discount_amount?: number | null;
+  active: boolean;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  usage_limit?: number | null;
+  usage_count?: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type PublicStorefrontResponse = {
   settings: OnlineStoreSettings;
   menus: Record<string, OnlineStoreMenuItem[]>;
@@ -161,6 +177,35 @@ async function fetchJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function fetchAdminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token =
+    typeof window !== "undefined" ? window.localStorage.getItem("amar_token") : null;
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
+  if (!(init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
 export async function fetchPublicStorefrontHome() {
   return fetchJson<PublicStorefrontResponse>("/public/storefront/pages/home");
 }
@@ -175,6 +220,37 @@ export async function fetchPublicStorefrontSettings() {
 
 export async function fetchPublicStorefrontMenus() {
   return fetchJson<Record<string, OnlineStoreMenuItem[]>>("/public/storefront/menus");
+}
+
+export async function fetchAdminStorefrontCoupons(params?: {
+  q?: string;
+  active?: boolean | null;
+}) {
+  const search = new URLSearchParams();
+  if (params?.q) search.set("q", params.q);
+  if (typeof params?.active === "boolean") search.set("active", String(params.active));
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return fetchAdminJson<OnlineStoreCoupon[]>(`/admin/storefront/coupons${suffix}`);
+}
+
+export async function createAdminStorefrontCoupon(input: OnlineStoreCoupon) {
+  return fetchAdminJson<OnlineStoreCoupon>("/admin/storefront/coupons", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateAdminStorefrontCoupon(couponId: string, input: OnlineStoreCoupon) {
+  return fetchAdminJson<OnlineStoreCoupon>(`/admin/storefront/coupons/${couponId}`, {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteAdminStorefrontCoupon(couponId: string) {
+  return fetchAdminJson<void>(`/admin/storefront/coupons/${couponId}`, {
+    method: "DELETE",
+  });
 }
 
 export const FALLBACK_STOREFRONT_SETTINGS: OnlineStoreSettings = {

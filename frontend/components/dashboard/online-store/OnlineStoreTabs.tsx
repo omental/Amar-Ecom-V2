@@ -10,6 +10,7 @@ const tabs = [
   { label: "Navigation", href: "/dashboard/online-store/navigation" },
   { label: "Pages", href: "/dashboard/online-store/pages" },
   { label: "Banners", href: "/dashboard/online-store/banners" },
+  { label: "Coupons", href: "/dashboard/online-store/coupons" },
   { label: "Theme Settings", href: "/dashboard/online-store/theme" },
   { label: "SEO", href: "/dashboard/online-store/seo" },
 ];
