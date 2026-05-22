@@ -22,6 +22,7 @@ from app.models.storefront import (
     StorefrontMenu,
     StorefrontMenuItem,
     StorefrontPage,
+    StorefrontRevision,
     StorefrontSection,
     StorefrontSetting,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "StorefrontMenu",
     "StorefrontMenuItem",
     "StorefrontPage",
+    "StorefrontRevision",
     "StorefrontSection",
     "StorefrontSetting",
     "Task",

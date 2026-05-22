@@ -35,6 +35,7 @@ SECTION_TYPES = (
     "testimonials",
     "brand_strip",
 )
+REVISION_TYPES = ("page", "template_apply", "publish", "theme_settings")
 MEDIA_TYPES = ("logo", "favicon", "banner", "category", "product", "section", "general")
 TEMPLATE_KEYS = ("live_shopping_classic", "minimal_fashion", "electronics_deals")
 TYPOGRAPHY_PRESETS = ("default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial")
@@ -426,6 +427,8 @@ class StorefrontPagePublishResponse(BaseModel):
     id: UUID
     status: str
     last_published_at: datetime | None = None
+    revision_id: UUID | None = None
+    message: str | None = None
 
 
 class StorefrontBannerBase(BaseModel):
@@ -795,6 +798,30 @@ class StorefrontTemplatePresetRead(BaseModel):
 
 class StorefrontTemplateApplyInput(BaseModel):
     replace_homepage: bool = False
+
+
+class StorefrontRevisionRead(BaseModel):
+    id: UUID
+    page_id: UUID | None = None
+    revision_type: Literal["page", "template_apply", "publish", "theme_settings"]
+    title: str
+    snapshot: dict[str, Any]
+    created_by_id: UUID | None = None
+    created_by_name: str | None = None
+    created_at: datetime
+
+
+class StorefrontRevisionRestoreResponse(BaseModel):
+    revision_id: UUID
+    restored_page_id: UUID | None = None
+    message: str
+
+
+class StorefrontTemplateApplyResponse(BaseModel):
+    applied_template_key: Literal["live_shopping_classic", "minimal_fashion", "electronics_deals"]
+    revision_id: UUID
+    message: str
+    page: StorefrontPageRead
 
 
 StorefrontMenuItemRead.model_rebuild()

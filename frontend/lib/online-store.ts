@@ -185,6 +185,32 @@ export type OnlineStoreTemplatePreset = {
   }>;
 };
 
+export type OnlineStoreRevision = {
+  id: string;
+  page_id?: string | null;
+  revision_type: "page" | "template_apply" | "publish" | "theme_settings";
+  title: string;
+  snapshot: Record<string, unknown>;
+  created_by_id?: string | null;
+  created_by_name?: string | null;
+  created_at: string;
+};
+
+export type OnlineStoreTemplateApplyResponse = {
+  applied_template_key: NonNullable<OnlineStoreSettings["active_template_key"]>;
+  revision_id: string;
+  message: string;
+  page: OnlineStorePage;
+};
+
+export type OnlineStorePublishResponse = {
+  id: string;
+  status: string;
+  last_published_at?: string | null;
+  revision_id?: string | null;
+  message?: string | null;
+};
+
 export type PublicStorefrontResponse = {
   settings: OnlineStoreSettings;
   menus: Record<string, OnlineStoreMenuItem[]>;
@@ -311,10 +337,27 @@ export async function fetchAdminStorefrontTemplates() {
 }
 
 export async function applyAdminStorefrontTemplate(templateKey: string, replaceHomepage = true) {
-  return fetchAdminJson<OnlineStorePage>(`/admin/storefront/templates/${templateKey}/apply`, {
+  return fetchAdminJson<OnlineStoreTemplateApplyResponse>(`/admin/storefront/templates/${templateKey}/apply`, {
     method: "POST",
     body: JSON.stringify({ replace_homepage: replaceHomepage }),
   });
+}
+
+export async function fetchAdminStorefrontRevisions() {
+  return fetchAdminJson<OnlineStoreRevision[]>("/admin/storefront/revisions");
+}
+
+export async function restoreAdminStorefrontRevision(revisionId: string) {
+  return fetchAdminJson<{ revision_id: string; restored_page_id?: string | null; message: string }>(
+    `/admin/storefront/revisions/${revisionId}/restore`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function previewAdminStorefrontPage(pageId: string) {
+  return fetchAdminJson<PublicStorefrontResponse>(`/admin/storefront/pages/${pageId}/preview`);
 }
 
 export const FALLBACK_STOREFRONT_SETTINGS: OnlineStoreSettings = {

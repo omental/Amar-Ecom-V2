@@ -7,6 +7,7 @@ const tabs = [
   { label: "Overview", href: "/dashboard/online-store" },
   { label: "Customize", href: "/dashboard/online-store/customize" },
   { label: "Templates", href: "/dashboard/online-store/templates" },
+  { label: "Revisions", href: "/dashboard/online-store/revisions" },
   { label: "Header & Footer", href: "/dashboard/online-store/header-footer" },
   { label: "Navigation", href: "/dashboard/online-store/navigation" },
   { label: "Pages", href: "/dashboard/online-store/pages" },

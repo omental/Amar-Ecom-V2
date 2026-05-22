@@ -1040,7 +1040,11 @@ def test_storefront_templates_list_and_apply() -> None:
                 json={"replace_homepage": True},
             )
             assert apply_response.status_code == 200, apply_response.text
-            homepage = apply_response.json()
+            apply_payload = apply_response.json()
+            assert apply_payload["applied_template_key"] == "minimal_fashion"
+            assert apply_payload["revision_id"]
+            assert "rollback snapshot" in apply_payload["message"].lower()
+            homepage = apply_payload["page"]
             assert homepage["slug"] == "home"
             assert len(homepage["sections"]) >= 3
             assert homepage["sections"][0]["type"] == "hero_slider"
@@ -1062,6 +1066,21 @@ def test_storefront_templates_list_and_apply() -> None:
             assert public_home["settings"]["color_preset"] == "fashion_rose"
             assert public_home["page"]["slug"] == "home"
             assert any(section["type"] == "newsletter" for section in public_home["page"]["sections"])
+
+            revisions_response = client.get("/api/v1/admin/storefront/revisions", headers=headers)
+            assert revisions_response.status_code == 200, revisions_response.text
+            revisions = revisions_response.json()
+            created_revision = next(item for item in revisions if item["id"] == apply_payload["revision_id"])
+            assert created_revision["revision_type"] == "template_apply"
+
+            restore_response = client.post(
+                f"/api/v1/admin/storefront/revisions/{apply_payload['revision_id']}/restore",
+                headers=headers,
+            )
+            assert restore_response.status_code == 200, restore_response.text
+            restore_payload = restore_response.json()
+            assert restore_payload["revision_id"] == apply_payload["revision_id"]
+            assert restore_payload["restored_page_id"] == homepage["id"]
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
         if "storefront_" in str(exc).lower():
             pytest.skip("Apply the storefront builder migration before running this test.")

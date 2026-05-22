@@ -9,7 +9,10 @@ import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
-import type { OnlineStoreTemplatePreset } from "@/lib/online-store";
+import type {
+  OnlineStoreTemplateApplyResponse,
+  OnlineStoreTemplatePreset,
+} from "@/lib/online-store";
 
 export default function OnlineStoreTemplatesPage() {
   const [templates, setTemplates] = useState<OnlineStoreTemplatePreset[]>([]);
@@ -17,6 +20,7 @@ export default function OnlineStoreTemplatesPage() {
   const [workingKey, setWorkingKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [lastRevisionId, setLastRevisionId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -40,18 +44,20 @@ export default function OnlineStoreTemplatesPage() {
 
   async function applyTemplate(templateKey: string) {
     const confirmed = window.confirm(
-      "This will replace the homepage section layout, but keep products, orders, coupons, media, and custom pages.",
+      "This will replace the homepage section layout and update design presets. Products, orders, coupons, media, and custom pages will not be deleted.",
     );
     if (!confirmed) return;
 
     setWorkingKey(templateKey);
     setError("");
     setSuccess("");
+    setLastRevisionId(null);
     try {
-      await api.post(`/admin/storefront/templates/${templateKey}/apply`, {
+      const response = await api.post<OnlineStoreTemplateApplyResponse>(`/admin/storefront/templates/${templateKey}/apply`, {
         replace_homepage: true,
       });
-      setSuccess("Template applied. You can continue in Customize to fine-tune the homepage.");
+      setSuccess(response.message);
+      setLastRevisionId(response.revision_id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to apply template.");
     } finally {
@@ -71,7 +77,19 @@ export default function OnlineStoreTemplatesPage() {
       {!loading && error ? <ErrorAlert message={error} /> : null}
       {success ? (
         <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-medium text-emerald-700">
-          {success}
+          {success}{" "}
+          <Link href="/dashboard/online-store/customize" className="underline">
+            Go to Customize
+          </Link>
+          {lastRevisionId ? (
+            <>
+              {" "}or{" "}
+              <Link href="/dashboard/online-store/revisions" className="underline">
+                review the rollback snapshot
+              </Link>
+              .
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -122,7 +140,7 @@ export default function OnlineStoreTemplatesPage() {
                   </div>
                 </div>
                 <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-                  This will replace the homepage section layout, but keep products, orders, coupons, media, and custom pages.
+                  This will replace the homepage section layout and update design presets. Products, orders, coupons, media, and custom pages will not be deleted.
                 </div>
                 <Link href="/dashboard/online-store/customize" className="inline-flex text-sm font-semibold text-[var(--color-accent)]">
                   Go to Customize

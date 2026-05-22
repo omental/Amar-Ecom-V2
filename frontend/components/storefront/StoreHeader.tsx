@@ -37,13 +37,22 @@ export function StoreHeader({
   };
 
   const primaryNavLinks = navigation;
+  const headerLayout = settings.header_layout || "search_heavy";
+  const isCentered = headerLayout === "centered_logo";
+  const isMinimal = headerLayout === "minimal";
+  const isCategoryFirst = headerLayout === "category_first";
+  const desktopGridClass = isCentered
+    ? "lg:grid-cols-[1fr_220px_1fr]"
+    : isMinimal
+      ? "lg:grid-cols-[260px_minmax(0,1fr)_160px]"
+      : "lg:grid-cols-[220px_minmax(0,1fr)_170px]";
 
   return (
     <>
       <header className="border-b border-[#e5e7eb] bg-white">
         <div className="mx-auto max-w-[1200px] px-4 py-4 sm:px-5">
-          <div className="grid items-center gap-4 lg:grid-cols-[220px_minmax(0,1fr)_170px]">
-            <div className="flex items-center justify-between gap-3 lg:block">
+          <div className={`grid items-center gap-4 ${desktopGridClass}`}>
+            <div className={`flex items-center justify-between gap-3 ${isCentered ? "lg:justify-start" : "lg:block"}`}>
               <Link href="/" className="text-[1.9rem] font-extrabold tracking-tight text-black">
                 {settings.brand_name?.split("-")[0] || "Amar"}-
                 <span className="text-[#db011c]">
@@ -61,10 +70,10 @@ export function StoreHeader({
               </button>
             </div>
 
-            {settings.show_search ? (
+            {settings.show_search && !isMinimal ? (
               <form
                 onSubmit={handleSubmit}
-                className="flex items-center rounded-md border border-[#d1d5db] bg-white px-3"
+                className={`flex items-center rounded-md border border-[#d1d5db] bg-white px-3 ${isCentered ? "lg:order-3" : ""}`}
               >
                 <Search className="h-4 w-4 text-[#6b7280]" />
                 <input
@@ -78,7 +87,21 @@ export function StoreHeader({
               <div />
             )}
 
-            <div className="hidden justify-end lg:flex">
+            <div className={`hidden lg:flex ${isCentered ? "justify-center" : "justify-end"}`}>
+              {isMinimal && settings.show_search ? (
+                <form
+                  onSubmit={handleSubmit}
+                  className="mr-3 flex w-full max-w-[280px] items-center rounded-md border border-[#d1d5db] bg-white px-3"
+                >
+                  <Search className="h-4 w-4 text-[#6b7280]" />
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search products..."
+                    className="h-11 w-full bg-transparent px-3 text-sm text-black outline-none placeholder:text-[#9ca3af]"
+                  />
+                </form>
+              ) : null}
               {settings.show_cart ? (
                 <button
                   type="button"
@@ -139,8 +162,8 @@ export function StoreHeader({
           </div>
         </div>
 
-        <div className="border-t border-[#e5e7eb]">
-          <nav className="mx-auto hidden max-w-[1200px] items-center gap-7 px-4 sm:px-5 lg:flex">
+        <div className={`border-t border-[#e5e7eb] ${isCategoryFirst ? "bg-[#fafafa]" : ""}`}>
+          <nav className={`mx-auto hidden max-w-[1200px] items-center px-4 sm:px-5 lg:flex ${isCentered ? "justify-center gap-8" : "gap-7"}`}>
             {primaryNavLinks.map((link) => {
               const active = pathname === link.url;
 

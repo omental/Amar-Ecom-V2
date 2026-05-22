@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import type { OnlineStoreSection, OnlineStoreSettings } from "@/lib/online-store";
 
 import { SectionWrap } from "./shared";
@@ -14,6 +16,7 @@ export function FaqSection({
   const items = Array.isArray(section.content?.items)
     ? (section.content?.items as Array<Record<string, string>>)
     : [];
+  const [openIndex, setOpenIndex] = useState<number>(0);
 
   return (
     <SectionWrap settings={settings} className="space-y-5">
@@ -25,10 +28,20 @@ export function FaqSection({
       </div>
       <div className="space-y-3">
         {items.map((item, index) => (
-          <details key={`${item.question || index}`} className="rounded-2xl border border-[#e5e7eb] bg-white px-5 py-4">
-            <summary className="cursor-pointer list-none text-sm font-semibold text-black">{item.question || "Question"}</summary>
-            <p className="mt-3 text-sm leading-7 text-[#4b5563]">{item.answer || "Answer"}</p>
-          </details>
+          <div key={`${item.question || index}`} className="rounded-2xl border border-[#e5e7eb] bg-white">
+            <button
+              type="button"
+              onClick={() => setOpenIndex((current) => current === index ? -1 : index)}
+              className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
+              aria-expanded={openIndex === index}
+            >
+              <span className="text-sm font-semibold text-black">{item.question || "Question"}</span>
+              <span className="text-lg font-semibold text-[var(--store-accent)]">{openIndex === index ? "−" : "+"}</span>
+            </button>
+            {openIndex === index ? (
+              <p className="border-t border-[#f1f5f9] px-5 py-4 text-sm leading-7 text-[#4b5563]">{item.answer || "Answer"}</p>
+            ) : null}
+          </div>
         ))}
       </div>
     </SectionWrap>

@@ -19,6 +19,25 @@ type PublicCategory = {
   slug: string;
 };
 
+type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+type TestimonialItem = {
+  customer_name: string;
+  quote: string;
+  rating: number;
+  image_url?: string;
+  location?: string;
+};
+
+type BrandItem = {
+  name: string;
+  logo_url?: string;
+  link_url?: string;
+};
+
 function toPrettyLabel(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
@@ -43,6 +62,8 @@ export default function OnlineStoreCustomizePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   async function loadPage() {
     const pages = await api.get<OnlineStorePage[]>("/admin/storefront/pages");
@@ -52,6 +73,7 @@ export default function OnlineStoreCustomizePage() {
     }
     const fullPage = await api.get<OnlineStorePage>(`/admin/storefront/pages/${home.id}`);
     setPage(fullPage);
+    setHasUnsavedChanges(false);
     setSelectedSectionId((current) => current || fullPage.sections[0]?.id || null);
   }
 
@@ -88,6 +110,7 @@ export default function OnlineStoreCustomizePage() {
   function updateSelectedSection(updater: (section: OnlineStoreSection) => OnlineStoreSection) {
     setPage((current) => {
       if (!current || !selectedSectionId) return current;
+      setHasUnsavedChanges(true);
       return {
         ...current,
         sections: current.sections.map((item) => (item.id === selectedSectionId ? updater(item) : item)),
@@ -129,6 +152,7 @@ export default function OnlineStoreCustomizePage() {
       });
       await loadPage();
       setSuccess("Section updated.");
+      setHasUnsavedChanges(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update section.");
     }
@@ -197,11 +221,15 @@ export default function OnlineStoreCustomizePage() {
     try {
       setError("");
       setSuccess("");
-      await api.post(`/admin/storefront/pages/${page.id}/publish`);
+      setPublishLoading(true);
+      const response = await api.post<{ message?: string; revision_id?: string }>(`/admin/storefront/pages/${page.id}/publish`);
       await loadPage();
-      setSuccess("Homepage published.");
+      setSuccess(response.message || "Homepage published.");
+      setHasUnsavedChanges(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to publish homepage.");
+    } finally {
+      setPublishLoading(false);
     }
   }
 
@@ -509,46 +537,105 @@ export default function OnlineStoreCustomizePage() {
       );
     }
 
-    if (section.type === "faq" || section.type === "testimonials" || section.type === "brand_strip") {
-      const items = Array.isArray(content.items) ? (content.items as Array<Record<string, unknown>>) : [];
-      const textareaValue = items
-        .map((item) =>
-          section.type === "faq"
-            ? `${String(item.question || "")} | ${String(item.answer || "")}`
-            : section.type === "testimonials"
-              ? `${String(item.quote || "")} | ${String(item.author || "")}`
-              : String(item.label || ""),
-        )
-        .join("\n");
-
+    if (section.type === "faq") {
+      const items = Array.isArray(content.items) ? (content.items as FaqItem[]) : [];
+      const updateItems = (nextItems: FaqItem[]) => updateSelectedContent({ items: nextItems });
       return (
         <div className="space-y-4">
           <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          <textarea
-            value={textareaValue}
-            onChange={(e) =>
-              updateSelectedContent({
-                items: e.target.value
-                  .split("\n")
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line) => {
-                    const [left, right] = line.split("|").map((part) => part.trim());
-                    if (section.type === "faq") return { question: left, answer: right || "" };
-                    if (section.type === "testimonials") return { quote: left, author: right || "" };
-                    return { label: left };
-                  }),
-              })
-            }
-            placeholder={
-              section.type === "faq"
-                ? "Question | Answer"
-                : section.type === "testimonials"
-                  ? "Quote | Author"
-                  : "Brand label"
-            }
-            className="min-h-32 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-          />
+          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={`${item.question}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
+                <input value={item.question} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, question: e.target.value } : entry))} placeholder="Question" className="w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
+                <textarea value={item.answer} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, answer: e.target.value } : entry))} placeholder="Answer" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 outline-none" />
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
+                  <button type="button" disabled={index === 0} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index - 1 ? items[index] : itemIndex === index ? items[index - 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
+                  <button type="button" disabled={index === items.length - 1} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index + 1 ? items[index] : itemIndex === index ? items[index + 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => updateItems([...items, { question: "", answer: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add FAQ Item</button>
+        </div>
+      );
+    }
+
+    if (section.type === "testimonials") {
+      const items = Array.isArray(content.items) ? (content.items as TestimonialItem[]) : [];
+      const updateItems = (nextItems: TestimonialItem[]) => updateSelectedContent({ items: nextItems });
+      return (
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+            <select value={String(settings.layout_style || "grid")} onChange={(e) => updateSelectedSettings({ layout_style: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
+              {["grid", "carousel_static"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
+            </select>
+          </div>
+          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={`${item.customer_name}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input value={item.customer_name} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, customer_name: e.target.value } : entry))} placeholder="Customer name" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
+                  <input value={item.location || ""} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, location: e.target.value } : entry))} placeholder="Location" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
+                </div>
+                <textarea value={item.quote} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, quote: e.target.value } : entry))} placeholder="Quote" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 outline-none" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block text-sm">
+                    <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Rating</span>
+                    <input type="number" min={1} max={5} value={item.rating || 5} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, rating: Number(e.target.value) || 5 } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 outline-none" />
+                  </label>
+                  <MediaPicker
+                    label="Customer image"
+                    mediaType="section"
+                    value={item.image_url || ""}
+                    onChange={(value) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
+                  <button type="button" disabled={index === 0} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index - 1 ? items[index] : itemIndex === index ? items[index - 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
+                  <button type="button" disabled={index === items.length - 1} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index + 1 ? items[index] : itemIndex === index ? items[index + 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => updateItems([...items, { customer_name: "", quote: "", rating: 5, image_url: "", location: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add Testimonial</button>
+        </div>
+      );
+    }
+
+    if (section.type === "brand_strip") {
+      const items = Array.isArray(content.items) ? (content.items as BrandItem[]) : [];
+      const updateItems = (nextItems: BrandItem[]) => updateSelectedContent({ items: nextItems });
+      return (
+        <div className="space-y-4">
+          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={`${item.name}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input value={item.name} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, name: e.target.value } : entry))} placeholder="Brand name" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
+                  <input value={item.link_url || ""} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, link_url: e.target.value } : entry))} placeholder="Link URL (optional)" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
+                </div>
+                <MediaPicker
+                  label="Brand logo"
+                  mediaType="section"
+                  value={item.logo_url || ""}
+                  onChange={(value) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, logo_url: value } : entry))}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
+                  <button type="button" disabled={index === 0} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index - 1 ? items[index] : itemIndex === index ? items[index - 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
+                  <button type="button" disabled={index === items.length - 1} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index + 1 ? items[index] : itemIndex === index ? items[index + 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => updateItems([...items, { name: "", logo_url: "", link_url: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add Brand</button>
         </div>
       );
     }
@@ -580,6 +667,11 @@ export default function OnlineStoreCustomizePage() {
             <span className="rounded-full bg-[var(--color-surf-hover)] px-3 py-1 text-xs font-semibold text-[var(--color-txt-pri)]">
               Template: {(settings?.active_template_key || "live_shopping_classic").replace(/_/g, " ")}
             </span>
+            {hasUnsavedChanges ? (
+              <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
+                Unsaved edits
+              </span>
+            ) : null}
             {page.last_published_at ? (
               <span className="text-xs text-[var(--color-txt-sec)]">
                 Last published {new Date(page.last_published_at).toLocaleString()}
@@ -589,17 +681,18 @@ export default function OnlineStoreCustomizePage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => window.open("/?preview=true", "_blank", "noopener,noreferrer")}
+              onClick={() => window.open(`/dashboard/online-store/preview?pageId=${page.id}`, "_blank", "noopener,noreferrer")}
               className="rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-pri)]"
             >
-              Preview Storefront
+              Preview Draft
             </button>
             <button
               type="button"
               onClick={() => void publishPage()}
+              disabled={publishLoading}
               className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white"
             >
-              Publish Changes
+              {publishLoading ? "Publishing..." : "Publish Changes"}
             </button>
           </div>
         </div>

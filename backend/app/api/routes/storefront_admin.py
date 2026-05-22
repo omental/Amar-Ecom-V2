@@ -16,12 +16,14 @@ from app.models.storefront import (
     StorefrontMenu,
     StorefrontMenuItem,
     StorefrontPage,
+    StorefrontRevision,
     StorefrontSection,
     StorefrontSetting,
 )
 from app.models.user import User
 from app.schemas.storefront import (
     MenuItemsReorderInput,
+    PublicStorefrontResponse,
     SectionsReorderInput,
     StorefrontBannerCreate,
     StorefrontBannerRead,
@@ -42,17 +44,21 @@ from app.schemas.storefront import (
     StorefrontPageRead,
     StorefrontPageUpdate,
     StorefrontProductPickerResponse,
+    StorefrontRevisionRead,
+    StorefrontRevisionRestoreResponse,
     StorefrontSectionCreate,
     StorefrontSectionRead,
     StorefrontSectionUpdate,
     StorefrontSettingRead,
     StorefrontSettingUpdate,
     StorefrontTemplateApplyInput,
+    StorefrontTemplateApplyResponse,
     StorefrontTemplatePresetRead,
 )
 from app.services.activity_log_service import log_activity
 from app.services.storefront_html_service import sanitize_storefront_html
 from app.services.storefront_product_service import list_picker_products
+from app.services.storefront_revision_service import create_storefront_revision, restore_storefront_revision
 from app.services.storefront_service import (
     build_menu_tree,
     ensure_storefront_defaults,
@@ -118,6 +124,19 @@ def _setting_read(settings: StorefrontSetting) -> StorefrontSettingRead:
     return StorefrontSettingRead.model_validate(settings)
 
 
+def _revision_read(revision: StorefrontRevision) -> StorefrontRevisionRead:
+    return StorefrontRevisionRead(
+        id=revision.id,
+        page_id=revision.page_id,
+        revision_type=revision.revision_type,
+        title=revision.title,
+        snapshot=revision.snapshot or {},
+        created_by_id=revision.created_by_id,
+        created_by_name=revision.created_by.full_name if revision.created_by is not None else None,
+        created_at=revision.created_at,
+    )
+
+
 @router.get("/overview", response_model=StorefrontOverviewRead)
 async def get_storefront_overview(
     db: DBSession,
@@ -171,6 +190,14 @@ async def update_storefront_settings(
     _ensure_admin(current_user)
     settings = await get_or_create_storefront_settings(db)
     payload = settings_in.model_dump(exclude_unset=True)
+    if payload:
+        await create_storefront_revision(
+            db,
+            revision_type="theme_settings",
+            title="Before theme settings update",
+            include_theme_settings=True,
+            current_user=current_user,
+        )
     for field, value in payload.items():
         setattr(settings, field, value)
 
@@ -197,20 +224,26 @@ async def get_storefront_templates(
     return list_template_presets()
 
 
-@router.post("/templates/{template_key}/apply", response_model=StorefrontPageRead)
+@router.post("/templates/{template_key}/apply", response_model=StorefrontTemplateApplyResponse)
 async def apply_storefront_template(
     template_key: str,
     payload: StorefrontTemplateApplyInput,
     db: DBSession,
     current_user: User = Depends(get_current_user),
-) -> StorefrontPage:
+) -> StorefrontTemplateApplyResponse:
     _ensure_admin(current_user)
-    page = await apply_template_preset(
+    page, revision = await apply_template_preset(
         db,
         template_key=template_key,
         replace_homepage=payload.replace_homepage,
+        current_user=current_user,
     )
-    return await _get_page_or_404(db, page.id)
+    return StorefrontTemplateApplyResponse(
+        applied_template_key=template_key,
+        revision_id=revision.id,
+        message="Template applied successfully. A rollback snapshot was created before the homepage layout changed.",
+        page=StorefrontPageRead.model_validate(await _get_page_or_404(db, page.id)),
+    )
 
 
 @router.get("/menus", response_model=list[StorefrontMenuRead])
@@ -426,7 +459,15 @@ async def publish_storefront_page(
     current_user: User = Depends(get_current_user),
 ) -> StorefrontPagePublishResponse:
     _ensure_admin(current_user)
-    page = await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
+    page = await _get_page_or_404(db, page_id)
+    revision = await create_storefront_revision(
+        db,
+        revision_type="publish",
+        title=f"Before publish: {page.title}",
+        page=page,
+        include_theme_settings=True,
+        current_user=current_user,
+    )
     page.status = "published"
     page.last_published_at = datetime.now(timezone.utc)
     await commit_or_409(db, "Could not publish storefront page")
@@ -435,6 +476,70 @@ async def publish_storefront_page(
         id=page.id,
         status=page.status,
         last_published_at=page.last_published_at,
+        revision_id=revision.id,
+        message="Page published successfully. A rollback snapshot was created before publish.",
+    )
+
+
+@router.get("/pages/{page_id}/preview", response_model=PublicStorefrontResponse)
+async def preview_storefront_page(
+    page_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> PublicStorefrontResponse:
+    _ensure_admin(current_user)
+    from app.api.routes.public_storefront import _storefront_response_for_page
+
+    page = await _get_page_or_404(db, page_id)
+    return await _storefront_response_for_page(db, page)
+
+
+@router.get("/revisions", response_model=list[StorefrontRevisionRead])
+async def list_storefront_revisions(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontRevisionRead]:
+    _ensure_admin(current_user)
+    result = await db.execute(
+        select(StorefrontRevision)
+        .options(selectinload(StorefrontRevision.created_by))
+        .order_by(StorefrontRevision.created_at.desc())
+    )
+    return [_revision_read(item) for item in result.scalars().all()]
+
+
+@router.get("/revisions/{revision_id}", response_model=StorefrontRevisionRead)
+async def get_storefront_revision(
+    revision_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontRevisionRead:
+    _ensure_admin(current_user)
+    revision = await fetch_one_or_404(
+        db,
+        select(StorefrontRevision).options(selectinload(StorefrontRevision.created_by)).where(StorefrontRevision.id == revision_id),
+        "Storefront revision not found",
+    )
+    return _revision_read(revision)
+
+
+@router.post("/revisions/{revision_id}/restore", response_model=StorefrontRevisionRestoreResponse)
+async def restore_revision(
+    revision_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontRevisionRestoreResponse:
+    _ensure_admin(current_user)
+    revision = await fetch_one_or_404(
+        db,
+        select(StorefrontRevision).where(StorefrontRevision.id == revision_id),
+        "Storefront revision not found",
+    )
+    page = await restore_storefront_revision(db, revision=revision)
+    return StorefrontRevisionRestoreResponse(
+        revision_id=revision.id,
+        restored_page_id=page.id if page is not None else None,
+        message="Revision restored successfully.",
     )
 
 

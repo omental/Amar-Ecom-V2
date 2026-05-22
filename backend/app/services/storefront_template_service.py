@@ -6,8 +6,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.utils import commit_or_409
-from app.models.storefront import StorefrontPage, StorefrontSection
+from app.models.storefront import StorefrontPage, StorefrontSection, StorefrontRevision
 from app.schemas.storefront import StorefrontTemplatePresetRead
+from app.models.user import User
+from app.services.storefront_revision_service import create_storefront_revision
 from app.services.storefront_service import get_or_create_storefront_settings
 
 
@@ -235,7 +237,8 @@ async def apply_template_preset(
     *,
     template_key: str,
     replace_homepage: bool,
-) -> StorefrontPage:
+    current_user: User | None = None,
+) -> tuple[StorefrontPage, StorefrontRevision]:
     if not replace_homepage:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -265,6 +268,19 @@ async def apply_template_preset(
     if home_page is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="System homepage not found")
 
+    sections_result = await db.execute(
+        select(StorefrontSection).where(StorefrontSection.page_id == home_page.id).order_by(StorefrontSection.sort_order.asc(), StorefrontSection.created_at.asc())
+    )
+    home_page.sections = list(sections_result.scalars().all())
+    revision = await create_storefront_revision(
+        db,
+        revision_type="template_apply",
+        title=f"Before applying template: {preset['name']}",
+        page=home_page,
+        include_theme_settings=True,
+        current_user=current_user,
+    )
+
     await db.execute(delete(StorefrontSection).where(StorefrontSection.page_id == home_page.id))
 
     for index, section in enumerate(preset["default_homepage_sections"]):
@@ -283,4 +299,4 @@ async def apply_template_preset(
 
     await commit_or_409(db, "Could not apply storefront template")
     await db.refresh(home_page)
-    return home_page
+    return home_page, revision
