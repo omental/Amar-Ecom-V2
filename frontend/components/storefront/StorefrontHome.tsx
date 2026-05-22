@@ -60,7 +60,7 @@ function HomeProductCard({ product }: { product: StoreProduct }) {
 
   return (
     <article className="overflow-hidden rounded-xl border border-[#e5e7eb] bg-white shadow-[0_2px_10px_rgba(0,0,0,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.08)]">
-      <Link href={`/products/${product.id}`} className="block">
+      <Link href={`/products/${product.slug}`} className="block">
         <div className="relative aspect-[4/4.8] overflow-hidden bg-[#f3f4f6]">
           {badge ? (
             <span className="absolute left-2 top-2 z-10 rounded bg-[#db011c] px-2 py-1 text-[10px] font-bold uppercase text-white">
@@ -77,7 +77,7 @@ function HomeProductCard({ product }: { product: StoreProduct }) {
       </Link>
 
       <div className="space-y-3 p-3">
-        <Link href={`/products/${product.id}`} className="block">
+        <Link href={`/products/${product.slug}`} className="block">
           <h3 className="line-clamp-2 min-h-10 text-[13px] font-medium leading-5 text-black sm:text-sm">
             {product.name}
           </h3>
@@ -98,6 +98,132 @@ function HomeProductCard({ product }: { product: StoreProduct }) {
         </button>
       </div>
     </article>
+  );
+}
+
+function SingleBannerSection({ section }: { section: OnlineStoreSection }) {
+  const content = (section.content || {}) as Record<string, string>;
+  const image = content.image_url || "/storefront/demo-products/jacket-monogram-3153.jpg";
+  const href = content.button_url || content.link_url || "/products";
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white">
+      <div className="relative min-h-[260px] sm:min-h-[320px]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={image} alt={section.title || "Store banner"} className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-transparent" />
+        <div className="relative z-10 flex min-h-[260px] max-w-[520px] flex-col justify-center px-6 py-8 text-white sm:min-h-[320px] sm:px-10">
+          <h2 className="text-2xl font-black uppercase tracking-tight sm:text-4xl">{section.title || "Special Offer"}</h2>
+          {section.subtitle ? <p className="mt-3 text-sm leading-6 text-white/85 sm:text-base">{section.subtitle}</p> : null}
+          {content.button_text ? (
+            <div className="mt-5">
+              <Link href={href} className="inline-flex rounded-md bg-[#db011c] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#b90118]">
+                {content.button_text}
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BannerGridSection({ section }: { section: OnlineStoreSection }) {
+  const items = Array.isArray(section.content?.items) ? (section.content?.items as Array<Record<string, string>>) : [];
+  if (items.length === 0) {
+    return <TextBlockSection section={section} />;
+  }
+  return (
+    <section className="space-y-5">
+      {section.title ? <HomeSectionHeader title={section.title} /> : null}
+      <div className={`grid gap-4 ${items.length >= 3 ? "lg:grid-cols-3" : "md:grid-cols-2"}`}>
+        {items.map((item, index) => (
+          <Link
+            key={`${item.title || item.image_url || index}`}
+            href={item.button_url || item.link_url || "/products"}
+            className="group relative overflow-hidden rounded-2xl border border-[#e5e7eb] bg-white"
+          >
+            <div className="relative min-h-[220px]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={item.image_url || "/storefront/demo-products/jacket-italian-3154.jpg"}
+                alt={item.title || "Promo banner"}
+                className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-5 text-white">
+                <h3 className="text-lg font-bold uppercase tracking-tight">{item.title || "Offer Banner"}</h3>
+                {item.subtitle ? <p className="mt-2 text-sm text-white/85">{item.subtitle}</p> : null}
+                {item.button_text ? <span className="mt-3 inline-flex text-sm font-semibold text-white underline underline-offset-4">{item.button_text}</span> : null}
+              </div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ImageTextSection({ section }: { section: OnlineStoreSection }) {
+  const content = (section.content || {}) as Record<string, string>;
+  const reverse = String(section.settings?.image_position || "right") === "left";
+  return (
+    <section className="rounded-2xl border border-[#e5e7eb] bg-white p-5 sm:p-7">
+      <div className={`grid items-center gap-6 lg:grid-cols-2 ${reverse ? "lg:[&>*:first-child]:order-2 lg:[&>*:last-child]:order-1" : ""}`}>
+        <div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-black sm:text-3xl">{section.title || "Featured Story"}</h2>
+          {section.subtitle ? <p className="mt-3 text-sm leading-7 text-[#4b5563]">{section.subtitle}</p> : null}
+          {content.body ? <p className="mt-3 text-sm leading-7 text-[#4b5563]">{content.body}</p> : null}
+          {content.button_text ? (
+            <div className="mt-5">
+              <Link href={content.button_url || "/products"} className="inline-flex rounded-md bg-[#db011c] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#b90118]">
+                {content.button_text}
+              </Link>
+            </div>
+          ) : null}
+        </div>
+        <div className="overflow-hidden rounded-2xl bg-[#f3f4f6]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={content.image_url || "/storefront/demo-products/jacket-puffer-3159.jpg"}
+            alt={section.title || "Store section image"}
+            className="h-full min-h-[260px] w-full object-cover"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function NewsletterSection({ section }: { section: OnlineStoreSection }) {
+  const [email, setEmail] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const buttonText = String((section.content as Record<string, string> | undefined)?.button_text || "Subscribe");
+  return (
+    <section className="rounded-2xl border border-[#e5e7eb] bg-[linear-gradient(135deg,#ffffff_0%,#fff1f3_100%)] px-5 py-8 sm:px-8">
+      <div className="mx-auto max-w-[720px] text-center">
+        <h2 className="text-2xl font-black uppercase tracking-tight text-black sm:text-3xl">{section.title || "Newsletter"}</h2>
+        {section.subtitle ? <p className="mt-3 text-sm leading-7 text-[#4b5563]">{section.subtitle}</p> : null}
+        <form
+          className="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSubmitted(true);
+          }}
+        >
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="Enter your email"
+            className="h-12 rounded-md border border-[#d1d5db] bg-white px-4 text-sm outline-none"
+          />
+          <button type="submit" className="rounded-md bg-[#db011c] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b90118]">
+            {buttonText}
+          </button>
+        </form>
+        {submitted ? <p className="mt-3 text-sm font-medium text-[#db011c]">Thanks. Newsletter backend will be connected in a later phase.</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -262,10 +388,15 @@ export function StorefrontSectionRenderer({ section }: { section: OnlineStoreSec
     case "category_grid":
       return <CategoryGridSection section={section} />;
     case "text_block":
+      return <TextBlockSection section={section} />;
     case "image_text":
+      return <ImageTextSection section={section} />;
     case "newsletter":
+      return <NewsletterSection section={section} />;
     case "single_banner":
+      return <SingleBannerSection section={section} />;
     case "banner_grid":
+      return <BannerGridSection section={section} />;
     default:
       return <TextBlockSection section={section} />;
   }

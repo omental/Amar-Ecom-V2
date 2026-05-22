@@ -25,10 +25,10 @@ import {
 import { MotionReveal } from "./MotionReveal";
 
 type ProductDetailViewProps = {
-  productId: string;
+  productSlug: string;
 };
 
-export function ProductDetailView({ productId }: ProductDetailViewProps) {
+export function ProductDetailView({ productSlug }: ProductDetailViewProps) {
   const router = useRouter();
   const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
@@ -51,7 +51,7 @@ export function ProductDetailView({ productId }: ProductDetailViewProps) {
 
     async function loadProduct() {
       try {
-        const product = await fetchStorefrontJson<StoreProduct>(`/public/products/${productId}`);
+        const product = await fetchStorefrontJson<StoreProduct>(`/public/products/slug/${productSlug}`);
         if (cancelled) {
           return;
         }
@@ -78,7 +78,7 @@ export function ProductDetailView({ productId }: ProductDetailViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [productId]);
+  }, [productSlug]);
 
   const gallery = useMemo(() => {
     if (!state.product) {

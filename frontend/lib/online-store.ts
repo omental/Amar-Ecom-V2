@@ -84,6 +84,7 @@ export type OnlineStorePage = {
   seo_description?: string | null;
   status?: string;
   is_system?: boolean;
+  last_published_at?: string | null;
   sections: OnlineStoreSection[];
 };
 
@@ -124,6 +125,24 @@ export type StorefrontOverview = {
   menus_count: number;
   published_pages_count: number;
   banners_count: number;
+};
+
+export type StorefrontProductPickerItem = {
+  id: string;
+  slug: string;
+  name: string;
+  image?: string | null;
+  price: number;
+  compare_price?: number | null;
+  category_name?: string | null;
+  stock_status: "in_stock" | "low_stock" | "out_of_stock";
+};
+
+export type StorefrontProductPickerResponse = {
+  items: StorefrontProductPickerItem[];
+  page: number;
+  limit: number;
+  total: number;
 };
 
 async function fetchJson<T>(path: string): Promise<T> {

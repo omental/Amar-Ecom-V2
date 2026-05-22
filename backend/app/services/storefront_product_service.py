@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -82,6 +82,20 @@ def _product_card_payload(product: Product) -> dict[str, Any]:
         "category": product.category.name if product.category else None,
         "badge": badge,
         "stock_status": _stock_status(product),
+    }
+
+
+def _picker_product_payload(product: Product) -> dict[str, Any]:
+    payload = _product_card_payload(product)
+    return {
+        "id": payload["id"],
+        "slug": payload["slug"],
+        "name": payload["name"],
+        "image": payload["image_url"],
+        "price": payload["price"],
+        "compare_price": payload["old_price"],
+        "category_name": payload["category"],
+        "stock_status": payload["stock_status"],
     }
 
 
@@ -182,3 +196,50 @@ async def resolve_storefront_section_products(
     stmt = stmt.order_by(Product.created_at.desc()).limit(limit)
     result = await db.execute(stmt)
     return [_product_card_payload(product) for product in result.scalars().unique().all()]
+
+
+async def list_picker_products(
+    db: AsyncSession,
+    *,
+    q: str | None = None,
+    category_slug: str | None = None,
+    page: int = 1,
+    limit: int = 12,
+) -> dict[str, Any]:
+    page = max(1, page)
+    limit = max(1, min(limit, 50))
+    stmt = _base_public_product_query().join(Category, Product.category_id == Category.id, isouter=True)
+    filters = []
+
+    if q:
+        term = f"%{q.strip()}%"
+        filters.append(
+            or_(
+                Product.name.ilike(term),
+                Product.slug.ilike(term),
+                Product.description.ilike(term),
+            )
+        )
+
+    if category_slug:
+        filters.append(func.lower(Category.slug) == category_slug.strip().lower())
+
+    if filters:
+        stmt = stmt.where(*filters)
+
+    count_stmt = select(func.count(Product.id)).select_from(Product).join(Category, Product.category_id == Category.id, isouter=True).where(
+        func.lower(Product.status).in_(PUBLIC_PRODUCT_STATUSES),
+        *filters,
+    )
+    total = int((await db.execute(count_stmt)).scalar_one() or 0)
+
+    result = await db.execute(
+        stmt.order_by(Product.created_at.desc()).offset((page - 1) * limit).limit(limit)
+    )
+    items = [_picker_product_payload(product) for product in result.scalars().unique().all()]
+    return {
+        "items": items,
+        "page": page,
+        "limit": limit,
+        "total": total,
+    }

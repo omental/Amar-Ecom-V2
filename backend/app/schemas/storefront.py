@@ -284,9 +284,16 @@ class StorefrontPageRead(ORMBaseSchema):
     seo_description: str | None = None
     status: str
     is_system: bool
+    last_published_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     sections: list[StorefrontSectionRead] = []
+
+
+class StorefrontPagePublishResponse(BaseModel):
+    id: UUID
+    status: str
+    last_published_at: datetime | None = None
 
 
 class StorefrontBannerBase(BaseModel):
@@ -428,6 +435,24 @@ class PublicStorefrontProductCard(BaseModel):
     category: str | None = None
     badge: str | None = None
     stock_status: Literal["in_stock", "low_stock", "out_of_stock"]
+
+
+class StorefrontProductPickerItem(BaseModel):
+    id: str
+    slug: str
+    name: str
+    image: str | None = None
+    price: float
+    compare_price: float | None = None
+    category_name: str | None = None
+    stock_status: Literal["in_stock", "low_stock", "out_of_stock"]
+
+
+class StorefrontProductPickerResponse(BaseModel):
+    items: list[StorefrontProductPickerItem]
+    page: int
+    limit: int
+    total: int
 
 
 StorefrontMenuItemRead.model_rebuild()

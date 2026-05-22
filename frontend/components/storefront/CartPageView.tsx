@@ -60,7 +60,7 @@ export function CartPageView() {
                   {item.categoryName || "Product"}
                 </p>
                 <Link
-                  href={`/products/${item.productId}`}
+                  href={`/products/${item.slug}`}
                   className="mt-1 block text-lg font-semibold leading-7 text-slate-900"
                 >
                   {item.name}

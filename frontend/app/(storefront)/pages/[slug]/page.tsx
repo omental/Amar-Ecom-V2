@@ -54,9 +54,11 @@ export default async function StorefrontContentPage({
           {page.title}
         </h1>
         {page.content ? (
-          <p className="mt-4 whitespace-pre-line text-sm leading-7 text-[#4b5563]">
-            {page.content}
-          </p>
+          <div
+            className="prose mt-4 max-w-none text-sm leading-7 text-[#4b5563] prose-a:text-[#db011c] prose-blockquote:border-l-[#db011c] prose-headings:text-black"
+            // HTML is sanitized server-side before being returned by the public storefront API.
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
         ) : null}
       </section>
 

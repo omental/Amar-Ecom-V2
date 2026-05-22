@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { MotionReveal } from "@/components/storefront/MotionReveal";
 import { ProductGrid } from "@/components/storefront/ProductGrid";
 
 type CategoryPageProps = {
@@ -20,7 +19,7 @@ export async function generateMetadata({
 
   return {
     title: `${readable} Category`,
-    description: `Browse active Amar eCom products in the ${readable} category.`,
+    description: `Browse public Amar-eCom products in the ${readable} category.`,
   };
 }
 
@@ -32,27 +31,25 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
     .join(" ");
 
   return (
-    <>
-      <MotionReveal>
-        <section className="store-surface p-6 sm:p-8">
-          <p className="store-eyebrow">Category</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-slate-950 sm:text-4xl">
-            {readable}
-          </h1>
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
-            Category-specific product browsing stays public, mobile-friendly, and separate from the protected dashboard.
-          </p>
-        </section>
-      </MotionReveal>
+    <section className="space-y-5">
+      <div className="rounded-2xl border border-[#e5e7eb] bg-white px-5 py-6 sm:px-7">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#db011c]">Category</p>
+        <h1 className="mt-3 text-3xl font-black tracking-tight text-black sm:text-4xl">
+          {readable}
+        </h1>
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-[#4b5563]">
+          Category-first public browsing for active storefront products, kept separate from protected dashboard data.
+        </p>
+      </div>
 
       <ProductGrid
         eyebrow="Category Products"
         title={`${readable} products`}
-        description="This page narrows the storefront to active public products matched to the selected category slug."
+        description="Offer-heavy category browsing with storefront-safe product details."
         query={{ category_slug: slug }}
-        collection="latest"
+        collection="seasonal"
         maxItems={24}
       />
-    </>
+    </section>
   );
 }

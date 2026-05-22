@@ -12,6 +12,7 @@ from app.schemas.storefront import (
     PublicStorefrontSection,
     PublicStorefrontSetting,
 )
+from app.services.storefront_html_service import sanitize_storefront_html
 from app.services.storefront_service import (
     banner_is_currently_active,
     build_menu_tree,
@@ -72,7 +73,7 @@ async def _page_response(db: DBSession, page: StorefrontPage) -> PublicStorefron
         slug=page.slug,
         seo_title=page.seo_title,
         seo_description=page.seo_description,
-        content=page.content,
+        content=sanitize_storefront_html(page.content),
         sections=[
             await _section_payload(db, section)
             for section in sorted(page.sections, key=lambda item: (item.sort_order, item.created_at))

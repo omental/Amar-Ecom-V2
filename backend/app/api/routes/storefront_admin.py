@@ -33,8 +33,10 @@ from app.schemas.storefront import (
     StorefrontMenuUpdate,
     StorefrontOverviewRead,
     StorefrontPageCreate,
+    StorefrontPagePublishResponse,
     StorefrontPageRead,
     StorefrontPageUpdate,
+    StorefrontProductPickerResponse,
     StorefrontSectionCreate,
     StorefrontSectionRead,
     StorefrontSectionUpdate,
@@ -42,6 +44,8 @@ from app.schemas.storefront import (
     StorefrontSettingUpdate,
 )
 from app.services.activity_log_service import log_activity
+from app.services.storefront_html_service import sanitize_storefront_html
+from app.services.storefront_product_service import list_picker_products
 from app.services.storefront_service import (
     build_menu_tree,
     ensure_storefront_defaults,
@@ -49,6 +53,7 @@ from app.services.storefront_service import (
     is_admin_user,
     save_storefront_media,
 )
+from datetime import datetime, timezone
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -320,7 +325,9 @@ async def create_storefront_page(
 ) -> StorefrontPage:
     _ensure_admin(current_user)
     await ensure_unique(db, StorefrontPage, "slug", page_in.slug, "Storefront page slug already exists")
-    page = StorefrontPage(**page_in.model_dump())
+    payload = page_in.model_dump()
+    payload["content"] = sanitize_storefront_html(payload.get("content"))
+    page = StorefrontPage(**payload)
     db.add(page)
     await commit_or_409(db, "Could not create storefront page")
     await db.refresh(page)
@@ -350,10 +357,31 @@ async def update_storefront_page(
     payload = page_in.model_dump(exclude_unset=True)
     if "slug" in payload:
         await ensure_unique(db, StorefrontPage, "slug", payload["slug"], "Storefront page slug already exists", exclude_id=page.id)
+    if "content" in payload:
+        payload["content"] = sanitize_storefront_html(payload.get("content"))
     for field, value in payload.items():
         setattr(page, field, value)
     await commit_or_409(db, "Could not update storefront page")
     return await _get_page_or_404(db, page_id)
+
+
+@router.post("/pages/{page_id}/publish", response_model=StorefrontPagePublishResponse)
+async def publish_storefront_page(
+    page_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontPagePublishResponse:
+    _ensure_admin(current_user)
+    page = await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
+    page.status = "published"
+    page.last_published_at = datetime.now(timezone.utc)
+    await commit_or_409(db, "Could not publish storefront page")
+    await db.refresh(page)
+    return StorefrontPagePublishResponse(
+        id=page.id,
+        status=page.status,
+        last_published_at=page.last_published_at,
+    )
 
 
 @router.delete("/pages/{page_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -369,6 +397,26 @@ async def delete_storefront_page(
     await db.delete(page)
     await commit_or_409(db, "Could not delete storefront page")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/products/picker", response_model=StorefrontProductPickerResponse)
+async def get_storefront_products_picker(
+    db: DBSession,
+    q: str | None = Query(default=None),
+    category_slug: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=12, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+) -> StorefrontProductPickerResponse:
+    _ensure_admin(current_user)
+    payload = await list_picker_products(
+        db,
+        q=q,
+        category_slug=category_slug,
+        page=page,
+        limit=limit,
+    )
+    return StorefrontProductPickerResponse(**payload)
 
 
 @router.post("/pages/{page_id}/sections", response_model=StorefrontSectionRead, status_code=status.HTTP_201_CREATED)

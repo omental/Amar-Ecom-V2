@@ -118,7 +118,7 @@ export function StoreFlashSaleStrip() {
             return (
               <MotionReveal key={product.id} delay={index * 0.04}>
                 <Link
-                  href={`/products/${product.id}`}
+                  href={`/products/${product.slug}`}
                   className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:grid-cols-[120px_1fr] md:grid-cols-1"
                 >
                   <div className="relative overflow-hidden rounded-[18px] bg-slate-100">

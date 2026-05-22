@@ -48,7 +48,7 @@ export function ProductCard({ product }: ProductCardProps) {
       transition={{ duration: 0.18, ease: "easeOut" }}
       className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white opacity-100 shadow-sm transition-shadow hover:shadow-md"
     >
-      <Link href={`/products/${product.id}`} className="block">
+      <Link href={`/products/${product.slug}`} className="block">
         <div className="relative h-[220px] overflow-hidden bg-slate-100 sm:h-[240px] xl:h-[260px]">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -85,7 +85,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
             {product.category?.name || "Featured"}
           </p>
-          <Link href={`/products/${product.id}`} className="block">
+          <Link href={`/products/${product.slug}`} className="block">
             <h3 className="line-clamp-2 text-[15px] font-medium leading-6 text-slate-900 transition group-hover:text-slate-700">
               {product.name}
             </h3>

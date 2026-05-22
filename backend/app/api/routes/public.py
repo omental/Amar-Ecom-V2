@@ -229,6 +229,19 @@ async def get_public_product(product_id: UUID, db: DBSession) -> PublicProductRe
     return _serialize_product(product)
 
 
+@router.get("/products/slug/{slug}", response_model=PublicProductRead)
+async def get_public_product_by_slug(slug: str, db: DBSession) -> PublicProductRead:
+    product = await fetch_one_or_404(
+        db,
+        _public_product_query().where(
+            Product.slug == slug,
+            func.lower(Product.status).in_(PUBLIC_PRODUCT_STATUSES),
+        ),
+        "Public product not found",
+    )
+    return _serialize_product(product)
+
+
 @router.get("/categories", response_model=list[PublicCategoryRead])
 async def list_public_categories(db: DBSession) -> list[Category]:
     result = await db.execute(

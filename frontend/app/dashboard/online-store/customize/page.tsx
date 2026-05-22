@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { MediaPicker } from "@/components/dashboard/online-store/MediaPicker";
 import { OnlineStoreTabs } from "@/components/dashboard/online-store/OnlineStoreTabs";
+import { ProductPicker } from "@/components/dashboard/online-store/ProductPicker";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
@@ -189,6 +190,19 @@ export default function OnlineStoreCustomizePage() {
     }
   }
 
+  async function publishPage() {
+    if (!page?.id) return;
+    try {
+      setError("");
+      setSuccess("");
+      await api.post(`/admin/storefront/pages/${page.id}/publish`);
+      await loadPage();
+      setSuccess("Homepage published.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to publish homepage.");
+    }
+  }
+
   function renderStructuredEditor(section: OnlineStoreSection) {
     const settings = (section.settings || {}) as Record<string, unknown>;
     const content = (section.content || {}) as Record<string, unknown>;
@@ -319,14 +333,21 @@ export default function OnlineStoreCustomizePage() {
             </label>
           ) : null}
           {String(settings.source || section.type) === "manual" ? (
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Manual product IDs</span>
-              <textarea
-                value={stringifyIdTextarea(settings.product_ids)}
-                onChange={(e) => updateSelectedSettings({ product_ids: parseIdTextarea(e.target.value) })}
-                className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 font-mono text-xs outline-none"
+            <div className="space-y-3">
+              <ProductPicker
+                value={(Array.isArray(settings.product_ids) ? settings.product_ids : []).map((item) => String(item))}
+                onChange={(ids) => updateSelectedSettings({ product_ids: ids })}
+                maxSelection={Number(settings.limit || 8)}
               />
-            </label>
+              <label className="block text-sm">
+                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Advanced product IDs</span>
+                <textarea
+                  value={stringifyIdTextarea(settings.product_ids)}
+                  onChange={(e) => updateSelectedSettings({ product_ids: parseIdTextarea(e.target.value) })}
+                  className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 font-mono text-xs outline-none"
+                />
+              </label>
+            </div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block text-sm">
@@ -501,6 +522,39 @@ export default function OnlineStoreCustomizePage() {
         description="Use predefined storefront sections with structured controls first, then fall back to advanced JSON only when needed."
       />
       <OnlineStoreTabs />
+      {!loading && page ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf)] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-[var(--color-txt-sec)]">Status</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              page.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {page.status === "published" ? "Published" : "Draft"}
+            </span>
+            {page.last_published_at ? (
+              <span className="text-xs text-[var(--color-txt-sec)]">
+                Last published {new Date(page.last_published_at).toLocaleString()}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => window.open("/?preview=true", "_blank", "noopener,noreferrer")}
+              className="rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-pri)]"
+            >
+              Preview Storefront
+            </button>
+            <button
+              type="button"
+              onClick={() => void publishPage()}
+              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white"
+            >
+              Publish Changes
+            </button>
+          </div>
+        </div>
+      ) : null}
       {loading ? <LoadingState label="Loading homepage sections..." /> : null}
       {!loading && error ? <ErrorAlert message={error} /> : null}
       {success ? (

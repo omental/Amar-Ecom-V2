@@ -83,7 +83,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
                             {item.categoryName || "Product"}
                           </p>
                           <Link
-                            href={`/products/${item.productId}`}
+                            href={`/products/${item.slug}`}
                             onClick={onClose}
                             className="mt-1 block text-sm font-semibold leading-6 text-slate-900"
                           >
