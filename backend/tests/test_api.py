@@ -440,6 +440,151 @@ def test_public_storefront_routes_expose_only_active_products() -> None:
     dispose_engine()
 
 
+def test_public_storefront_order_checkout_and_tracking() -> None:
+    headers = auth_headers()
+
+    try:
+        with TestClient(app) as client:
+            category_response = client.post(
+                "/api/v1/categories",
+                headers=headers,
+                json={
+                    "name": f"Checkout Category {uuid.uuid4().hex[:8]}",
+                    "slug": f"checkout-category-{uuid.uuid4().hex[:8]}",
+                    "description": "Checkout category",
+                },
+            )
+            assert category_response.status_code == 201, category_response.text
+            category = category_response.json()
+
+            brand_response = client.post(
+                "/api/v1/brands",
+                headers=headers,
+                json={
+                    "name": f"Checkout Brand {uuid.uuid4().hex[:8]}",
+                    "slug": f"checkout-brand-{uuid.uuid4().hex[:8]}",
+                    "description": "Checkout brand",
+                },
+            )
+            assert brand_response.status_code == 201, brand_response.text
+            brand = brand_response.json()
+
+            warehouse_response = client.post(
+                "/api/v1/warehouses",
+                headers=headers,
+                json={
+                    "name": f"Checkout Warehouse {uuid.uuid4().hex[:8]}",
+                    "code": f"CH-{uuid.uuid4().hex[:8]}",
+                    "address": "Dhaka",
+                    "is_active": True,
+                },
+            )
+            assert warehouse_response.status_code == 201, warehouse_response.text
+            warehouse = warehouse_response.json()
+
+            product_response = client.post(
+                "/api/v1/products",
+                headers=headers,
+                json={
+                    "name": "Checkout Ready Product",
+                    "slug": f"checkout-ready-{uuid.uuid4().hex[:8]}",
+                    "sku": f"CHK-{uuid.uuid4().hex[:8]}",
+                    "description": "Orderable via public storefront.",
+                    "category_id": category["id"],
+                    "brand_id": brand["id"],
+                    "price": 1290.00,
+                    "cost_price": 700.00,
+                    "image_url": "https://example.com/checkout-product.jpg",
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert product_response.status_code == 201, product_response.text
+            product = product_response.json()
+
+            inventory_response = client.post(
+                "/api/v1/inventory",
+                headers=headers,
+                json={
+                    "product_id": product["id"],
+                    "variant_id": None,
+                    "warehouse_id": warehouse["id"],
+                    "quantity": 12,
+                    "low_stock_threshold": 2,
+                },
+            )
+            assert inventory_response.status_code == 201, inventory_response.text
+
+            order_response = client.post(
+                "/api/v1/public/storefront/orders",
+                json={
+                    "customer_name": "Storefront Buyer",
+                    "phone": "01711000000",
+                    "alternative_phone": "01811000000",
+                    "email": "buyer@example.com",
+                    "district": "Dhaka",
+                    "address": "Banani, Dhaka",
+                    "delivery_note": "Call before delivery",
+                    "payment_method": "cash_on_delivery",
+                    "items": [
+                        {
+                            "product_id": product["id"],
+                            "quantity": 2,
+                            "selected_size": "XL",
+                            "selected_color": "Black",
+                        }
+                    ],
+                },
+            )
+            assert order_response.status_code == 201, order_response.text
+            order_payload = order_response.json()
+            assert order_payload["tracking_code"].startswith("WEB-")
+            assert order_payload["status"] == "pending"
+            assert order_payload["subtotal"] == 2580.0
+            assert order_payload["total"] == 2580.0
+            assert "id" not in order_payload
+
+            tracking_response = client.get(
+                f"/api/v1/public/storefront/orders/track?code={order_payload['tracking_code']}&phone=01711000000"
+            )
+            assert tracking_response.status_code == 200, tracking_response.text
+            tracking_payload = tracking_response.json()
+            assert tracking_payload["tracking_code"] == order_payload["tracking_code"]
+            assert tracking_payload["customer_name"] == "Storefront Buyer"
+            assert tracking_payload["items"][0]["product_name"].startswith("Checkout Ready Product")
+            assert tracking_payload["items"][0]["quantity"] == 2
+            assert tracking_payload["items"][0]["price"] == 1290.0
+            assert "id" not in tracking_payload
+            assert "notes" not in tracking_payload
+
+            not_found_response = client.get(
+                f"/api/v1/public/storefront/orders/track?code={order_payload['tracking_code']}&phone=01999999999"
+            )
+            assert not_found_response.status_code == 404, not_found_response.text
+
+        async def verify_order_state() -> None:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(Order).where(Order.order_number == order_payload["tracking_code"])
+                )
+                order = result.scalar_one()
+                assert order.source == "storefront"
+                assert order.stock_deducted is False
+                assert order.payment_method == "cash_on_delivery"
+                assert order.total == Decimal("2580.00")
+
+        run_async(verify_order_state())
+    except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
+        lowered = str(exc).lower()
+        if any(token in lowered for token in ["storefront_", "order_events", "payment_method", "paid_amount"]):
+            pytest.skip("Apply the storefront and order migrations before running this test.")
+        if any(token in lowered for token in ["event loop is closed", "another operation is in progress", "send"]):
+            pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
+        raise
+
+    dispose_engine()
+
+
 def test_storefront_settings_get_and_update() -> None:
     headers = auth_headers()
 

@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { LoadingState } from "@/components/ui/loading-state";
 import {
-  fetchStorefrontJson,
+  fetchStoreProductBySlug,
   formatStoreCurrency,
   getProductDiscountPercent,
   getProductOriginalPrice,
@@ -51,7 +51,7 @@ export function ProductDetailView({ productSlug }: ProductDetailViewProps) {
 
     async function loadProduct() {
       try {
-        const product = await fetchStorefrontJson<StoreProduct>(`/public/products/slug/${productSlug}`);
+        const product = await fetchStoreProductBySlug(productSlug);
         if (cancelled) {
           return;
         }
@@ -138,7 +138,7 @@ export function ProductDetailView({ productSlug }: ProductDetailViewProps) {
       selectedColor: selectedColor || undefined,
       selectedSize: selectedSize || undefined,
     });
-    router.push("/cart");
+    router.push("/checkout");
   };
 
   return (

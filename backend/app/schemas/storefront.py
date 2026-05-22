@@ -455,6 +455,54 @@ class StorefrontProductPickerResponse(BaseModel):
     total: int
 
 
+class PublicStorefrontOrderItemInput(BaseModel):
+    product_id: UUID
+    quantity: int = Field(ge=1)
+    selected_size: str | None = None
+    selected_color: str | None = None
+
+
+class PublicStorefrontOrderCreate(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=255)
+    phone: str = Field(min_length=5, max_length=50)
+    alternative_phone: str | None = Field(default=None, max_length=50)
+    email: EmailStr | None = None
+    district: str = Field(min_length=2, max_length=120)
+    address: str = Field(min_length=5, max_length=2000)
+    delivery_note: str | None = Field(default=None, max_length=2000)
+    payment_method: Literal["cash_on_delivery"] = "cash_on_delivery"
+    items: list[PublicStorefrontOrderItemInput] = Field(min_length=1)
+
+
+class PublicStorefrontOrderCreateResponse(BaseModel):
+    public_order_code: str
+    tracking_code: str
+    status: str
+    subtotal: float
+    delivery_charge: float
+    total: float
+    created_at: datetime
+
+
+class PublicStorefrontTrackedOrderItem(BaseModel):
+    product_name: str
+    quantity: int
+    price: float
+    total: float
+
+
+class PublicStorefrontTrackedOrder(BaseModel):
+    tracking_code: str
+    status: str
+    created_at: datetime
+    customer_name: str | None = None
+    customer_phone_masked: str | None = None
+    items: list[PublicStorefrontTrackedOrderItem]
+    subtotal: float
+    delivery_charge: float
+    total: float
+
+
 StorefrontMenuItemRead.model_rebuild()
 PublicStorefrontMenuItem.model_rebuild()
 PublicStorefrontSection.model_rebuild()

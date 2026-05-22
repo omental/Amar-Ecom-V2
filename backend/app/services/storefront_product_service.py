@@ -59,13 +59,30 @@ def _stock_status(product: Product) -> str:
     return "in_stock"
 
 
-def _product_card_payload(product: Product) -> dict[str, Any]:
+def get_public_product_available_quantity(product: Product) -> int:
+    inventory_quantity = sum(item.quantity for item in (product.inventory_items or []))
+    variant_quantity = sum(variant.stock_quantity for variant in (product.variants or []))
+    external_quantity = product.external_stock_quantity or 0
+    return max(inventory_quantity, variant_quantity, external_quantity)
+
+
+def get_public_product_prices(product: Product) -> tuple[Decimal, Decimal]:
     regular_price, sale_price = _snapshot_prices(product)
     current_price = sale_price or product.price
     compare_price = regular_price or product.price
 
     if current_price > compare_price:
         compare_price = current_price
+
+    return compare_price, current_price
+
+
+def get_public_product_stock_status(product: Product) -> str:
+    return _stock_status(product)
+
+
+def _product_card_payload(product: Product) -> dict[str, Any]:
+    compare_price, current_price = get_public_product_prices(product)
 
     badge = None
     if compare_price and current_price and compare_price > current_price:

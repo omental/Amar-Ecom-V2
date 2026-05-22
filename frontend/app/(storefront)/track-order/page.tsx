@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { TrackOrderPanel } from "@/components/storefront/TrackOrderPanel";
+import { TrackOrderView } from "@/components/storefront/TrackOrderView";
 
 export const metadata: Metadata = {
   title: "Track Order",
@@ -9,5 +10,9 @@ export const metadata: Metadata = {
 };
 
 export default function TrackOrderPage() {
-  return <TrackOrderPanel />;
+  return (
+    <Suspense fallback={null}>
+      <TrackOrderView />
+    </Suspense>
+  );
 }

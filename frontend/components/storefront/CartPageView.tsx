@@ -7,7 +7,7 @@ import { useCart } from "@/components/storefront/CartProvider";
 import { formatStoreCurrency } from "@/lib/storefront";
 
 export function CartPageView() {
-  const { items, subtotal, updateQuantity, removeItem } = useCart();
+  const { items, subtotal, updateQuantity, removeItem, clearCart } = useCart();
 
   if (items.length === 0) {
     return (
@@ -144,10 +144,17 @@ export function CartPageView() {
         </div>
         <button
           type="button"
-          className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+          onClick={clearCart}
+          className="mt-6 inline-flex w-full items-center justify-center rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900"
         >
-          Checkout coming next
+          Clear Cart
         </button>
+        <Link
+          href="/checkout"
+          className="mt-3 inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+        >
+          Proceed to Checkout
+        </Link>
       </aside>
     </section>
   );

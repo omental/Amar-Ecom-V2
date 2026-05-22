@@ -1,17 +1,29 @@
-from fastapi import APIRouter, HTTPException, status
+from datetime import datetime, timezone
+from decimal import Decimal
+
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DBSession
+from app.api.utils import commit_or_409, ensure_unique
 from app.api.utils import fetch_one_or_404
+from app.models.customer import Customer
+from app.models.order import Order, OrderEvent, OrderItem
+from app.models.product import Product
 from app.models.storefront import StorefrontBanner, StorefrontMenu, StorefrontPage, StorefrontSection
 from app.schemas.storefront import (
+    PublicStorefrontOrderCreate,
+    PublicStorefrontOrderCreateResponse,
     PublicStorefrontMenuItem,
     PublicStorefrontPage,
     PublicStorefrontResponse,
     PublicStorefrontSection,
     PublicStorefrontSetting,
+    PublicStorefrontTrackedOrder,
+    PublicStorefrontTrackedOrderItem,
 )
+from app.services.notification_service import notify_admins
 from app.services.storefront_html_service import sanitize_storefront_html
 from app.services.storefront_service import (
     banner_is_currently_active,
@@ -19,10 +31,74 @@ from app.services.storefront_service import (
     ensure_storefront_defaults,
     get_or_create_storefront_settings,
 )
-from app.services.storefront_product_service import PRODUCT_SECTION_TYPES, resolve_storefront_section_products
+from app.services.storefront_product_service import (
+    PRODUCT_SECTION_TYPES,
+    PUBLIC_PRODUCT_STATUSES,
+    get_public_product_available_quantity,
+    get_public_product_prices,
+    get_public_product_stock_status,
+    resolve_storefront_section_products,
+)
 
 
 router = APIRouter()
+
+
+def _generate_public_order_code() -> str:
+    return f"WEB-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+
+
+def _normalize_phone(value: str | None) -> str:
+    if not value:
+        return ""
+    return "".join(character for character in value if character.isdigit() or character == "+")
+
+
+def _mask_phone(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 4:
+        return value
+    return f"{value[:3]}{'*' * max(3, len(value) - 5)}{value[-2:]}"
+
+
+def _build_public_order_item_name(product: Product, *, selected_size: str | None, selected_color: str | None) -> str:
+    option_parts = []
+    if selected_size:
+        option_parts.append(f"Size: {selected_size}")
+    if selected_color:
+        option_parts.append(f"Color: {selected_color}")
+    if not option_parts:
+        return product.name
+    return f"{product.name} ({', '.join(option_parts)})"
+
+
+def _public_order_query():
+    return (
+        select(Order)
+        .options(
+            selectinload(Order.items),
+            selectinload(Order.customer),
+        )
+    )
+
+
+async def _load_public_products_by_ids(db: DBSession, product_ids: list) -> dict[str, Product]:
+    result = await db.execute(
+        select(Product)
+        .options(
+            selectinload(Product.inventory_items),
+            selectinload(Product.variants),
+        )
+        .where(Product.id.in_(product_ids))
+    )
+    products = list(result.scalars().unique().all())
+    public_products = {
+        str(product.id): product
+        for product in products
+        if product.status and product.status.lower() in PUBLIC_PRODUCT_STATUSES
+    }
+    return public_products
 
 
 def _public_menu_item(item) -> PublicStorefrontMenuItem:
@@ -183,3 +259,196 @@ async def get_public_storefront_page(slug: str, db: DBSession) -> PublicStorefro
         "Public storefront page not found",
     )
     return await _storefront_response_for_page(db, page)
+
+
+@router.post("/orders", response_model=PublicStorefrontOrderCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_public_storefront_order(
+    payload: PublicStorefrontOrderCreate,
+    db: DBSession,
+) -> PublicStorefrontOrderCreateResponse:
+    product_ids = [item.product_id for item in payload.items]
+    public_products = await _load_public_products_by_ids(db, product_ids)
+
+    if len(public_products) != len(set(str(product_id) for product_id in product_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="One or more selected products are not available publicly.",
+        )
+
+    normalized_phone = _normalize_phone(payload.phone)
+    delivery_charge = Decimal("0.00")
+    subtotal = Decimal("0.00")
+    order_items: list[OrderItem] = []
+
+    for item in payload.items:
+        product = public_products[str(item.product_id)]
+        available_quantity = get_public_product_available_quantity(product)
+        stock_status = get_public_product_stock_status(product)
+
+        if stock_status == "out_of_stock" or available_quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{product.name} is currently out of stock.",
+            )
+        if item.quantity > available_quantity:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Only {available_quantity} unit(s) of {product.name} are available right now.",
+            )
+
+        _, current_price = get_public_product_prices(product)
+        line_total = current_price * item.quantity
+        subtotal += line_total
+
+        option_suffix = []
+        if item.selected_size:
+            option_suffix.append(f"size={item.selected_size}")
+        if item.selected_color:
+            option_suffix.append(f"color={item.selected_color}")
+
+        order_items.append(
+            OrderItem(
+                product_id=product.id,
+                variant_id=None,
+                product_name=_build_public_order_item_name(
+                    product,
+                    selected_size=item.selected_size,
+                    selected_color=item.selected_color,
+                ),
+                sku=product.sku if not option_suffix else f"{product.sku} [{' | '.join(option_suffix)}]",
+                quantity=item.quantity,
+                unit_price=current_price,
+                total_price=line_total,
+            )
+        )
+
+    total = subtotal + delivery_charge
+
+    customer_result = await db.execute(
+        select(Customer).where(Customer.phone == payload.phone).limit(1)
+    )
+    customer = customer_result.scalar_one_or_none()
+    customer_notes_parts = []
+    if payload.alternative_phone:
+        customer_notes_parts.append(f"Alternative phone: {payload.alternative_phone}")
+    if payload.delivery_note:
+        customer_notes_parts.append(f"Delivery note: {payload.delivery_note}")
+    customer_notes = "\n".join(customer_notes_parts) if customer_notes_parts else None
+
+    if customer is None:
+        customer = Customer(
+            name=payload.customer_name,
+            phone=payload.phone,
+            email=payload.email,
+            address=payload.address,
+            city=payload.district,
+            customer_type="regular",
+            notes=customer_notes,
+        )
+        db.add(customer)
+        await db.flush()
+    else:
+        customer.name = payload.customer_name
+        customer.email = payload.email
+        customer.address = payload.address
+        customer.city = payload.district
+        if customer_notes:
+            customer.notes = customer_notes
+
+    order_number = _generate_public_order_code()
+    await ensure_unique(db, Order, "order_number", order_number, "Generated public order code already exists")
+
+    order = Order(
+        order_number=order_number,
+        customer_id=customer.id,
+        customer_name=payload.customer_name,
+        customer_phone=normalized_phone or payload.phone,
+        shipping_address=payload.address,
+        notes=customer_notes,
+        tags="storefront,cod",
+        status="pending",
+        payment_status="unpaid",
+        payment_method=payload.payment_method,
+        source="storefront",
+        subtotal=subtotal,
+        discount=Decimal("0.00"),
+        delivery_charge=delivery_charge,
+        paid_amount=Decimal("0.00"),
+        total=total,
+        stock_deducted=False,
+    )
+    order.items.extend(order_items)
+    order.events.append(
+        OrderEvent(
+            event_type="order_created",
+            message="Public storefront order placed.",
+            created_by_id=None,
+        )
+    )
+    db.add(order)
+    await db.flush()
+
+    await notify_admins(
+        db,
+        title="New storefront order",
+        message=f"Storefront order {order.order_number} was placed by {payload.customer_name}.",
+        notification_type="order",
+        link=f"/dashboard/orders/{order.id}",
+        module="orders",
+        metadata={"order_id": str(order.id), "status": order.status, "source": order.source},
+    )
+
+    await commit_or_409(db, "Could not place storefront order")
+    await db.refresh(order)
+
+    return PublicStorefrontOrderCreateResponse(
+        public_order_code=order.order_number,
+        tracking_code=order.order_number,
+        status=order.status,
+        subtotal=float(order.subtotal),
+        delivery_charge=float(order.delivery_charge),
+        total=float(order.total),
+        created_at=order.created_at,
+    )
+
+
+@router.get("/orders/track", response_model=PublicStorefrontTrackedOrder)
+async def track_public_storefront_order(
+    db: DBSession,
+    code: str = Query(min_length=3),
+    phone: str = Query(min_length=5),
+) -> PublicStorefrontTrackedOrder:
+    order = await fetch_one_or_404(
+        db,
+        _public_order_query().where(Order.order_number == code.strip()),
+        "Order not found",
+    )
+
+    normalized_input_phone = _normalize_phone(phone)
+    stored_phone_candidates = {
+        _normalize_phone(order.customer_phone),
+        _normalize_phone(order.customer.phone if order.customer else None),
+    }
+    stored_phone_candidates.discard("")
+    if normalized_input_phone not in stored_phone_candidates:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    return PublicStorefrontTrackedOrder(
+        tracking_code=order.order_number,
+        status=order.status,
+        created_at=order.created_at,
+        customer_name=order.customerName,
+        customer_phone_masked=_mask_phone(order.customerPhone),
+        items=[
+            PublicStorefrontTrackedOrderItem(
+                product_name=item.product_name,
+                quantity=item.quantity,
+                price=float(item.unit_price),
+                total=float(item.total_price),
+            )
+            for item in order.items
+        ],
+        subtotal=float(order.subtotal),
+        delivery_charge=float(order.delivery_charge),
+        total=float(order.total),
+    )

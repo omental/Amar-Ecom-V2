@@ -147,6 +147,10 @@ export async function fetchStorefrontJson<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+export function fetchStoreProductBySlug(slug: string) {
+  return fetchStorefrontJson<StoreProduct>(`/public/products/slug/${slug}`);
+}
+
 export function formatStoreCurrency(value: string | number) {
   const numericValue = typeof value === "string" ? Number(value) : value;
   return new Intl.NumberFormat("en-BD", {

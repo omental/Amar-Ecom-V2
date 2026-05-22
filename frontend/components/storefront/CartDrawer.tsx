@@ -146,13 +146,22 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
                   {formatStoreCurrency(subtotal)}
                 </span>
               </div>
-              <Link
-                href="/cart"
-                onClick={onClose}
-                className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
-              >
-                View Cart
-              </Link>
+              <div className="mt-4 grid gap-3">
+                <Link
+                  href="/cart"
+                  onClick={onClose}
+                  className="inline-flex w-full items-center justify-center rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900"
+                >
+                  View Cart
+                </Link>
+                <Link
+                  href="/checkout"
+                  onClick={onClose}
+                  className="inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
+                >
+                  Checkout
+                </Link>
+              </div>
             </div>
           </motion.aside>
         </motion.div>

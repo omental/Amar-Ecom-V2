@@ -15,7 +15,7 @@ import {
   createCartItemFromProduct,
   STOREFRONT_CART_STORAGE_KEY,
   type CartItem,
-} from "@/lib/cart";
+} from "@/lib/storefront-cart";
 import type { StoreProduct } from "@/lib/storefront";
 
 type CartContextValue = {
