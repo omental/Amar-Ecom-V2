@@ -21,6 +21,7 @@ export function OnlineStoreTabs() {
   const pathname = usePathname();
 
   return (
+    <div className="space-y-3">
     <div className="no-scrollbar overflow-x-auto">
       <div className="inline-flex min-w-full gap-2 rounded-[22px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-2 shadow-[var(--shadow-subtle)]">
         {tabs.map((tab) => {
@@ -30,6 +31,7 @@ export function OnlineStoreTabs() {
             <Link
               key={tab.href}
               href={tab.href}
+              aria-current={active ? "page" : undefined}
               className={`rounded-[16px] px-4 py-2.5 text-sm font-semibold transition ${
                 active
                   ? "bg-[var(--color-accent)] text-white"
@@ -40,6 +42,10 @@ export function OnlineStoreTabs() {
             </Link>
           );
         })}
+      </div>
+      </div>
+      <div role="note" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+        Seeded storefront defaults and demo/reference media may be present. Verify products, links, contact details, banners, and published status before treating content as production-ready.
       </div>
     </div>
   );

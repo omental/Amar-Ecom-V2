@@ -30,6 +30,8 @@ import {
 
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
+import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 type InventoryTabId =
   | "products"
@@ -725,13 +727,15 @@ function Overlay({
   children: ReactNode;
   onClose: () => void;
 }) {
+  const { dialogRef, requestClose } = useDialogAccessibility(onClose);
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 sm:p-6"
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div
-        className="mt-6 w-full max-w-4xl rounded-[28px] border border-slate-200 bg-white shadow-2xl"
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Inventory form" tabIndex={-1}
+        className="mt-6 w-full max-w-4xl rounded-[28px] border border-slate-200 bg-white shadow-2xl outline-none"
         onClick={(event) => event.stopPropagation()}
       >
         {children}
@@ -762,6 +766,7 @@ function ModalShell({
           type="button"
           onClick={onClose}
           className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+          aria-label={`Close ${title}`}
         >
           <X className="h-4 w-4" />
         </button>
@@ -1823,11 +1828,7 @@ export default function InventoryPage() {
             </div>
           ) : null}
 
-          {error ? (
-            <div className="mb-4 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              {error}
-            </div>
-          ) : null}
+          {error ? <div className="mb-4"><ErrorAlert message={error} onRetry={() => void loadAll()} /></div> : null}
 
           {success ? (
             <div className="mb-4 rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">

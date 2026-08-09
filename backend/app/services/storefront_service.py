@@ -10,7 +10,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.utils import commit_or_409
+from app.core.persistence import commit_or_409
 from app.models.storefront import (
     StorefrontBanner,
     StorefrontMedia,

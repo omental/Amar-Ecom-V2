@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { can, canAccessModule as userCanAccessModule, hasFullAccess } from "@/lib/capabilities";
 
 export type LegacyPermissions = {
   dashboard: boolean;
@@ -142,84 +143,15 @@ export function isAuthenticated() {
 }
 
 export function isAdminUser(user?: AuthUser | null) {
-  const role = user?.role?.toLowerCase();
-  return role === "admin" || role === "super_admin";
+  return hasFullAccess(user);
 }
 
 export function hasPermission(permissionKey: string, user?: AuthUser | null) {
-  if (!user || isAdminUser(user)) {
-    return true;
-  }
-
-  const permissions = user.permissions;
-  if (!permissions || permissions.length === 0) {
-    return false;
-  }
-
-  return permissions.includes(permissionKey);
+  return can(user, permissionKey);
 }
 
-const modulePermissionMap: Record<string, string> = {
-  dashboard: "dashboard.view",
-  orders: "orders.view",
-  pos: "pos.view",
-  logistics: "logistics.view",
-  shipments: "shipments.view",
-  returns: "returns.view",
-  couriers: "couriers.view",
-  suppliers: "suppliers.view",
-  purchase_orders: "purchase_orders.view",
-  products: "products.view",
-  customers: "customers.view",
-  woocommerce: "woocommerce.view",
-  finance: "finance.view",
-  hr: "hr.view",
-  tasks: "tasks.view",
-  reports: "reports.view",
-  inventory: "inventory.view",
-  stock_movements: "stock_movements.view",
-  warehouses: "warehouses.view",
-  categories: "categories.view",
-  brands: "brands.view",
-  users: "users.view",
-  activity_logs: "activity_logs.view",
-  settings: "settings.view",
-  admin_tools: "settings.view",
-  courier_integrations: "couriers.view",
-  online_store: "online_store.view",
-};
-
-const legacyModuleMap: Record<string, keyof LegacyPermissions> = {
-  dashboard: "dashboard",
-  orders: "orders",
-  inventory: "inventory",
-  customers: "crm",
-  crm: "crm",
-  logistics: "logistics",
-  reports: "reports",
-  finance: "finance",
-  hr: "hr",
-  settings: "settings",
-  users: "team",
-  team: "team",
-  pos: "pos",
-};
-
 export function canAccessModule(moduleKey: string, user?: AuthUser | null) {
-  if (!user || isAdminUser(user)) {
-    return true;
-  }
-
-  const legacyKey = legacyModuleMap[moduleKey];
-  if (legacyKey && user.legacy_permissions) {
-    return user.legacy_permissions[legacyKey] === true;
-  }
-
-  const permissionKey = modulePermissionMap[moduleKey];
-  if (!permissionKey) {
-    return true;
-  }
-  return hasPermission(permissionKey, user);
+  return userCanAccessModule(moduleKey, user);
 }
 
 export async function fetchCurrentUser() {

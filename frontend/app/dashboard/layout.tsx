@@ -2,9 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { Toaster } from "sonner";
 
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
+import { AuthorizationProvider } from "@/components/dashboard/authorization-provider";
+import { DashboardBreadcrumbs } from "@/components/dashboard/breadcrumbs";
+import { ErrorAlert } from "@/components/ui/error-alert";
+import { LoadingState } from "@/components/ui/loading-state";
 import {
   fetchCurrentUser,
   getUser,
@@ -12,6 +17,8 @@ import {
   logout,
   type AuthUser,
 } from "@/lib/auth";
+import { can } from "@/lib/capabilities";
+import { getNavigationEntry } from "@/lib/navigation";
 
 const sidebarExpandableItems = [
   {
@@ -96,6 +103,15 @@ export default function DashboardLayout({
   }, [router]);
 
   useEffect(() => {
+    function handleSessionExpired() {
+      setCurrentUser(null);
+      router.replace("/login?reason=session-expired");
+    }
+    window.addEventListener("amar:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("amar:session-expired", handleSessionExpired);
+  }, [router]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
@@ -131,14 +147,18 @@ export default function DashboardLayout({
     return (
       <div className="app-shell flex min-h-screen items-center justify-center p-6">
         <div className="card-base px-6 py-5 text-sm font-medium text-[var(--color-txt-sec)]">
-          Preparing your workspace...
+          <LoadingState label="Preparing your workspace..." variant="page" />
         </div>
       </div>
     );
   }
 
+  const routeEntry = getNavigationEntry(pathname);
+  const canViewRoute = routeEntry ? can(currentUser, routeEntry.capability) : false;
+
   return (
     <div className="dashboard-shell min-h-screen overflow-x-hidden">
+      <Toaster position="top-right" richColors closeButton />
       <div className="flex min-h-screen bg-[var(--color-surf)] transition-colors duration-300">
         <DashboardSidebar
           user={currentUser}
@@ -161,7 +181,12 @@ export default function DashboardLayout({
 
           <main className="flex-1 overflow-auto min-w-0 max-w-full">
             <div className="mx-auto w-full max-w-[1600px] min-w-0 max-w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
-              <div className="min-w-0 w-full max-w-full overflow-x-hidden">{children}</div>
+              <AuthorizationProvider user={currentUser}>
+                <DashboardBreadcrumbs />
+                <div className="min-w-0 w-full max-w-full overflow-x-hidden">
+                  {canViewRoute ? children : <ErrorAlert title="Permission denied" message="You do not have permission to view this workspace. Ask an administrator to update your access." persistent />}
+                </div>
+              </AuthorizationProvider>
             </div>
           </main>
         </div>

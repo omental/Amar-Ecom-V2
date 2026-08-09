@@ -21,6 +21,8 @@ import {
 
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
+import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 type CrmSummary = {
   total_customers: number;
@@ -274,9 +276,10 @@ function Overlay({
   children: ReactNode;
   onClose: () => void;
 }) {
+  const { dialogRef, requestClose } = useDialogAccessibility(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={requestClose}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Customer form" tabIndex={-1} className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl outline-none" onClick={(event) => event.stopPropagation()}>
         {children}
       </div>
     </div>
@@ -634,9 +637,7 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
-      ) : null}
+      {error ? <ErrorAlert message={error} onRetry={() => void loadWorkspace()} /> : null}
       {success ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>
       ) : null}

@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.utils import commit_or_409
+from app.core.persistence import commit_or_409
 from app.models.storefront import StorefrontPage, StorefrontRevision, StorefrontSection, StorefrontSetting
 from app.models.user import User
 from app.services.storefront_service import get_or_create_storefront_settings

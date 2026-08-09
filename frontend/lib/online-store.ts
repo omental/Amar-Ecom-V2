@@ -1,10 +1,5 @@
 import type { StoreProduct } from "@/lib/storefront";
-
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
-
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL;
-}
+import { request } from "@/lib/api";
 
 export type OnlineStoreSettings = {
   id?: string;
@@ -244,45 +239,11 @@ export type StorefrontProductPickerResponse = {
 };
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
+  return request<T>(path, { method: "GET" }, false);
 }
 
 async function fetchAdminJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token =
-    typeof window !== "undefined" ? window.localStorage.getItem("amar_token") : null;
-  const headers = new Headers(init.headers);
-  headers.set("Accept", "application/json");
-  if (!(init.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
+  return request<T>(path, init, true);
 }
 
 export async function fetchPublicStorefrontHome() {

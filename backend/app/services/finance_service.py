@@ -7,7 +7,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.utils import ensure_unique, fetch_one_or_404
+from app.core.persistence import ensure_unique, fetch_one_or_404
 from app.models.finance import Account, PettyCashEntry, SupplierPayment, Transaction
 from app.models.supplier import Supplier
 from app.models.user import User

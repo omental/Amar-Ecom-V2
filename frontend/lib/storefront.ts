@@ -99,14 +99,8 @@ export const STORE_CATEGORY_IMAGE_MAP: Record<string, string> = {
   Blazer: "/storefront/demo-products/jacket-italian-3154.jpg",
 };
 
-const DEFAULT_PUBLIC_API_BASE = "http://127.0.0.1:8000/api/v1";
-
-function getPublicApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_PUBLIC_API_BASE;
-}
-
 export function buildStoreApiUrl(path: string) {
-  return `${getPublicApiBaseUrl()}${path}`;
+  return buildApiUrl(path);
 }
 
 export function buildStoreProductsPath(query: StoreProductQuery = {}) {
@@ -133,18 +127,7 @@ export function buildStoreProductsPath(query: StoreProductQuery = {}) {
 }
 
 export async function fetchStorefrontJson<T>(path: string): Promise<T> {
-  const response = await fetch(buildStoreApiUrl(path), {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Storefront request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
+  return publicApi.get<T>(path);
 }
 
 export function fetchStoreProductBySlug(slug: string) {
@@ -192,3 +175,5 @@ export function getProductStockLabel(product: StoreProduct) {
 export function getProductPrimaryImage(product: StoreProduct) {
   return product.image || product.thumbnail || product.gallery[0] || null;
 }
+import { buildApiUrl } from "@/lib/api-config";
+import { publicApi } from "@/lib/api";

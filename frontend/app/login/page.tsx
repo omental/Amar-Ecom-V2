@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, Mail } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/api-config";
 import { fetchCurrentUser, saveToken, saveUser } from "@/lib/auth";
 
 type LoginResponse = {
@@ -167,8 +168,7 @@ export default function LoginPage() {
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 Make sure the FastAPI backend is running at{" "}
                 <span className="font-medium text-slate-800">
-                  {process.env.NEXT_PUBLIC_API_BASE_URL ||
-                    "http://127.0.0.1:8000/api/v1"}
+                  {getApiBaseUrl()}
                 </span>
                 .
               </p>

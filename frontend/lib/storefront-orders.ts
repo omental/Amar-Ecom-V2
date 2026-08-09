@@ -1,5 +1,4 @@
-import { ApiError } from "@/lib/api";
-import { buildStoreApiUrl } from "@/lib/storefront";
+import { request } from "@/lib/api";
 
 export type StorefrontDeliveryZone = "inside_dhaka" | "outside_dhaka";
 
@@ -78,38 +77,7 @@ export type StorefrontCouponValidationResponse = {
 };
 
 async function storefrontRequest<T>(path: string, init: RequestInit = {}) {
-  const headers = new Headers(init.headers);
-  headers.set("Accept", "application/json");
-
-  if (!(init.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const response = await fetch(buildStoreApiUrl(path), {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
-
-  const contentType = response.headers.get("content-type") || "";
-  const isJson = contentType.includes("application/json");
-  const payload = isJson ? await response.json() : await response.text();
-
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-
-    if (typeof payload === "string" && payload.trim()) {
-      message = payload;
-    } else if (typeof payload === "object" && payload !== null) {
-      if ("detail" in payload && typeof payload.detail === "string") {
-        message = payload.detail;
-      }
-    }
-
-    throw new ApiError(message, response.status, payload);
-  }
-
-  return payload as T;
+  return request<T>(path, init, false);
 }
 
 export function createStorefrontOrder(payload: StorefrontOrderCreateInput) {

@@ -1,19 +1,22 @@
+import { buildApiUrl, getApiBaseUrl } from "@/lib/api-config";
+
+export type ApiErrorKind = "unauthenticated" | "forbidden" | "conflict" | "validation" | "network" | "server" | "request";
+export type FieldError = { field: string; message: string };
+
 export class ApiError extends Error {
   status: number;
   payload?: unknown;
+  kind: ApiErrorKind;
+  fieldErrors: FieldError[];
 
-  constructor(message: string, status: number, payload?: unknown) {
+  constructor(message: string, status: number, payload?: unknown, kind: ApiErrorKind = "request", fieldErrors: FieldError[] = []) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.payload = payload;
+    this.kind = kind;
+    this.fieldErrors = fieldErrors;
   }
-}
-
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
-
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL;
 }
 
 function getAuthToken() {
@@ -30,7 +33,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const payload = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
+    const fieldErrors: FieldError[] = [];
+    let message = response.status >= 500 ? "The server could not complete the request. Please try again." : `Request failed with status ${response.status}`;
 
     if (typeof payload === "string" && payload.trim()) {
       message = payload;
@@ -40,30 +44,35 @@ async function parseResponse<T>(response: Response): Promise<T> {
         if (typeof detail === "string") {
           message = detail;
         } else if (Array.isArray(detail)) {
-          const firstIssue = detail[0];
-          if (
-            firstIssue &&
-            typeof firstIssue === "object" &&
-            "msg" in firstIssue &&
-            typeof firstIssue.msg === "string"
-          ) {
-            message = firstIssue.msg;
+          for (const issue of detail) {
+            if (!issue || typeof issue !== "object" || !("msg" in issue) || typeof issue.msg !== "string") continue;
+            const location = "loc" in issue && Array.isArray(issue.loc) ? (issue.loc as unknown[]).filter((part: unknown) => part !== "body").map(String) : [];
+            const field = location.join(".") || "request";
+            fieldErrors.push({ field, message: issue.msg.replace(/^Value error,\s*/i, "") });
           }
+          if (fieldErrors.length) message = fieldErrors.map(({ field, message: issueMessage }) => `${field === "request" ? "Request" : field}: ${issueMessage}`).join("; ");
         }
       } else if ("message" in payload && typeof payload.message === "string") {
         message = payload.message;
       }
     }
 
-    throw new ApiError(message, response.status, payload);
+    const kind: ApiErrorKind = response.status === 401 ? "unauthenticated" : response.status === 403 ? "forbidden" : response.status === 409 ? "conflict" : response.status === 422 ? "validation" : response.status >= 500 ? "server" : "request";
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.localStorage.removeItem("amar_token");
+      window.localStorage.removeItem("amar_user");
+      window.dispatchEvent(new CustomEvent("amar:session-expired"));
+    }
+    throw new ApiError(message, response.status, payload, kind, fieldErrors);
   }
 
   return payload as T;
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   init: RequestInit = {},
+  authenticated = true,
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -72,18 +81,33 @@ async function request<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const token = getAuthToken();
+  const token = authenticated ? getAuthToken() : null;
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  try {
+    const response = await fetch(buildApiUrl(path), { ...init, headers, cache: "no-store" });
+    if (response.status === 204) return undefined as T;
+    return await parseResponse<T>(response);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("Unable to reach the server. Check your connection and try again.", 0, error, "network");
+  }
+}
 
-  return parseResponse<T>(response);
+async function download(path: string) {
+  const headers = new Headers({ Accept: "text/csv, application/octet-stream" });
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const response = await fetch(buildApiUrl(path), { headers, cache: "no-store" });
+    if (!response.ok) await parseResponse<never>(response);
+    return await response.blob();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("Unable to download the file. Check your connection and try again.", 0, error, "network");
+  }
 }
 
 export const api = {
@@ -126,5 +150,15 @@ export const api = {
   delete<T>(path: string) {
     return request<T>(path, { method: "DELETE" });
   },
+  download,
   baseUrl: getApiBaseUrl,
 };
+
+export const publicApi = {
+  get<T>(path: string) { return request<T>(path, { method: "GET" }, false); },
+  post<T>(path: string, body?: unknown) { return request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }, false); },
+};
+
+export function getErrorMessage(error: unknown, fallback = "Something went wrong. Please try again.") {
+  return error instanceof ApiError || error instanceof Error ? error.message : fallback;
+}

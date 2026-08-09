@@ -1,4 +1,8 @@
+"use client";
+
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
+import type { Capability } from "@/lib/capabilities";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -16,11 +20,15 @@ export function OpsActionButton({
   variant = "secondary",
   children,
   className = "",
+  capability,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
   children: ReactNode;
+  capability?: Capability | string;
 }) {
+  const authorization = useAuthorization();
+  if (capability && !authorization.can(capability)) return null;
   return (
     <button className={`${variantClasses[variant]} ${className}`.trim()} {...props}>
       {children}

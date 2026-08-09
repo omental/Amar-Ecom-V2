@@ -20,7 +20,6 @@ import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { OpsStatusBadge } from "@/components/ui/ops-status-badge";
 import { OpsSummaryCard } from "@/components/ui/ops-summary-card";
 import { api, ApiError } from "@/lib/api";
-import { getToken } from "@/lib/auth";
 
 type SystemHealth = {
   service_status: {
@@ -493,18 +492,7 @@ function WarningPanel({
 }
 
 async function downloadProtectedCsv(path: string, filename: string) {
-  const token = getToken();
-  const response = await fetch(`${api.baseUrl()}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new ApiError(text || `Failed to download ${filename}`, response.status);
-  }
-
-  const blob = await response.blob();
+  const blob = await api.download(path);
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

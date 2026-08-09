@@ -407,3 +407,8 @@ select {
   border-color: rgba(225, 29, 72, 0.25);
   background: white;
 }
+/* Shared keyboard focus treatment for all current and forthcoming UI primitives. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent, #2563eb);
+  outline-offset: 2px;
+}

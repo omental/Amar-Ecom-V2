@@ -41,6 +41,8 @@ import {
 
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
+import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 type CustomerOption = {
   id: string;
@@ -670,15 +672,17 @@ function Overlay({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const { dialogRef, requestClose } = useDialogAccessibility(onClose);
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-3 backdrop-blur-sm">
       <button
         aria-label="Close"
         className="absolute inset-0"
-        onClick={onClose}
+        onClick={requestClose}
       />
       <div
-        className={`relative z-10 max-h-[94vh] w-full overflow-hidden rounded-[28px] border border-[var(--color-brd)] bg-[var(--color-surf)] shadow-2xl ${wide ? "max-w-6xl" : "max-w-4xl"}`}
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Order workflow" tabIndex={-1}
+        className={`relative z-10 max-h-[94vh] w-full overflow-hidden rounded-[28px] border border-[var(--color-brd)] bg-[var(--color-surf)] shadow-2xl outline-none ${wide ? "max-w-6xl" : "max-w-4xl"}`}
       >
         {children}
       </div>
@@ -1454,6 +1458,7 @@ export default function OrdersPage() {
             ) : null}
 
             <button
+              type="button"
               onClick={exportFilteredCsv}
               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-brd)] bg-[var(--color-surf)] text-[var(--color-txt-sec)] shadow-subtle transition hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]"
               title="Export CSV"
@@ -1463,12 +1468,16 @@ export default function OrdersPage() {
 
             <div className="flex items-center gap-1 rounded-lg border border-[var(--color-brd)] bg-[var(--color-surf)] p-1 shadow-subtle">
               <button
+                type="button"
+                aria-label="Show orders as a table"
                 onClick={() => setViewMode("table")}
                 className={`rounded-md p-2 transition ${viewMode === "table" ? "bg-[var(--color-surf-hover)] text-[var(--color-txt-pri)]" : "text-[var(--color-txt-mut)]"}`}
               >
                 <List className="h-4 w-4" />
               </button>
               <button
+                type="button"
+                aria-label="Show orders as a grid"
                 onClick={() => setViewMode("grid")}
                 className={`rounded-md p-2 transition ${viewMode === "grid" ? "bg-[var(--color-surf-hover)] text-[var(--color-txt-pri)]" : "text-[var(--color-txt-mut)]"}`}
               >
@@ -1477,6 +1486,7 @@ export default function OrdersPage() {
             </div>
 
             <button
+              type="button"
               onClick={openNewOrderPanel}
               className="inline-flex items-center gap-2 rounded-lg bg-[#1C2032] px-5 py-2.5 text-sm font-semibold text-white shadow-subtle transition hover:bg-[#2A2F45]"
             >
@@ -1486,11 +1496,7 @@ export default function OrdersPage() {
           </div>
         </section>
 
-        {pageError ? (
-          <div className="rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-            {pageError}
-          </div>
-        ) : null}
+        {pageError ? <ErrorAlert message={pageError} onRetry={() => void refreshOrders(true)} /> : null}
         {pageSuccess ? (
           <div className="rounded-[20px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
             {pageSuccess}
@@ -1513,6 +1519,7 @@ export default function OrdersPage() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search orders..."
+              aria-label="Search orders"
               className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-txt-pri)] outline-none placeholder:text-[var(--color-txt-mut)]"
             />
             <div className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)]">
@@ -1730,7 +1737,7 @@ export default function OrdersPage() {
                           </td>
                           <td className="px-3 py-4">
                             <div className="flex items-center justify-end gap-1">
-                              <button onClick={() => openDetailModal(order.id)} className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]" title="View Order">
+                              <button type="button" onClick={() => openDetailModal(order.id)} aria-label="View order" className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]" title="View Order">
                                 <Eye className="h-4 w-4" />
                               </button>
                               <button onClick={() => openInvoice(order.id)} className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]" title="Print Invoice">

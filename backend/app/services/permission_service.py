@@ -19,16 +19,23 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("products", "create"),
     ("products", "update"),
     ("products", "delete"),
+    ("categories", "view"),
+    ("brands", "view"),
     ("inventory", "view"),
     ("inventory", "create"),
     ("inventory", "update"),
     ("inventory", "delete"),
+    ("warehouses", "view"),
+    ("stock_movements", "view"),
+    ("suppliers", "view"),
+    ("purchase_orders", "view"),
     ("customers", "view"),
     ("customers", "create"),
     ("customers", "update"),
     ("customers", "delete"),
     ("logistics", "view"),
     ("couriers", "view"),
+    ("courier_integrations", "view"),
     ("woocommerce", "view"),
     ("woocommerce", "import"),
     ("pos", "view"),
@@ -44,6 +51,7 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("shipments", "delete"),
     ("finance", "view"),
     ("hr", "view"),
+    ("tasks", "view"),
     ("settings", "view"),
     ("settings", "update"),
     ("online_store", "view"),
@@ -53,6 +61,7 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("team", "update"),
     ("users", "view"),
     ("permissions", "view"),
+    ("activity_logs", "view"),
 ]
 
 LEGACY_PERMISSION_MODULES = (
@@ -86,14 +95,14 @@ LEGACY_PERMISSION_LABELS = {
 LEGACY_PERMISSION_KEY_MAP = {
     "dashboard": {"dashboard.view"},
     "orders": {"orders.view"},
-    "inventory": {"inventory.view", "products.view"},
+    "inventory": {"inventory.view", "products.view", "categories.view", "brands.view", "warehouses.view", "stock_movements.view", "suppliers.view", "purchase_orders.view"},
     "crm": {"customers.view"},
-    "logistics": {"logistics.view", "shipments.view", "couriers.view"},
+    "logistics": {"logistics.view", "shipments.view", "couriers.view", "courier_integrations.view"},
     "reports": {"reports.view"},
     "finance": {"finance.view"},
     "hr": {"hr.view"},
     "settings": {"settings.view"},
-    "team": {"team.view", "users.view", "permissions.view"},
+    "team": {"team.view", "users.view", "permissions.view", "activity_logs.view"},
     "pos": {"pos.view"},
 }
 
@@ -228,4 +237,12 @@ async def user_has_permission(db: AsyncSession, user: User, module: str, action:
         return True
 
     permissions = await get_user_permissions(db, user.id)
-    return permission_key(module, action) in permissions
+    requested = permission_key(module, action)
+    if requested in permissions:
+        return True
+
+    # Legacy module toggles represented broad v1 workspace access. Expand the
+    # same compatibility groups used by /auth/me so frontend and backend agree.
+    legacy_map = build_legacy_permissions_map(permissions, user.role)
+    compatible_permissions = build_permission_keys_from_legacy_map(legacy_map)
+    return requested in compatible_permissions

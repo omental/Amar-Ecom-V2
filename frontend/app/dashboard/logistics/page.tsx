@@ -36,6 +36,8 @@ import {
 
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
+import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 type CommandSummary = {
   pending_dispatch_count: number;
@@ -385,9 +387,10 @@ function Overlay({
   children: ReactNode;
   onClose: () => void;
 }) {
+  const { dialogRef, requestClose } = useDialogAccessibility(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="mt-6 w-full max-w-4xl rounded-[28px] bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm" onClick={requestClose}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Logistics form" tabIndex={-1} className="mt-6 w-full max-w-4xl rounded-[28px] bg-white shadow-2xl outline-none" onClick={(event) => event.stopPropagation()}>
         {children}
       </div>
     </div>
@@ -412,7 +415,7 @@ function ModalShell({
           <h3 className="text-lg font-semibold text-slate-950">{title}</h3>
           <p className="mt-1 text-sm text-slate-500">{description}</p>
         </div>
-        <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
+        <button type="button" onClick={onClose} aria-label={`Close ${title}`} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -1222,9 +1225,7 @@ export default function LogisticsPage() {
         </div>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      ) : null}
+      {error ? <ErrorAlert message={error} onRetry={() => void loadWorkspace()} /> : null}
       {warning ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{warning}</div>
       ) : null}
@@ -1368,22 +1369,22 @@ export default function LogisticsPage() {
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             {(shipment.canSyncStatus ?? shipment.action_flags?.can_sync_status) ? (
-                              <button type="button" onClick={() => openSyncModal(shipment)} className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-green-500 hover:bg-green-50 hover:text-green-600" title="Sync Status">
+                              <button type="button" onClick={() => openSyncModal(shipment)} aria-label="Sync shipment status" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-green-500 hover:bg-green-50 hover:text-green-600" title="Sync Status">
                                 <RefreshCw className="h-3.5 w-3.5" />
                               </button>
                             ) : null}
                             {(shipment.canSendToCourier ?? shipment.action_flags?.can_send_to_courier) ? (
-                              <button type="button" onClick={() => openSendModal(shipment)} className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Send To Courier">
+                              <button type="button" onClick={() => openSendModal(shipment)} aria-label="Send shipment to courier" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Send To Courier">
                                 <Send className="h-3.5 w-3.5" />
                               </button>
                             ) : null}
-                            <button type="button" onClick={() => openShipmentDetail(shipment)} className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="View Shipment">
+                            <button type="button" onClick={() => openShipmentDetail(shipment)} aria-label="View shipment" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="View Shipment">
                               <Eye className="h-3.5 w-3.5" />
                             </button>
-                            <button type="button" onClick={() => openShipmentModal(undefined, shipment)} className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Edit Shipment">
+                            <button type="button" onClick={() => openShipmentModal(undefined, shipment)} aria-label="Edit shipment" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Edit Shipment">
                               <Edit className="h-3.5 w-3.5" />
                             </button>
-                            <button type="button" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-slate-500 hover:bg-slate-100 hover:text-slate-700" title="More Actions" onClick={() => openStatusModal(shipment)}>
+                            <button type="button" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-slate-500 hover:bg-slate-100 hover:text-slate-700" title="More Actions" aria-label="More shipment actions" onClick={() => openStatusModal(shipment)}>
                               <MoreVertical className="h-3.5 w-3.5" />
                             </button>
                           </div>
