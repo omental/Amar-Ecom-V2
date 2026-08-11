@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import func, select
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.courier import Courier, Shipment
 from app.schemas.courier import CourierCreate, CourierRead, CourierUpdate
@@ -68,7 +68,7 @@ async def get_courier(courier_id: UUID, db: DBSession) -> Courier:
     return courier
 
 
-@router.post("", response_model=CourierRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CourierRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("couriers", "create"))])
 async def create_courier(courier_in: CourierCreate, db: DBSession) -> Courier:
     await ensure_unique(db, Courier, "code", courier_in.code, "Courier code already exists")
     courier = Courier(**courier_in.model_dump())
@@ -78,7 +78,7 @@ async def create_courier(courier_in: CourierCreate, db: DBSession) -> Courier:
     return courier
 
 
-@router.patch("/{courier_id}", response_model=CourierRead)
+@router.patch("/{courier_id}", response_model=CourierRead, dependencies=[Depends(require_permission("couriers", "update"))])
 async def update_courier(courier_id: UUID, courier_in: CourierUpdate, db: DBSession) -> Courier:
     courier = await fetch_one_or_404(db, select(Courier).where(Courier.id == courier_id), "Courier not found")
     payload = courier_in.model_dump(exclude_unset=True)
@@ -94,7 +94,7 @@ async def update_courier(courier_id: UUID, courier_in: CourierUpdate, db: DBSess
     return courier
 
 
-@router.delete("/{courier_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{courier_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("couriers", "update"))])
 async def delete_courier(courier_id: UUID, db: DBSession) -> Response:
     courier = await fetch_one_or_404(db, select(Courier).where(Courier.id == courier_id), "Courier not found")
     courier.is_active = False

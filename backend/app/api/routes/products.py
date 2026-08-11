@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import (
     commit_or_409,
     ensure_no_duplicates,
@@ -54,7 +54,7 @@ async def get_product(product_id: UUID, db: DBSession) -> Product:
     return await fetch_one_or_404(db, _product_query().where(Product.id == product_id), "Product not found")
 
 
-@router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("products", "create"))])
 async def create_product(product_in: ProductCreate, db: DBSession) -> Product:
     await ensure_unique(db, Product, "slug", product_in.slug, "Product slug already exists")
     await ensure_unique(db, Product, "sku", product_in.sku, "Product SKU already exists")
@@ -75,7 +75,7 @@ async def create_product(product_in: ProductCreate, db: DBSession) -> Product:
     return await fetch_one_or_404(db, _product_query().where(Product.id == product.id), "Product not found")
 
 
-@router.patch("/{product_id}", response_model=ProductRead)
+@router.patch("/{product_id}", response_model=ProductRead, dependencies=[Depends(require_permission("products", "update"))])
 async def update_product(product_id: UUID, product_in: ProductUpdate, db: DBSession) -> Product:
     product = await fetch_one_or_404(db, select(Product).where(Product.id == product_id), "Product not found")
     payload = product_in.model_dump(exclude_unset=True)
@@ -93,7 +93,7 @@ async def update_product(product_id: UUID, product_in: ProductUpdate, db: DBSess
     return await fetch_one_or_404(db, _product_query().where(Product.id == product.id), "Product not found")
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("products", "delete"))])
 async def delete_product(product_id: UUID, db: DBSession) -> Response:
     product = await fetch_one_or_404(db, select(Product).where(Product.id == product_id), "Product not found")
     await db.delete(product)
@@ -116,6 +116,7 @@ async def list_product_variants(product_id: UUID, db: DBSession) -> list[Product
     "/{product_id}/variants",
     response_model=ProductVariantRead,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("products", "update"))],
 )
 async def create_product_variant(
     product_id: UUID,
@@ -132,7 +133,7 @@ async def create_product_variant(
     return variant
 
 
-@router.patch("/{product_id}/variants/{variant_id}", response_model=ProductVariantRead)
+@router.patch("/{product_id}/variants/{variant_id}", response_model=ProductVariantRead, dependencies=[Depends(require_permission("products", "update"))])
 async def update_product_variant(
     product_id: UUID,
     variant_id: UUID,
@@ -167,7 +168,7 @@ async def update_product_variant(
     return variant
 
 
-@router.delete("/{product_id}/variants/{variant_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{product_id}/variants/{variant_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("products", "update"))])
 async def delete_product_variant(product_id: UUID, variant_id: UUID, db: DBSession) -> Response:
     variant = await fetch_one_or_404(
         db,

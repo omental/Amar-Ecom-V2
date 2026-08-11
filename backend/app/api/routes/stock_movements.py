@@ -19,6 +19,7 @@ def _stock_movement_query():
         selectinload(StockMovement.product),
         selectinload(StockMovement.variant),
         selectinload(StockMovement.warehouse),
+        selectinload(StockMovement.order),
     )
 
 

@@ -4,15 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ClipboardList, Loader2, Plus, Trash2 } from "lucide-react";
 
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
+import { ControlModal, ModalCancelButton } from "@/components/ui/control-modal";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
-import { formatCurrency, formatDate, formatLabel } from "@/lib/format";
+import { formatCount, formatCurrency, formatDate, formatLabel } from "@/lib/format";
 
 type SupplierOption = {
   id: string;
@@ -126,11 +128,14 @@ function calculateItemTotal(quantity: string, unitCost: string) {
 }
 
 export default function PurchaseOrdersPage() {
+  const { can } = useAuthorization();
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [form, setForm] = useState<PurchaseOrderForm>(initialForm);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [modalBaseline, setModalBaseline] = useState(JSON.stringify(initialForm));
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -276,6 +281,7 @@ export default function PurchaseOrdersPage() {
       });
       setSuccess("Purchase order created successfully.");
       await loadPurchaseOrders();
+      setIsCreateOpen(false);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -292,15 +298,19 @@ export default function PurchaseOrdersPage() {
   return (
     <div className="space-y-4">
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+        <OpsPageHeader
           eyebrow="Replenishment"
           title="Purchase Orders"
           description="Create purchase orders tied to suppliers and warehouses so replenishment can move into controlled stock receiving."
-          meta={`${purchaseOrders.length} records`}
+          meta={formatCount(purchaseOrders.length, "record")}
+          actions={can("purchase_orders.create") ? <button type="button" onClick={() => { setModalBaseline(JSON.stringify(form)); setError(""); setIsCreateOpen(true); }} className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add Purchase Order</button> : null}
         />
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      {error && !isCreateOpen ? <ErrorAlert message={error} onRetry={() => void loadPurchaseOrders()} /> : null}
+      {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+
+      {isCreateOpen ? <ControlModal title="Add Purchase Order" description="Build a supplier and warehouse-linked purchase order without compressing the receiving queue." onClose={() => setIsCreateOpen(false)} size="xl" dirty={JSON.stringify(form) !== modalBaseline}>
         <FormCard
           title="Create purchase order"
           description="Build a purchasing document with supplier, warehouse, planned dates, and product lines ready for receiving later."
@@ -542,10 +552,12 @@ export default function PurchaseOrdersPage() {
             {error ? <ErrorAlert message={error} /> : null}
             {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
 
+            <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-3 border-t border-slate-200 bg-white pt-4 sm:flex-row sm:justify-end">
+            <ModalCancelButton disabled={isSubmitting} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60">Cancel</ModalCancelButton>
             <button
               type="submit"
               disabled={isSubmitting || isLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? (
                 <>
@@ -559,11 +571,13 @@ export default function PurchaseOrdersPage() {
                 </>
               )}
             </button>
+            </div>
           </form>
         </FormCard>
+      </ControlModal> : null}
 
         <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <PageHeader
+          <OpsPageHeader
             eyebrow="Saved Records"
             title="Recent purchase orders"
             description="Track draft and received purchase orders, then move into detail when it is time to mark stock as received."
@@ -578,9 +592,9 @@ export default function PurchaseOrdersPage() {
                 description="Create the first purchase order to start a warehouse-linked replenishment flow."
               />
             ) : (
-              <DataTable columns={["PO #", "Supplier", "Warehouse", "Status", "Total", "Stock", "Created", "Actions"]}>
+              <DataTable columns={["PO #", "Supplier / Warehouse", "Status / Stock", "Total", "Created", "Actions"]} columnTemplate="minmax(180px,1.1fr) minmax(230px,1.5fr) minmax(180px,1.1fr) minmax(130px,0.8fr) minmax(140px,0.8fr) minmax(100px,0.6fr)" minWidth="920px">
                 {purchaseOrders.map((purchaseOrder) => (
-                  <div key={purchaseOrder.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-8 2xl:gap-4">
+                  <div key={purchaseOrder.id} className="grid items-center gap-4 px-5 py-4 text-sm text-slate-600" style={{ gridTemplateColumns: "minmax(180px,1.1fr) minmax(230px,1.5fr) minmax(180px,1.1fr) minmax(130px,0.8fr) minmax(140px,0.8fr) minmax(100px,0.6fr)" }}>
                     <span className="font-medium text-slate-950">
                       <Link
                         href={`/dashboard/purchase-orders/${purchaseOrder.id}`}
@@ -589,16 +603,14 @@ export default function PurchaseOrdersPage() {
                         {purchaseOrder.po_number}
                       </Link>
                     </span>
-                    <span>{purchaseOrder.supplier?.name || "No supplier"}</span>
-                    <span>{purchaseOrder.warehouse?.name || "No warehouse"}</span>
-                    <span><StatusBadge status={purchaseOrder.status} /></span>
-                    <span>{formatCurrency(purchaseOrder.total)}</span>
-                    <span>
+                    <div><p className="font-medium text-slate-950">{purchaseOrder.supplier?.name || "No supplier"}</p><p className="mt-1 text-xs text-slate-500">{purchaseOrder.warehouse?.name || "No warehouse"}</p></div>
+                    <div className="space-y-2"><StatusBadge status={purchaseOrder.status} />
                       <StatusBadge
                         status={purchaseOrder.stock_received ? "received" : "pending"}
                         label={purchaseOrder.stock_received ? "Received" : "Pending"}
                       />
-                    </span>
+                    </div>
+                    <span className="font-semibold text-slate-950">{formatCurrency(purchaseOrder.total)}</span>
                     <span>{formatDate(purchaseOrder.created_at)}</span>
                     <div className="flex flex-wrap gap-2">
                       <Link
@@ -614,7 +626,6 @@ export default function PurchaseOrdersPage() {
             )}
           </div>
         </section>
-      </div>
     </div>
   );
 }

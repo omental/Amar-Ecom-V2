@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
@@ -28,7 +28,7 @@ async def get_category(category_id: UUID, db: DBSession) -> Category:
     return await fetch_one_or_404(db, select(Category).where(Category.id == category_id), "Category not found")
 
 
-@router.post("", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CategoryRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("categories", "create"))])
 async def create_category(category_in: CategoryCreate, db: DBSession) -> Category:
     await ensure_unique(db, Category, "slug", category_in.slug, "Category slug already exists")
     category = Category(**category_in.model_dump())
@@ -38,7 +38,7 @@ async def create_category(category_in: CategoryCreate, db: DBSession) -> Categor
     return category
 
 
-@router.patch("/{category_id}", response_model=CategoryRead)
+@router.patch("/{category_id}", response_model=CategoryRead, dependencies=[Depends(require_permission("categories", "update"))])
 async def update_category(category_id: UUID, category_in: CategoryUpdate, db: DBSession) -> Category:
     category = await fetch_one_or_404(db, select(Category).where(Category.id == category_id), "Category not found")
     payload = category_in.model_dump(exclude_unset=True)
@@ -54,7 +54,7 @@ async def update_category(category_id: UUID, category_in: CategoryUpdate, db: DB
     return category
 
 
-@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("categories", "delete"))])
 async def delete_category(category_id: UUID, db: DBSession) -> Response:
     category = await fetch_one_or_404(db, select(Category).where(Category.id == category_id), "Category not found")
     await db.delete(category)

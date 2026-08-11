@@ -118,8 +118,7 @@ export default function DashboardLayout({
   const hasToken = typeof window !== "undefined" ? isAuthenticated() : false;
 
   const isDark = useMemo(() => theme === "dark", [theme]);
-  const autoCollapsedForPos = pathname === "/dashboard/pos";
-  const effectiveSidebarCollapsed = autoCollapsedForPos || isSidebarCollapsed;
+  const effectiveSidebarCollapsed = isSidebarCollapsed;
   const effectiveExpandedItems = useMemo(() => {
     const routeExpandedItems = getInitialExpandedItems(pathname);
     return Array.from(new Set([...routeExpandedItems, ...expandedItems]));

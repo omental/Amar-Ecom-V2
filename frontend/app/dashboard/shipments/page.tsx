@@ -4,7 +4,9 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Download, Loader2, Plus, Rows3, Truck } from "lucide-react";
 
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { ControlModal, ModalCancelButton } from "@/components/ui/control-modal";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
@@ -119,11 +121,14 @@ function downloadCsv(filename: string, columns: string[], rows: Array<Array<stri
 }
 
 export default function ShipmentsPage() {
+  const { can } = useAuthorization();
   const searchParams = useSearchParams();
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [orders, setOrders] = useState<OrderOption[]>([]);
   const [couriers, setCouriers] = useState<CourierOption[]>([]);
   const [form, setForm] = useState<ShipmentForm>(initialForm);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [modalBaseline, setModalBaseline] = useState(JSON.stringify(initialForm));
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedShipmentIds, setSelectedShipmentIds] = useState<string[]>([]);
@@ -313,6 +318,7 @@ export default function ShipmentsPage() {
       setForm(initialForm);
       setSuccess("Shipment created successfully.");
       await loadShipments();
+      setIsCreateOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create shipment");
     } finally {
@@ -334,13 +340,13 @@ export default function ShipmentsPage() {
             </div>
           }
           actions={
-            <Link
+            <><Link
               href="/dashboard/courier-integrations"
               className="inline-flex items-center gap-2 rounded-full border border-[var(--color-brd)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-txt-sec)] shadow-[var(--shadow-subtle)] transition hover:bg-[var(--color-surf-hover)]"
             >
               <Truck className="h-4 w-4" />
               Open Courier Integrations
-            </Link>
+            </Link>{can("shipments.create") ? <button type="button" onClick={() => { setModalBaseline(JSON.stringify(form)); setError(""); setIsCreateOpen(true); }} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add Shipment</button> : null}</>
           }
         />
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -374,7 +380,10 @@ export default function ShipmentsPage() {
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      {error && !isCreateOpen ? <ErrorAlert message={error} onRetry={() => void loadShipments()} /> : null}
+      {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+
+      {isCreateOpen ? <ControlModal title="Add Shipment" description="Link an order and courier, then capture tracking and delivery financials." onClose={() => setIsCreateOpen(false)} size="lg" dirty={JSON.stringify(form) !== modalBaseline}>
         <FormCard
           title="Create shipment"
           description="Link a shipment to an order, assign a courier, and track core delivery fields such as COD and dispatch state."
@@ -498,10 +507,12 @@ export default function ShipmentsPage() {
             {error ? <ErrorAlert message={error} /> : null}
             {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
 
+            <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-3 border-t border-slate-200 bg-white pt-4 sm:flex-row sm:justify-end">
+            <ModalCancelButton disabled={isSubmitting} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60">Cancel</ModalCancelButton>
             <button
               type="submit"
               disabled={isSubmitting || isLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? (
                 <>
@@ -515,8 +526,10 @@ export default function ShipmentsPage() {
                 </>
               )}
             </button>
+            </div>
           </form>
         </FormCard>
+      </ControlModal> : null}
 
         <section className="card-base p-6">
           <OpsPageHeader
@@ -609,54 +622,28 @@ export default function ShipmentsPage() {
                 description="Try another quick filter or create the first shipment after an order is ready to move into logistics."
               />
             ) : (
-              <DataTable columns={["Select", "Shipment #", "Order", "Courier", "Tracking", "External", "Status", "Delivery", "COD", "Created"]}>
+              <DataTable columns={["Shipment #", "Order / Courier", "Tracking / External", "Status", "Delivery / COD", "Created", "Action"]} columnTemplate="minmax(200px,1.15fr) minmax(220px,1.3fr) minmax(220px,1.3fr) minmax(140px,0.8fr) minmax(170px,0.95fr) minmax(140px,0.8fr) minmax(90px,0.5fr)" minWidth="1120px">
                 {filteredShipments.map((shipment) => (
-                  <div key={shipment.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-10 2xl:gap-4">
-                    <div className="flex items-start">
+                  <div key={shipment.id} className="grid items-center gap-4 px-5 py-4 text-sm text-slate-600" style={{ gridTemplateColumns: "minmax(200px,1.15fr) minmax(220px,1.3fr) minmax(220px,1.3fr) minmax(140px,0.8fr) minmax(170px,0.95fr) minmax(140px,0.8fr) minmax(90px,0.5fr)" }}>
+                    <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
                         checked={selectedShipmentIds.includes(shipment.id)}
                         onChange={() => toggleShipmentSelection(shipment.id)}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <Link
+                      /><div><Link
                         href={`/dashboard/shipments/${shipment.id}`}
                         className="font-medium text-slate-950 transition hover:text-slate-700 hover:underline"
                       >
                         {shipment.shipment_number}
-                      </Link>
-                      <div className="mt-2">
-                        <Link
-                          href={`/dashboard/shipments/${shipment.id}`}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                        >
-                          <Rows3 className="h-3.5 w-3.5" />
-                          View
-                        </Link>
-                      </div>
+                      </Link><p className="mt-1 text-xs text-slate-500">{formatDate(shipment.created_at)}</p></div>
                     </div>
-                    <span>
-                      {shipment.order?.order_number ||
-                        orderMap.get(shipment.order_id)?.order_number ||
-                        "Unknown order"}
-                    </span>
-                    <span>
-                      {shipment.courier?.name ||
-                        (shipment.courier_id ? courierMap.get(shipment.courier_id)?.name || "Unknown courier" : "Not assigned")}
-                    </span>
-                    <span>{shipment.tracking_number || "Pending"}</span>
-                    <div>
+                    <div><p className="font-medium text-slate-950">{shipment.order?.order_number || orderMap.get(shipment.order_id)?.order_number || "Unknown order"}</p><p className="mt-1 text-xs text-slate-500">{shipment.courier?.name || (shipment.courier_id ? courierMap.get(shipment.courier_id)?.name || "Unknown courier" : "Not assigned")}</p></div>
+                    <div><p className="font-medium text-slate-950">{shipment.tracking_number || shipment.external_tracking_number || "Tracking pending"}</p>
                       {shipment.external_provider ? (
-                        <>
-                          <StatusBadge status={shipment.external_provider} />
-                          <p className="mt-1 text-xs text-slate-500">
-                            {shipment.external_status || shipment.external_tracking_number || shipment.external_consignment_id || "Linked"}
-                          </p>
-                        </>
+                        <p className="mt-1 truncate text-xs text-slate-500">{formatLabel(shipment.external_provider)} · {shipment.external_status || shipment.external_consignment_id || "Linked"}</p>
                       ) : (
-                        <span className="text-slate-400">No external link</span>
+                        <p className="mt-1 text-xs text-slate-400">No external link</p>
                       )}
                     </div>
                     <span>
@@ -671,9 +658,9 @@ export default function ShipmentsPage() {
                         }
                       />
                     </span>
-                    <span>{formatCurrency(shipment.delivery_charge)}</span>
-                    <span>{formatCurrency(shipment.cod_amount)}</span>
+                    <div><p className="font-medium text-slate-950">Delivery {formatCurrency(shipment.delivery_charge)}</p><p className="mt-1 text-xs text-slate-500">COD {formatCurrency(shipment.cod_amount)}</p></div>
                     <span>{formatDate(shipment.created_at)}</span>
+                    <Link href={`/dashboard/shipments/${shipment.id}`} className="inline-flex items-center justify-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold hover:bg-slate-50">View</Link>
                   </div>
                 ))}
               </DataTable>
@@ -691,7 +678,6 @@ export default function ShipmentsPage() {
             ) : null}
           </div>
         </section>
-      </div>
     </div>
   );
 }

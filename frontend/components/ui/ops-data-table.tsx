@@ -14,6 +14,8 @@ export function OpsDataTable({
   error,
   onRetry,
   pagination,
+  columnTemplate,
+  minWidth = "640px",
 }: {
   columns: string[];
   children: ReactNode;
@@ -24,6 +26,8 @@ export function OpsDataTable({
   error?: string;
   onRetry?: () => void;
   pagination?: { page: number; totalPages: number; onPageChange: (page: number) => void };
+  columnTemplate?: string;
+  minWidth?: string;
 }) {
   if (loading) return <LoadingState label="Loading table data..." variant="table" />;
   if (error) return <ErrorAlert message={error} onRetry={onRetry} />;
@@ -32,14 +36,14 @@ export function OpsDataTable({
     <div className="min-w-0 max-w-full overflow-hidden rounded-[24px] border border-[var(--color-brd)] bg-white shadow-[var(--shadow-subtle)]">
       <div className="max-w-full overflow-x-auto">
         <div
-          className="grid min-w-[640px] gap-4 border-b border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-5 py-4 text-[11px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-mut)]"
-          style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
+          className="grid gap-4 border-b border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-5 py-4 text-[11px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-mut)]"
+          style={{ gridTemplateColumns: columnTemplate ?? `repeat(${columns.length}, minmax(0, 1fr))`, minWidth }}
         >
           {columns.map((column) => (
             <span key={column}>{column}</span>
           ))}
         </div>
-        <div className="min-w-[640px] divide-y divide-[var(--color-brd)]">{children}</div>
+        <div className="divide-y divide-[var(--color-brd)]" style={{ minWidth }}>{children}</div>
       </div>
       {pagination && pagination.totalPages > 1 ? <nav aria-label="Table pagination" className="flex items-center justify-between border-t border-[var(--color-brd)] px-5 py-3 text-sm">
         <span>Page {pagination.page} of {pagination.totalPages}</span>

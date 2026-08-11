@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft } from "lucide-react";
+import Link from "next/link";
 
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -10,7 +11,7 @@ import { LoadingState } from "@/components/ui/loading-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatCount, formatDate } from "@/lib/format";
 
 type StockMovement = {
   id: string;
@@ -18,6 +19,7 @@ type StockMovement = {
   variant_id: string | null;
   warehouse_id: string;
   order_id: string | null;
+  order_number: string | null;
   movement_type: string;
   quantity: number;
   previous_quantity: number;
@@ -90,7 +92,7 @@ export default function StockMovementsPage() {
           eyebrow="Audit Trail"
           title="Stock Movements"
           description="Review stock-in, adjustments, and order-driven deductions across products and warehouses."
-          meta={`${movements.length} records`}
+          meta={formatCount(movements.length, "record")}
         />
       </section>
 
@@ -118,37 +120,27 @@ export default function StockMovementsPage() {
             />
           ) : (
             <DataTable
-              columns={[
-                "Date",
-                "Product",
-                "Warehouse",
-                "Movement",
-                "Quantity",
-                "Previous",
-                "New",
-                "Order",
-                "Note",
-              ]}
+              columns={["Date", "Product / Warehouse", "Movement", "Quantity Change", "Related Order", "Note"]}
+              columnTemplate="minmax(140px,0.8fr) minmax(250px,1.5fr) minmax(170px,1fr) minmax(180px,1fr) minmax(160px,0.9fr) minmax(240px,1.4fr)"
+              minWidth="1040px"
             >
               {movements.map((movement) => (
                 <div
                   key={movement.id}
-                  className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-9 2xl:gap-4"
+                  className="grid items-center gap-4 px-5 py-4 text-sm text-slate-600"
+                  style={{ gridTemplateColumns: "minmax(140px,0.8fr) minmax(250px,1.5fr) minmax(170px,1fr) minmax(180px,1fr) minmax(160px,0.9fr) minmax(240px,1.4fr)" }}
                 >
                   <span>{formatDate(movement.created_at)}</span>
-                  <span className="font-medium text-slate-950">
+                  <div><span className="font-medium text-slate-950">
                     {movement.product_id
                       ? productMap.get(movement.product_id) || "Unknown product"
                       : "No product"}
-                  </span>
-                  <span>{warehouseMap.get(movement.warehouse_id) || "Unknown warehouse"}</span>
+                  </span><p className="mt-1 text-xs text-slate-500">{warehouseMap.get(movement.warehouse_id) || "Unknown warehouse"}</p></div>
                   <span>
                     <StatusBadge status={movement.movement_type} />
                   </span>
-                  <span>{movement.quantity}</span>
-                  <span>{movement.previous_quantity}</span>
-                  <span>{movement.new_quantity}</span>
-                  <span className="truncate">{movement.order_id || "No order"}</span>
+                  <div><p className="font-semibold text-slate-950">{movement.new_quantity - movement.previous_quantity > 0 ? "+" : ""}{movement.new_quantity - movement.previous_quantity}</p><p className="mt-1 text-xs text-slate-500">{movement.previous_quantity} → {movement.new_quantity}</p></div>
+                  <span>{movement.order_id && movement.order_number ? <Link href={`/dashboard/orders/${movement.order_id}`} className="font-semibold text-sky-700 hover:underline">{movement.order_number}</Link> : "No related order"}</span>
                   <span>{movement.note || "No note"}</span>
                 </div>
               ))}

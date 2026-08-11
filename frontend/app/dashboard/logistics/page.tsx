@@ -38,6 +38,8 @@ import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 type CommandSummary = {
   pending_dispatch_count: number;
@@ -365,21 +367,6 @@ function guessProvider(shipment: ShipmentRow) {
   return providerOptions.find((provider) => courierName.includes(provider)) || "manual";
 }
 
-function courierStatusClass(status: string | undefined) {
-  if ((status || "").toLowerCase() === "active") {
-    return "bg-green-50 text-green-700 border-green-200";
-  }
-  return "bg-slate-100 text-slate-600 border-slate-200";
-}
-
-function shipmentBadgeClass(status: string | undefined) {
-  const normalized = (status || "").toLowerCase();
-  if (normalized === "delivered") return "bg-green-50 text-green-700";
-  if (normalized === "cancelled" || normalized === "failed" || normalized === "returned") return "bg-red-50 text-red-700";
-  if (normalized.includes("transit") || normalized === "shipped") return "bg-blue-50 text-blue-700";
-  return "bg-slate-100 text-slate-700";
-}
-
 function Overlay({
   children,
   onClose,
@@ -455,6 +442,7 @@ function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
 }
 
 export default function LogisticsPage() {
+  const { can } = useAuthorization();
   const [activeTab, setActiveTab] = useState<TabId>("shipments");
   const [summary, setSummary] = useState<CommandSummary | null>(null);
   const [pendingOrders, setPendingOrders] = useState<PendingDispatchOrder[]>([]);
@@ -1092,22 +1080,22 @@ export default function LogisticsPage() {
                 <Download className="h-4 w-4" />
                 Export CSV
               </button>
-              <button
+              {can("shipments.create") ? <button
                 type="button"
                 onClick={() => openShipmentModal()}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-5 py-2 text-[13px] font-semibold text-white shadow-subtle transition-colors hover:bg-brand-hover"
               >
                 <Plus className="h-4 w-4" />
                 Add Shipment
-              </button>
-              <button
+              </button> : null}
+              {can("couriers.create") ? <button
                 type="button"
                 onClick={() => openCourierModal()}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-surface-hover"
               >
                 <Plus className="h-4 w-4" />
                 Connect Courier
-              </button>
+              </button> : null}
             </div>
           </div>
 
@@ -1174,7 +1162,7 @@ export default function LogisticsPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-surface p-3 shadow-subtle" aria-label="Secondary logistics metrics">
             {[
               ["Pending Dispatch", summary?.pending_dispatch_count],
               ["Ready to Ship", summary?.ready_to_ship_count],
@@ -1193,15 +1181,14 @@ export default function LogisticsPage() {
               ["PO Pending", summary?.purchase_orders_pending],
               ["Suppliers", summary?.suppliers_count],
             ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-2xl border border-border bg-surface px-4 py-3 shadow-subtle">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted">{label}</p>
-                <p className="mt-2 text-lg font-bold text-primary">{value ?? 0}</p>
+              <div key={String(label)} className="rounded-full bg-surface-hover px-3 py-2 text-xs text-secondary">
+                <span>{label}</span><span className="ml-2 font-bold text-primary">{value ?? 0}</span>
               </div>
             ))}
           </div>
 
           <div className="flex w-min items-center gap-x-0.5 overflow-x-auto rounded-[20px] border border-border bg-surface p-1 shadow-subtle">
-            {tabs.map((tab) => {
+            {tabs.filter((tab) => tab.id !== "couriers").map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
@@ -1244,9 +1231,9 @@ export default function LogisticsPage() {
 
       {!isLoading && activeTab === "shipments" ? (
         <div className="space-y-6 animate-in fade-in duration-300">
-          <div className="flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 shadow-subtle lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-2">
-              <div className="relative w-full lg:min-w-[420px]">
+          <div className="grid gap-3 rounded-3xl border border-border bg-surface p-4 shadow-subtle lg:grid-cols-[minmax(280px,1fr)_auto] lg:items-center">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="relative w-full">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
                 <input
                   type="text"
@@ -1260,8 +1247,8 @@ export default function LogisticsPage() {
                 <Filter className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
+            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+              {can("shipments.update") ? <button
                 type="button"
                 onClick={handleBulkSync}
                 disabled={isBulkSyncing || filteredShipments.length === 0}
@@ -1269,7 +1256,7 @@ export default function LogisticsPage() {
               >
                 {isBulkSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Sync All Status
-              </button>
+              </button> : null}
               <SelectInput value={shipmentStatusFilter} onChange={(event) => setShipmentStatusFilter(event.target.value)} className="min-w-[170px] py-2.5">
                 <option value="all">All Statuses</option>
                 {shipmentStatusOptions.map((status) => (
@@ -1353,10 +1340,7 @@ export default function LogisticsPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-col items-start gap-1">
-                            <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${shipmentBadgeClass(shipment.status)}`}>
-                              <Clock className="h-3 w-3" />
-                              <span className="text-[10px] font-bold tracking-wide">{shipment.statusLabel || formatLabel(shipment.status)}</span>
-                            </div>
+                            <StatusBadge status={shipment.status} label={shipment.statusLabel || formatLabel(shipment.status)} />
                             <span className="text-[10px] font-medium text-muted">{shipment.externalStatus || shipment.external_status || "Manual tracking"}</span>
                           </div>
                         </td>
@@ -1368,12 +1352,12 @@ export default function LogisticsPage() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {(shipment.canSyncStatus ?? shipment.action_flags?.can_sync_status) ? (
+                            {can("shipments.update") && (shipment.canSyncStatus ?? shipment.action_flags?.can_sync_status) ? (
                               <button type="button" onClick={() => openSyncModal(shipment)} aria-label="Sync shipment status" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-green-500 hover:bg-green-50 hover:text-green-600" title="Sync Status">
                                 <RefreshCw className="h-3.5 w-3.5" />
                               </button>
                             ) : null}
-                            {(shipment.canSendToCourier ?? shipment.action_flags?.can_send_to_courier) ? (
+                            {can("shipments.update") && (shipment.canSendToCourier ?? shipment.action_flags?.can_send_to_courier) ? (
                               <button type="button" onClick={() => openSendModal(shipment)} aria-label="Send shipment to courier" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Send To Courier">
                                 <Send className="h-3.5 w-3.5" />
                               </button>
@@ -1381,12 +1365,12 @@ export default function LogisticsPage() {
                             <button type="button" onClick={() => openShipmentDetail(shipment)} aria-label="View shipment" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="View Shipment">
                               <Eye className="h-3.5 w-3.5" />
                             </button>
-                            <button type="button" onClick={() => openShipmentModal(undefined, shipment)} aria-label="Edit shipment" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Edit Shipment">
+                            {can("shipments.update") ? <button type="button" onClick={() => openShipmentModal(undefined, shipment)} aria-label="Edit shipment" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-brand hover:bg-brand/10 hover:text-brand" title="Edit Shipment">
                               <Edit className="h-3.5 w-3.5" />
-                            </button>
-                            <button type="button" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-slate-500 hover:bg-slate-100 hover:text-slate-700" title="More Actions" aria-label="More shipment actions" onClick={() => openStatusModal(shipment)}>
+                            </button> : null}
+                            {can("shipments.update") ? <button type="button" className="flex h-[32px] w-[32px] items-center justify-center rounded-lg border border-border bg-surface text-muted shadow-subtle transition hover:border-slate-500 hover:bg-slate-100 hover:text-slate-700" title="More Actions" aria-label="More shipment actions" onClick={() => openStatusModal(shipment)}>
                               <MoreVertical className="h-3.5 w-3.5" />
-                            </button>
+                            </button> : null}
                           </div>
                         </td>
                       </tr>
@@ -1411,7 +1395,7 @@ export default function LogisticsPage() {
                 <p className="text-xs text-secondary">Orders ready to be sent to courier partners.</p>
               </div>
             </div>
-            {selectedPendingIds.length > 0 ? (
+            {selectedPendingIds.length > 0 && can("shipments.create") ? (
               <button type="button" onClick={openBulkBookModal} className="inline-flex items-center gap-2 rounded-xl bg-brand px-6 py-2.5 text-sm font-bold text-white shadow-lg transition-all hover:bg-brand-hover">
                 <Zap className="h-4 w-4" />
                 Bulk Book ({selectedPendingIds.length})
@@ -1512,7 +1496,7 @@ export default function LogisticsPage() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            {(order.canCreateShipment ?? order.courierReady) ? (
+                            {can("shipments.create") && (order.canCreateShipment ?? order.courierReady) ? (
                               <button type="button" onClick={() => openShipmentModal(order)} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-white">
                                 Create Shipment
                               </button>
@@ -1549,10 +1533,10 @@ export default function LogisticsPage() {
                 <Settings className="h-4 w-4" />
                 Integrations
               </Link>
-              <button type="button" onClick={() => openCourierModal()} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-subtle transition hover:bg-brand-hover">
+              {can("couriers.create") ? <button type="button" onClick={() => openCourierModal()} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-subtle transition hover:bg-brand-hover">
                 <Plus className="h-4 w-4" />
                 Add Courier
-              </button>
+              </button> : null}
             </div>
           </div>
 
@@ -1573,18 +1557,15 @@ export default function LogisticsPage() {
                         <p className="mt-1 text-[12px] font-medium leading-tight text-secondary">{courier.website || courier.code}</p>
                       </div>
                     </div>
-                    <button type="button" onClick={() => openCourierModal(courier)} className="text-muted transition-colors hover:text-secondary">
+                    {can("couriers.update") ? <button type="button" onClick={() => openCourierModal(courier)} className="text-muted transition-colors hover:text-secondary" aria-label={`Edit ${name}`}>
                       <MoreVertical className="h-4.5 w-4.5" />
-                    </button>
+                    </button> : null}
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 border-b border-border/50 px-6 py-5">
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[11px] font-medium text-muted">Status</span>
-                      <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold ${courierStatusClass(courier.status || (courier.is_active ? "Active" : "Inactive"))}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${(courier.status || (courier.is_active ? "Active" : "Inactive")).toLowerCase() === "active" ? "bg-green-500" : "bg-gray-400"}`} />
-                        {courier.status || (courier.is_active ? "Active" : "Inactive")}
-                      </span>
+                      <StatusBadge status={courier.is_active ? "active" : "inactive"} />
                     </div>
                     <div className="flex flex-col gap-1.5 border-l border-border pl-4">
                       <span className="text-[11px] font-medium text-muted">Active Shipments</span>
@@ -1597,17 +1578,17 @@ export default function LogisticsPage() {
                   </div>
 
                   <div className="mt-auto flex items-center gap-3 rounded-b-[20px] bg-surface-hover/30 p-4">
-                    <button type="button" onClick={() => openCourierModal(courier)} className="flex-1 rounded-lg border border-brand/20 px-4 py-2 text-[13px] font-semibold text-brand transition-all hover:bg-brand/10">
+                    {can("couriers.update") ? <button type="button" onClick={() => openCourierModal(courier)} className="flex-1 rounded-lg border border-brand/20 px-4 py-2 text-[13px] font-semibold text-brand transition-all hover:bg-brand/10">
                       Edit
-                    </button>
-                    <button
+                    </button> : null}
+                    {can("couriers.update") ? <button
                       type="button"
                       onClick={() => void handleDeactivateCourier(courier)}
                       disabled={busyCourierId === courier.id}
                       className="flex-1 rounded-lg border border-border px-4 py-2 text-[13px] font-semibold text-secondary transition-all hover:bg-surface-hover disabled:opacity-50"
                     >
                       {busyCourierId === courier.id ? "Updating..." : courier.is_active ? "Deactivate" : "Inactive"}
-                    </button>
+                    </button> : null}
                   </div>
                 </div>
               );
@@ -1705,9 +1686,9 @@ export default function LogisticsPage() {
                       </td>
                       <td className="px-6 py-4 text-sm text-secondary">{shipment.externalStatus || shipment.external_status || "No external status"}</td>
                       <td className="px-6 py-4 text-right">
-                        <button type="button" onClick={() => openReconciliationModal(shipment)} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
+                        {can("shipments.update") ? <button type="button" onClick={() => openReconciliationModal(shipment)} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
                           Update
-                        </button>
+                        </button> : null}
                       </td>
                     </tr>
                   ))}
@@ -2038,17 +2019,17 @@ export default function LogisticsPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {(selectedShipment.canMarkShipped ?? selectedShipment.action_flags?.can_mark_shipped) ? (
+                    {can("shipments.update") && (selectedShipment.canMarkShipped ?? selectedShipment.action_flags?.can_mark_shipped) ? (
                       <button type="button" onClick={() => openStatusModal(selectedShipment, "shipped")} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
                         Mark Shipped
                       </button>
                     ) : null}
-                    {(selectedShipment.canMarkDelivered ?? selectedShipment.action_flags?.can_mark_delivered) ? (
+                    {can("shipments.update") && (selectedShipment.canMarkDelivered ?? selectedShipment.action_flags?.can_mark_delivered) ? (
                       <button type="button" onClick={() => openStatusModal(selectedShipment, "delivered")} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
                         Mark Delivered
                       </button>
                     ) : null}
-                    {(selectedShipment.canReconcile ?? selectedShipment.action_flags?.can_reconcile) ? (
+                    {can("shipments.update") && (selectedShipment.canReconcile ?? selectedShipment.action_flags?.can_reconcile) ? (
                       <button type="button" onClick={() => openReconciliationModal(selectedShipment)} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
                         Update Reconciliation
                       </button>

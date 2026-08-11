@@ -43,6 +43,8 @@ async function parseResponse<T>(response: Response): Promise<T> {
         const detail = payload.detail;
         if (typeof detail === "string") {
           message = detail;
+        } else if (detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string") {
+          message = detail.message;
         } else if (Array.isArray(detail)) {
           for (const issue of detail) {
             if (!issue || typeof issue !== "object" || !("msg" in issue) || typeof issue.msg !== "string") continue;

@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, fetch_one_or_404, normalize_pagination
 from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierCreate, SupplierRead, SupplierUpdate
@@ -34,7 +34,7 @@ async def get_supplier(supplier_id: UUID, db: DBSession) -> Supplier:
     )
 
 
-@router.post("", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SupplierRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("suppliers", "create"))])
 async def create_supplier(supplier_in: SupplierCreate, db: DBSession) -> Supplier:
     supplier = Supplier(**supplier_in.model_dump())
     db.add(supplier)
@@ -43,7 +43,7 @@ async def create_supplier(supplier_in: SupplierCreate, db: DBSession) -> Supplie
     return supplier
 
 
-@router.patch("/{supplier_id}", response_model=SupplierRead)
+@router.patch("/{supplier_id}", response_model=SupplierRead, dependencies=[Depends(require_permission("suppliers", "update"))])
 async def update_supplier(supplier_id: UUID, supplier_in: SupplierUpdate, db: DBSession) -> Supplier:
     supplier = await fetch_one_or_404(
         db,
@@ -59,7 +59,7 @@ async def update_supplier(supplier_id: UUID, supplier_in: SupplierUpdate, db: DB
     return supplier
 
 
-@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("suppliers", "update"))])
 async def deactivate_supplier(supplier_id: UUID, db: DBSession) -> Response:
     supplier = await fetch_one_or_404(
         db,

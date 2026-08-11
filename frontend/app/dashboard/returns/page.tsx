@@ -4,15 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
+import { ControlModal, ModalCancelButton } from "@/components/ui/control-modal";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
-import { formatCurrency, formatDate, formatLabel } from "@/lib/format";
+import { formatCount, formatCurrency, formatDate, formatLabel } from "@/lib/format";
 
 type CustomerOption = {
   id: string;
@@ -126,11 +128,14 @@ function toNumber(value: string | number | null | undefined) {
 }
 
 export default function ReturnsPage() {
+  const { can } = useAuthorization();
   const [returns, setReturns] = useState<ReturnRequest[]>([]);
   const [orders, setOrders] = useState<OrderOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const [form, setForm] = useState<ReturnForm>(initialForm);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [modalBaseline, setModalBaseline] = useState(JSON.stringify(initialForm));
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -276,6 +281,7 @@ export default function ReturnsPage() {
       });
       setSuccess("Return request created successfully.");
       await loadReturns();
+      setIsCreateOpen(false);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -292,15 +298,19 @@ export default function ReturnsPage() {
   return (
     <div className="space-y-4">
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+        <OpsPageHeader
           eyebrow="Returns Workflow"
           title="Returns"
           description="Capture return requests, connect them to orders and warehouses, and prepare approved items for controlled restocking."
-          meta={`${returns.length} items`}
+          meta={formatCount(returns.length, "item")}
+          actions={can("returns.create") ? <button type="button" onClick={() => { setModalBaseline(JSON.stringify(form)); setError(""); setIsCreateOpen(true); }} className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add Return</button> : null}
         />
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      {error && !isCreateOpen ? <ErrorAlert message={error} onRetry={() => void loadReturns()} /> : null}
+      {success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}
+
+      {isCreateOpen ? <ControlModal title="Add Return" description="Connect the return to its order, resolution, refund, and controlled restocking plan." onClose={() => setIsCreateOpen(false)} size="xl" dirty={JSON.stringify(form) !== modalBaseline}>
         <FormCard
           title="Create return request"
           description="Create a return tied to an order, select how it should be resolved, and decide whether items should be restocked later."
@@ -570,10 +580,12 @@ export default function ReturnsPage() {
               </div>
             ) : null}
 
+            <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-3 border-t border-slate-200 bg-white pt-4 sm:flex-row sm:justify-end">
+            <ModalCancelButton disabled={isSubmitting} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60">Cancel</ModalCancelButton>
             <button
               type="submit"
               disabled={isSubmitting || isLoading}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? (
                 <>
@@ -587,11 +599,13 @@ export default function ReturnsPage() {
                 </>
               )}
             </button>
+            </div>
           </form>
         </FormCard>
+      </ControlModal> : null}
 
         <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-          <PageHeader
+          <OpsPageHeader
             eyebrow="Saved Records"
             title="Recent returns"
             description="Review recently created returns and move into detail when items are ready for inspection or restocking."
@@ -607,21 +621,15 @@ export default function ReturnsPage() {
               />
             ) : (
               <DataTable
-                columns={[
-                  "Return #",
-                  "Order",
-                  "Customer",
-                  "Warehouse",
-                  "Status",
-                  "Resolution",
-                  "Refund",
-                  "Created",
-                ]}
+                columns={["Return #", "Order / Customer", "Status", "Resolution / Refund", "Created", "Action"]}
+                columnTemplate="minmax(170px,1fr) minmax(260px,1.7fr) minmax(130px,0.8fr) minmax(190px,1.1fr) minmax(140px,0.8fr) minmax(90px,0.5fr)"
+                minWidth="900px"
               >
                 {returns.map((returnRequest) => (
                   <div
                     key={returnRequest.id}
-                    className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 2xl:grid-cols-8 2xl:gap-4"
+                    className="grid items-center gap-4 px-5 py-4 text-sm text-slate-600"
+                    style={{ gridTemplateColumns: "minmax(170px,1fr) minmax(260px,1.7fr) minmax(130px,0.8fr) minmax(190px,1.1fr) minmax(140px,0.8fr) minmax(90px,0.5fr)" }}
                   >
                     <span className="font-medium text-slate-950">
                       <Link
@@ -631,31 +639,19 @@ export default function ReturnsPage() {
                         {returnRequest.return_number}
                       </Link>
                     </span>
-                    <span>{returnRequest.order?.order_number || "Unknown order"}</span>
-                    <span>
-                      {returnRequest.customer?.name ||
-                        returnRequest.order?.customer?.name ||
-                        "Guest"}
-                    </span>
-                    <span>
-                      {returnRequest.warehouse?.name ||
-                        (returnRequest.warehouse_id
-                          ? warehouseMap.get(returnRequest.warehouse_id)?.name || "Unknown warehouse"
-                          : "Not assigned")}
-                    </span>
+                    <div><p className="font-medium text-slate-950">{returnRequest.order?.order_number || "Unknown order"}</p><p className="mt-1 text-xs text-slate-500">{returnRequest.customer?.name || returnRequest.order?.customer?.name || "Guest"} · {returnRequest.warehouse?.name || (returnRequest.warehouse_id ? warehouseMap.get(returnRequest.warehouse_id)?.name || "Unknown warehouse" : "No warehouse")}</p></div>
                     <span>
                       <StatusBadge status={returnRequest.status} />
                     </span>
-                    <span>{returnRequest.resolution ? formatLabel(returnRequest.resolution) : "Pending"}</span>
-                    <span>{formatCurrency(returnRequest.refund_amount)}</span>
+                    <div><p className="font-medium text-slate-950">{returnRequest.resolution ? formatLabel(returnRequest.resolution) : "Pending"}</p><p className="mt-1 text-xs text-slate-500">Refund {formatCurrency(returnRequest.refund_amount)}</p></div>
                     <span>{formatDate(returnRequest.created_at)}</span>
+                    <Link href={`/dashboard/returns/${returnRequest.id}`} className="rounded-full border border-slate-200 px-3 py-2 text-center text-xs font-semibold hover:bg-slate-50">View</Link>
                   </div>
                 ))}
               </DataTable>
             )}
           </div>
         </section>
-      </div>
     </div>
   );
 }

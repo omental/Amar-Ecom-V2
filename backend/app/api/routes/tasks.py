@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, fetch_one_or_404, normalize_pagination
 from app.models.task import Task
 from app.models.user import User
@@ -145,7 +145,7 @@ async def get_task(task_id: UUID, db: DBSession) -> Task:
     return await fetch_one_or_404(db, _task_query().where(Task.id == task_id), "Task not found")
 
 
-@router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("tasks", "create"))])
 async def create_task(
     task_in: TaskCreate,
     db: DBSession,
@@ -185,7 +185,7 @@ async def create_task(
     return await fetch_one_or_404(db, _task_query().where(Task.id == task.id), "Task not found")
 
 
-@router.patch("/{task_id}", response_model=TaskRead)
+@router.patch("/{task_id}", response_model=TaskRead, dependencies=[Depends(require_permission("tasks", "update"))])
 async def update_task(
     task_id: UUID,
     task_in: TaskUpdate,
@@ -242,7 +242,7 @@ async def update_task(
     return await fetch_one_or_404(db, _task_query().where(Task.id == task.id), "Task not found")
 
 
-@router.delete("/{task_id}", response_model=TaskRead)
+@router.delete("/{task_id}", response_model=TaskRead, dependencies=[Depends(require_permission("tasks", "delete"))])
 async def cancel_task(
     task_id: UUID,
     db: DBSession,

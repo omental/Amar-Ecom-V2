@@ -26,3 +26,4 @@ manual-start.log
 *.db
 *.dump
 *.bak
+backend/storage/media/

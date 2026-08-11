@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.warehouse import Warehouse
 from app.schemas.warehouse import WarehouseCreate, WarehouseRead, WarehouseUpdate
@@ -28,7 +28,7 @@ async def get_warehouse(warehouse_id: UUID, db: DBSession) -> Warehouse:
     return await fetch_one_or_404(db, select(Warehouse).where(Warehouse.id == warehouse_id), "Warehouse not found")
 
 
-@router.post("", response_model=WarehouseRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=WarehouseRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("warehouses", "create"))])
 async def create_warehouse(warehouse_in: WarehouseCreate, db: DBSession) -> Warehouse:
     await ensure_unique(db, Warehouse, "code", warehouse_in.code, "Warehouse code already exists")
     warehouse = Warehouse(**warehouse_in.model_dump())
@@ -38,7 +38,7 @@ async def create_warehouse(warehouse_in: WarehouseCreate, db: DBSession) -> Ware
     return warehouse
 
 
-@router.patch("/{warehouse_id}", response_model=WarehouseRead)
+@router.patch("/{warehouse_id}", response_model=WarehouseRead, dependencies=[Depends(require_permission("warehouses", "update"))])
 async def update_warehouse(warehouse_id: UUID, warehouse_in: WarehouseUpdate, db: DBSession) -> Warehouse:
     warehouse = await fetch_one_or_404(db, select(Warehouse).where(Warehouse.id == warehouse_id), "Warehouse not found")
     payload = warehouse_in.model_dump(exclude_unset=True)
@@ -61,7 +61,7 @@ async def update_warehouse(warehouse_id: UUID, warehouse_in: WarehouseUpdate, db
     return warehouse
 
 
-@router.delete("/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("warehouses", "delete"))])
 async def delete_warehouse(warehouse_id: UUID, db: DBSession) -> Response:
     warehouse = await fetch_one_or_404(db, select(Warehouse).where(Warehouse.id == warehouse_id), "Warehouse not found")
     await db.delete(warehouse)

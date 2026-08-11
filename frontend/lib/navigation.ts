@@ -20,6 +20,7 @@ export const navigationRegistry: NavigationEntry[] = [
   { label: "POS", href: "/dashboard/pos", group: "Sales", icon: "pos", capability: "pos.view" },
   { label: "Returns", href: "/dashboard/returns", group: "Sales", icon: "returns", capability: "returns.view", matchers: ["/dashboard/returns"] },
   { label: "Products", href: "/dashboard/products", group: "Catalog", icon: "products", capability: "products.view", matchers: ["/dashboard/products"] },
+  { label: "Media Library", href: "/dashboard/media", group: "Catalog", icon: "media", capability: "media.view" },
   { label: "Inventory", href: "/dashboard/inventory", group: "Catalog", icon: "inventory", capability: "inventory.view" },
   { label: "Categories", href: "/dashboard/categories", group: "Catalog", icon: "categories", capability: "categories.view" },
   { label: "Brands", href: "/dashboard/brands", group: "Catalog", icon: "brands", capability: "brands.view" },

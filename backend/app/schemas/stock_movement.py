@@ -24,6 +24,7 @@ class StockMovementRead(ORMBaseSchema):
     variant_id: UUID | None
     warehouse_id: UUID
     order_id: UUID | None
+    order_number: str | None = None
     movement_type: str
     quantity: int
     previous_quantity: int
@@ -53,6 +54,7 @@ class StockMovementRead(ORMBaseSchema):
             "variant_id": value.variant_id,
             "warehouse_id": value.warehouse_id,
             "order_id": value.order_id,
+            "order_number": getattr(getattr(value, "order", None), "order_number", None),
             "movement_type": value.movement_type,
             "quantity": value.quantity,
             "previous_quantity": value.previous_quantity,

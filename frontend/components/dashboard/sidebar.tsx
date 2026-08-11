@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3, Boxes, Building2, Calculator, ClipboardList, History, LogOut, Package,
   PanelLeftClose, PanelLeftOpen, RotateCcw, Settings, ShieldCheck, ShoppingCart, Store,
-  Tags, Truck, UserPlus, Users, Wallet, Warehouse, Waypoints, Workflow, X, type LucideIcon,
+  Images, Tags, Truck, UserPlus, Users, Wallet, Warehouse, Waypoints, Workflow, X, type LucideIcon,
 } from "lucide-react";
 
 import { can, type Capability } from "@/lib/capabilities";
@@ -25,7 +25,7 @@ type SidebarProps = {
 
 const icons: Record<string, LucideIcon> = {
   dashboard: Boxes, reports: BarChart3, orders: ShoppingCart, pos: Calculator, returns: RotateCcw,
-  products: Package, inventory: Boxes, categories: ClipboardList, brands: Tags, warehouses: Warehouse,
+  products: Package, media: Images, inventory: Boxes, categories: ClipboardList, brands: Tags, warehouses: Warehouse,
   stock: Boxes, suppliers: UserPlus, purchases: Building2, logistics: Truck, shipments: Truck,
   couriers: Truck, customers: Users, finance: Wallet, hr: Users, tasks: ClipboardList, team: UserPlus,
   woocommerce: Waypoints, store: Store, integrations: Workflow, activity: History, settings: Settings,

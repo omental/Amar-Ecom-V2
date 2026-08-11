@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, computed_field, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from app.schemas.brand import BrandRead
 from app.schemas.category import CategoryRead
@@ -59,8 +59,15 @@ class ProductCreate(BaseModel):
     price: Decimal
     cost_price: Decimal
     image_url: str | None = None
+    gallery_image_urls: list[str] = Field(default_factory=list)
+    size_guide_image_url: str | None = None
     status: str = "active"
-    variants: list[ProductVariantCreate] = []
+    variants: list[ProductVariantCreate] = Field(default_factory=list)
+
+    @field_validator("gallery_image_urls")
+    @classmethod
+    def normalize_gallery_urls(cls, value: list[str]) -> list[str]:
+        return [url.strip() for url in value if url.strip()]
 
 
 class ProductUpdate(BaseModel):
@@ -73,7 +80,16 @@ class ProductUpdate(BaseModel):
     price: Decimal | None = None
     cost_price: Decimal | None = None
     image_url: str | None = None
+    gallery_image_urls: list[str] | None = None
+    size_guide_image_url: str | None = None
     status: str | None = None
+
+    @field_validator("gallery_image_urls")
+    @classmethod
+    def normalize_gallery_urls(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return []
+        return [url.strip() for url in value if url.strip()]
 
 
 class ProductRead(ORMBaseSchema):
@@ -94,12 +110,14 @@ class ProductRead(ORMBaseSchema):
     price: Decimal
     cost_price: Decimal
     image_url: str | None
+    gallery_image_urls: list[str] = Field(default_factory=list)
+    size_guide_image_url: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime
     category: CategoryRead | None = None
     brand: BrandRead | None = None
-    variants: list[ProductVariantRead] = []
+    variants: list[ProductVariantRead] = Field(default_factory=list)
     productName: str | None = None
     barcode: str | None = None
     categoryName: str | None = None
@@ -147,6 +165,8 @@ class ProductRead(ORMBaseSchema):
             "price": value.price,
             "cost_price": value.cost_price,
             "image_url": value.image_url,
+            "gallery_image_urls": value.gallery_image_urls or [],
+            "size_guide_image_url": value.size_guide_image_url,
             "status": value.status,
             "created_at": value.created_at,
             "updated_at": value.updated_at,

@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     FERNET_SECRET_KEY: str | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     FRONTEND_URL: str = "http://localhost:3000"
+    MEDIA_STORAGE_DRIVER: str = "local"
+    MEDIA_STORAGE_ROOT: str = "storage/media"
+    MEDIA_MAX_UPLOAD_MB: int = 10
+    MEDIA_PUBLIC_BASE_URL: str | None = None
 
     JWT_ALGORITHM: str = "HS256"
 

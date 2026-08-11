@@ -6,7 +6,7 @@ type StatusTone = "default" | "success" | "warning" | "danger" | "info";
 function resolveTone(status: string): StatusTone {
   const normalized = status.toLowerCase();
 
-  if (["active", "paid", "delivered", "confirmed", "received", "restocked", "in stock", "completed", "matched", "settled", "success", "approved", "published"].includes(normalized)) {
+  if (["active", "paid", "delivered", "confirmed", "received", "restocked", "in stock", "completed", "matched", "settled", "success", "approved", "published", "stock_in", "transfer_in"].includes(normalized)) {
     return "success";
   }
 
@@ -22,11 +22,11 @@ function resolveTone(status: string): StatusTone {
     return "warning";
   }
 
-  if (["cancelled", "canceled", "refunded", "inactive", "out of stock", "returned", "failed", "mismatch", "rejected", "overdue"].includes(normalized)) {
+  if (["cancelled", "canceled", "refunded", "inactive", "out of stock", "returned", "failed", "mismatch", "rejected", "overdue", "wastage"].includes(normalized)) {
     return "danger";
   }
 
-  if (["shipped", "ready_to_ship", "in_transit", "manual", "website", "facebook", "woocommerce", "submitted", "assigned", "lead", "regular"].includes(normalized)) {
+  if (["shipped", "ready_to_ship", "in_transit", "manual", "website", "facebook", "woocommerce", "submitted", "assigned", "lead", "regular", "transfer_out", "adjustment", "order_fulfilled", "pos_sale"].includes(normalized)) {
     return "info";
   }
 

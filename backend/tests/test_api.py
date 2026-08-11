@@ -1,10 +1,12 @@
 import asyncio
+import io
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import httpx
 import pytest
+from PIL import Image
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -15,6 +17,7 @@ from app.api.routes import woocommerce as woocommerce_routes
 from app.core import crypto as crypto_utils
 from app.core.crypto import decrypt_secret, encrypt_secret, is_encrypted_secret, mask_secret
 from app.core.database import AsyncSessionLocal, engine
+from app.core.config import settings
 from app.main import app
 from app.models.courier import Shipment
 from app.models.courier_integration import CourierApiLog, CourierProviderSetting
@@ -67,6 +70,182 @@ def register_user(
     return response.json()
 
 
+def test_global_media_library_upload_crud_and_product_usage_protection() -> None:
+    headers = auth_headers()
+    uploaded: dict[str, dict] = {}
+    formats = {
+        "jpeg": ("sample-photo.jpg", "image/jpeg", "JPEG"),
+        "png": ("sample-graphic.png", "image/png", "PNG"),
+        "webp": ("sample-product.webp", "image/webp", "WEBP"),
+    }
+
+    with TestClient(app) as client:
+        for key, (filename, mime_type, image_format) in formats.items():
+            response = client.post(
+                "/api/v1/media/upload",
+                headers=headers,
+                files={"file": (filename, image_upload_bytes(image_format), mime_type)},
+            )
+            assert response.status_code == 201, response.text
+            asset = response.json()
+            assert asset["original_filename"] == filename
+            assert asset["mime_type"] == mime_type
+            assert asset["width"] == 18
+            assert asset["height"] == 12
+            assert asset["public_url"].endswith(asset["filename"])
+            served = client.get(asset["public_url"])
+            assert served.status_code == 200, served.text
+            assert served.headers["content-type"] == mime_type
+            uploaded[key] = asset
+
+        invalid_response = client.post(
+            "/api/v1/media/upload",
+            headers=headers,
+            files={"file": ("not-an-image.png", b"not an image", "image/png")},
+        )
+        assert invalid_response.status_code == 400, invalid_response.text
+
+        mismatched_response = client.post(
+            "/api/v1/media/upload",
+            headers=headers,
+            files={"file": ("mismatch.jpg", image_upload_bytes("PNG"), "image/jpeg")},
+        )
+        assert mismatched_response.status_code == 400, mismatched_response.text
+
+        unsupported_response = client.post(
+            "/api/v1/media/upload",
+            headers=headers,
+            files={"file": ("animation.gif", b"GIF89a", "image/gif")},
+        )
+        assert unsupported_response.status_code == 415, unsupported_response.text
+
+        original_limit = settings.MEDIA_MAX_UPLOAD_MB
+        settings.MEDIA_MAX_UPLOAD_MB = 0
+        try:
+            oversized_response = client.post(
+                "/api/v1/media/upload",
+                headers=headers,
+                files={"file": ("oversized.png", image_upload_bytes("PNG"), "image/png")},
+            )
+            assert oversized_response.status_code == 413, oversized_response.text
+        finally:
+            settings.MEDIA_MAX_UPLOAD_MB = original_limit
+
+        metadata_response = client.patch(
+            f"/api/v1/media/{uploaded['png']['id']}",
+            headers=headers,
+            json={"title": "Catalog graphic", "alt_text": "Blue catalog image", "caption": "Reusable test image"},
+        )
+        assert metadata_response.status_code == 200, metadata_response.text
+        assert metadata_response.json()["alt_text"] == "Blue catalog image"
+
+        detail_response = client.get(f"/api/v1/media/{uploaded['png']['id']}", headers=headers)
+        assert detail_response.status_code == 200, detail_response.text
+        assert detail_response.json()["title"] == "Catalog graphic"
+
+        list_response = client.get("/api/v1/media?search=Catalog%20graphic&limit=10", headers=headers)
+        assert list_response.status_code == 200, list_response.text
+        page = list_response.json()
+        assert page["total"] == 1
+        assert page["items"][0]["id"] == uploaded["png"]["id"]
+        assert page["has_more"] is False
+
+        unused_response = client.post(
+            "/api/v1/media/upload",
+            headers=headers,
+            files={"file": ("unused.jpg", image_upload_bytes("JPEG"), "image/jpeg")},
+        )
+        assert unused_response.status_code == 201, unused_response.text
+        delete_unused = client.delete(f"/api/v1/media/{unused_response.json()['id']}", headers=headers)
+        assert delete_unused.status_code == 204, delete_unused.text
+
+        product_response = client.post(
+            "/api/v1/products",
+            headers=headers,
+            json={
+                "name": "Media Usage Product",
+                "slug": f"media-usage-{uuid.uuid4().hex[:8]}",
+                "sku": f"MEDIA-{uuid.uuid4().hex[:8]}",
+                "price": 100,
+                "cost_price": 50,
+                "image_url": uploaded["jpeg"]["public_url"],
+                "gallery_image_urls": [uploaded["png"]["public_url"]],
+                "size_guide_image_url": uploaded["webp"]["public_url"],
+                "status": "active",
+                "variants": [],
+            },
+        )
+        assert product_response.status_code == 201, product_response.text
+        product = product_response.json()
+
+        expected_usage = {"jpeg": "product_featured", "png": "product_gallery", "webp": "product_size_guide"}
+        for key, usage_type in expected_usage.items():
+            blocked = client.delete(f"/api/v1/media/{uploaded[key]['id']}", headers=headers)
+            assert blocked.status_code == 409, blocked.text
+            detail = blocked.json()["detail"]
+            assert detail["product_count"] == 1
+            assert any(usage["type"] == usage_type and usage["entity_id"] == product["id"] for usage in detail["usages"])
+
+        clear_product = client.patch(
+            f"/api/v1/products/{product['id']}",
+            headers=headers,
+            json={"image_url": None, "gallery_image_urls": [], "size_guide_image_url": None},
+        )
+        assert clear_product.status_code == 200, clear_product.text
+        for asset in uploaded.values():
+            deleted = client.delete(f"/api/v1/media/{asset['id']}", headers=headers)
+            assert deleted.status_code == 204, deleted.text
+
+    dispose_engine()
+
+
+def test_global_media_permission_enforcement() -> None:
+    admin_email = unique_email()
+    staff_email = unique_email()
+    register_user(admin_email, full_name="Media Admin")
+    admin_headers = {"Authorization": f"Bearer {login_user(admin_email)['access_token']}"}
+    staff = register_user(staff_email, role="staff", full_name="Media Viewer")
+    staff_headers = {"Authorization": f"Bearer {login_user(staff_email)['access_token']}"}
+
+    with TestClient(app) as client:
+        seed = client.post("/api/v1/permissions/seed-defaults", headers=admin_headers)
+        assert seed.status_code == 201, seed.text
+        assignment = client.patch(
+            f"/api/v1/users/{staff['id']}/permissions",
+            headers=admin_headers,
+            json={"permission_keys": ["media.view"]},
+        )
+        assert assignment.status_code == 200, assignment.text
+        allowed_list = client.get("/api/v1/media", headers=staff_headers)
+        assert allowed_list.status_code == 200, allowed_list.text
+        forbidden_upload = client.post(
+            "/api/v1/media/upload",
+            headers=staff_headers,
+            files={"file": ("forbidden.png", image_upload_bytes("PNG"), "image/png")},
+        )
+        assert forbidden_upload.status_code == 403, forbidden_upload.text
+
+        admin_upload = client.post(
+            "/api/v1/media/upload",
+            headers=admin_headers,
+            files={"file": ("permission-check.png", image_upload_bytes("PNG"), "image/png")},
+        )
+        assert admin_upload.status_code == 201, admin_upload.text
+        asset_id = admin_upload.json()["id"]
+        forbidden_update = client.patch(
+            f"/api/v1/media/{asset_id}",
+            headers=staff_headers,
+            json={"title": "Not allowed"},
+        )
+        assert forbidden_update.status_code == 403, forbidden_update.text
+        forbidden_delete = client.delete(f"/api/v1/media/{asset_id}", headers=staff_headers)
+        assert forbidden_delete.status_code == 403, forbidden_delete.text
+        admin_delete = client.delete(f"/api/v1/media/{asset_id}", headers=admin_headers)
+        assert admin_delete.status_code == 204, admin_delete.text
+
+    dispose_engine()
+
+
 def login_user(email: str, password: str = "StrongPass123") -> dict:
     try:
         with TestClient(app) as client:
@@ -95,6 +274,12 @@ def auth_headers() -> dict[str, str]:
 
 def run_async(coro):
     return asyncio.run(coro)
+
+
+def image_upload_bytes(image_format: str, color: str = "#336699") -> bytes:
+    payload = io.BytesIO()
+    Image.new("RGB", (18, 12), color).save(payload, format=image_format)
+    return payload.getvalue()
 
 
 def test_health() -> None:
@@ -211,6 +396,21 @@ def test_auth_me_compatibility_payload_and_login_last_login() -> None:
             assert staff_me["last_login"] is not None
             assert staff_me["lastLogin"] == staff_me["last_login"]
             assert staff_me["createdAt"] == staff_me["created_at"]
+
+            forbidden_product_create = client.post(
+                "/api/v1/products",
+                headers=staff_headers,
+                json={
+                    "name": "View Only Product",
+                    "slug": f"view-only-product-{uuid.uuid4().hex[:8]}",
+                    "sku": f"VIEW-{uuid.uuid4().hex[:8]}",
+                    "price": 10,
+                    "cost_price": 5,
+                    "status": "active",
+                    "variants": [],
+                },
+            )
+            assert forbidden_product_create.status_code == 403, forbidden_product_create.text
     except ProgrammingError as exc:
         if any(token in str(exc) for token in ["last_login", "notifications", "permissions", "user_permissions"]):
             pytest.skip("Apply the latest auth compatibility migration before running this test.")
@@ -3851,6 +4051,80 @@ def test_product_variant_crud() -> None:
         )
         assert final_variant_response.status_code == 200, final_variant_response.text
         assert final_variant_response.json() == []
+
+    dispose_engine()
+
+
+def test_product_url_media_crud() -> None:
+    headers = auth_headers()
+    unique = uuid.uuid4().hex[:8]
+
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/v1/products",
+            headers=headers,
+            json={
+                "name": "Media Test Product",
+                "slug": f"media-test-product-{unique}",
+                "sku": f"MEDIA-{unique}",
+                "description": "URL media CRUD coverage",
+                "category_id": None,
+                "brand_id": None,
+                "price": 149.99,
+                "cost_price": 79.99,
+                "image_url": "https://example.com/featured.jpg",
+                "gallery_image_urls": [
+                    "https://example.com/gallery-1.jpg",
+                    "https://example.com/gallery-2.jpg",
+                ],
+                "size_guide_image_url": "https://example.com/size-guide.jpg",
+                "status": "active",
+                "variants": [],
+            },
+        )
+        assert create_response.status_code == 201, create_response.text
+        created = create_response.json()
+        product_id = created["id"]
+        assert created["image_url"] == "https://example.com/featured.jpg"
+        assert created["gallery_image_urls"] == [
+            "https://example.com/gallery-1.jpg",
+            "https://example.com/gallery-2.jpg",
+        ]
+        assert created["size_guide_image_url"] == "https://example.com/size-guide.jpg"
+
+        update_response = client.patch(
+            f"/api/v1/products/{product_id}",
+            headers=headers,
+            json={
+                "gallery_image_urls": [
+                    "https://example.com/gallery-2.jpg",
+                    "https://example.com/gallery-1.jpg",
+                    "  ",
+                ],
+                "size_guide_image_url": None,
+            },
+        )
+        assert update_response.status_code == 200, update_response.text
+        updated = update_response.json()
+        assert updated["image_url"] == "https://example.com/featured.jpg"
+        assert updated["gallery_image_urls"] == [
+            "https://example.com/gallery-2.jpg",
+            "https://example.com/gallery-1.jpg",
+        ]
+        assert updated["size_guide_image_url"] is None
+
+        clear_response = client.patch(
+            f"/api/v1/products/{product_id}",
+            headers=headers,
+            json={"gallery_image_urls": []},
+        )
+        assert clear_response.status_code == 200, clear_response.text
+        assert clear_response.json()["gallery_image_urls"] == []
+
+        read_response = client.get(f"/api/v1/products/{product_id}", headers=headers)
+        assert read_response.status_code == 200, read_response.text
+        assert read_response.json()["gallery_image_urls"] == []
+        assert read_response.json()["imageUrl"] == "https://example.com/featured.jpg"
 
     dispose_engine()
 

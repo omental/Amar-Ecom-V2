@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.brand import Brand
 from app.schemas.brand import BrandCreate, BrandRead, BrandUpdate
@@ -28,7 +28,7 @@ async def get_brand(brand_id: UUID, db: DBSession) -> Brand:
     return await fetch_one_or_404(db, select(Brand).where(Brand.id == brand_id), "Brand not found")
 
 
-@router.post("", response_model=BrandRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=BrandRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("brands", "create"))])
 async def create_brand(brand_in: BrandCreate, db: DBSession) -> Brand:
     await ensure_unique(db, Brand, "slug", brand_in.slug, "Brand slug already exists")
     brand = Brand(**brand_in.model_dump())
@@ -38,7 +38,7 @@ async def create_brand(brand_in: BrandCreate, db: DBSession) -> Brand:
     return brand
 
 
-@router.patch("/{brand_id}", response_model=BrandRead)
+@router.patch("/{brand_id}", response_model=BrandRead, dependencies=[Depends(require_permission("brands", "update"))])
 async def update_brand(brand_id: UUID, brand_in: BrandUpdate, db: DBSession) -> Brand:
     brand = await fetch_one_or_404(db, select(Brand).where(Brand.id == brand_id), "Brand not found")
     payload = brand_in.model_dump(exclude_unset=True)
@@ -54,7 +54,7 @@ async def update_brand(brand_id: UUID, brand_in: BrandUpdate, db: DBSession) -> 
     return brand
 
 
-@router.delete("/{brand_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{brand_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("brands", "delete"))])
 async def delete_brand(brand_id: UUID, db: DBSession) -> Response:
     brand = await fetch_one_or_404(db, select(Brand).where(Brand.id == brand_id), "Brand not found")
     await db.delete(brand)

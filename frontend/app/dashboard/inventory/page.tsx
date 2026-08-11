@@ -32,6 +32,7 @@ import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
 
 type InventoryTabId =
   | "products"
@@ -487,37 +488,32 @@ type LogFilters = {
 };
 
 const inventoryTabs: Array<{ id: InventoryTabId; label: string }> = [
-  { id: "products", label: "Products" },
-  { id: "categories", label: "Categories" },
-  { id: "brands", label: "Brands" },
   { id: "attributes", label: "Attributes" },
-  { id: "warehouses", label: "Warehouses" },
   { id: "stock", label: "Stock" },
   { id: "transfers", label: "Transfers" },
   { id: "wastage", label: "Wastage" },
-  { id: "purchases", label: "Purchases" },
-  { id: "suppliers", label: "Suppliers" },
-  { id: "returns", label: "Returns" },
   { id: "logs", label: "Logs" },
-  { id: "reports", label: "Reports" },
 ];
 
-const summaryCards: Array<{ key: keyof Summary; label: string }> = [
+const primarySummaryCards: Array<{ key: keyof Summary; label: string }> = [
+  { key: "inventory_value", label: "Inventory Value" },
+  { key: "stock_rows", label: "Stock Rows" },
+  { key: "low_stock", label: "Low Stock" },
+  { key: "out_of_stock", label: "Out of Stock" },
+  { key: "pending_transfers", label: "Pending Transfers" },
+];
+
+const secondarySummaryCards: Array<{ key: keyof Summary; label: string }> = [
   { key: "total_products", label: "Total Products" },
   { key: "active_products", label: "Active Products" },
   { key: "categories", label: "Categories" },
   { key: "brands", label: "Brands" },
   { key: "warehouses", label: "Warehouses" },
-  { key: "stock_rows", label: "Stock Rows" },
-  { key: "low_stock", label: "Low Stock" },
-  { key: "out_of_stock", label: "Out of Stock" },
-  { key: "pending_transfers", label: "Pending Transfers" },
   { key: "wastage_count", label: "Wastage" },
   { key: "purchase_orders", label: "Purchase Orders" },
   { key: "suppliers", label: "Suppliers" },
   { key: "returns", label: "Returns" },
   { key: "stock_movement_count", label: "Stock Logs" },
-  { key: "inventory_value", label: "Inventory Value" },
 ];
 
 const initialSummary: Summary = {
@@ -819,8 +815,9 @@ function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 }
 
 export default function InventoryPage() {
+  const { can } = useAuthorization();
   const tabsRef = useRef<HTMLDivElement | null>(null);
-  const [activeTab, setActiveTab] = useState<InventoryTabId>("products");
+  const [activeTab, setActiveTab] = useState<InventoryTabId>("stock");
   const [summary, setSummary] = useState<Summary>(initialSummary);
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -1683,6 +1680,21 @@ export default function InventoryPage() {
   }
 
   function renderCurrentAction() {
+    const actionCapabilities: Partial<Record<InventoryTabId, string>> = {
+      products: "products.create",
+      categories: "categories.create",
+      brands: "brands.create",
+      attributes: "inventory.update",
+      warehouses: "warehouses.create",
+      stock: "inventory.update",
+      transfers: "inventory.update",
+      wastage: "inventory.update",
+      purchases: "purchase_orders.create",
+      suppliers: "suppliers.create",
+      returns: "returns.create",
+    };
+    const actionCapability = actionCapabilities[activeTab];
+    if (actionCapability && !can(actionCapability)) return null;
     const buttonClass =
       "inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800";
 
@@ -1837,12 +1849,19 @@ export default function InventoryPage() {
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {summaryCards.map((card) => (
+            {primarySummaryCards.map((card) => (
               <div key={card.key} className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{card.label}</p>
                 <p className="mt-2 text-2xl font-semibold text-slate-950">
                   {card.key === "inventory_value" ? formatCurrency(summary[card.key]) : summary[card.key]}
                 </p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2" aria-label="Secondary inventory metrics">
+            {secondarySummaryCards.map((card) => (
+              <div key={card.key} className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                <span>{card.label}</span><span className="ml-2 font-semibold text-slate-950">{summary[card.key]}</span>
               </div>
             ))}
           </div>
@@ -2198,17 +2217,19 @@ export default function InventoryPage() {
                         <p>{row.low_stock_threshold}</p>
                         <p className="mt-1 text-xs text-slate-500">Value {formatCurrency(row.inventoryValue ?? row.costPrice)}</p>
                       </div>
-                      <div className="mt-4 flex flex-wrap gap-2 lg:mt-0">
-                        <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => startStockAdjustmentModal(row)}>
-                          Adjustment
-                        </button>
-                        <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => startTransferModal(row)}>
-                          Transfer
-                        </button>
-                        <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => startWastageModal(row)}>
-                          Wastage
-                        </button>
-                      </div>
+                      {can("inventory.update") ? (
+                        <div className="mt-4 flex flex-wrap gap-2 lg:mt-0">
+                          <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => startStockAdjustmentModal(row)}>
+                            Adjustment
+                          </button>
+                          <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => startTransferModal(row)}>
+                            Transfer
+                          </button>
+                          <button type="button" className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => startWastageModal(row)}>
+                            Wastage
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 )}
@@ -2247,7 +2268,7 @@ export default function InventoryPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  {can("inventory.update") ? <div className="mt-4 flex flex-wrap gap-2">
                     {!transfer.stock_moved && transfer.status !== "completed" ? (
                       <button type="button" className="rounded-full border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50" onClick={() => void handleTransferStatusUpdate(transfer, "completed")}>
                         Complete Transfer
@@ -2258,7 +2279,7 @@ export default function InventoryPage() {
                         Cancel
                       </button>
                     ) : null}
-                  </div>
+                  </div> : null}
                 </div>
               )}
               empty="No transfer records are available yet."
@@ -2342,7 +2363,7 @@ export default function InventoryPage() {
                       </div>
                     ))}
                   </div>
-                  {!purchaseOrder.stock_received ? (
+                  {!purchaseOrder.stock_received && can("purchase_orders.update") ? (
                     <div className="mt-4">
                       <button type="button" className="rounded-full border border-emerald-200 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50" onClick={() => void handlePurchaseReceive(purchaseOrder)}>
                         Receive Stock

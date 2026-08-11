@@ -43,6 +43,7 @@ import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
 
 type CustomerOption = {
   id: string;
@@ -691,6 +692,7 @@ function Overlay({
 }
 
 export default function OrdersPage() {
+  const { can } = useAuthorization();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1485,14 +1487,14 @@ export default function OrdersPage() {
               </button>
             </div>
 
-            <button
+            {can("orders.create") ? <button
               type="button"
               onClick={openNewOrderPanel}
               className="inline-flex items-center gap-2 rounded-lg bg-[#1C2032] px-5 py-2.5 text-sm font-semibold text-white shadow-subtle transition hover:bg-[#2A2F45]"
             >
               <Plus className="h-4 w-4" />
               New Order
-            </button>
+            </button> : null}
           </div>
         </section>
 
@@ -1510,8 +1512,9 @@ export default function OrdersPage() {
           <SummaryCard label="Cancelled Orders" value={summary?.cancelled_orders_count || 0} icon={PackageX} accent="text-[#845BC3]" />
         </section>
 
-        <section className="space-y-4">
-          <div className="flex h-14 items-center rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-2 shadow-subtle">
+        <section className="space-y-3">
+          <div className="rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-2 shadow-subtle">
+            <div className="flex h-11 items-center">
             <div className="flex w-12 items-center justify-center text-[var(--color-txt-mut)]">
               <Search className="h-4.5 w-4.5" />
             </div>
@@ -1525,9 +1528,8 @@ export default function OrdersPage() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl text-[var(--color-txt-sec)] transition hover:bg-[var(--color-surf-hover)]">
               <Filter className="h-4.5 w-4.5" />
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 overflow-x-auto rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-2 shadow-subtle">
+            </div>
+          <div className="flex flex-wrap items-center gap-2 overflow-x-auto border-t border-[var(--color-brd)] pt-2">
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab}
@@ -1545,8 +1547,9 @@ export default function OrdersPage() {
               </button>
             ))}
           </div>
+          </div>
 
-          <div className="grid grid-cols-1 gap-3 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-4 shadow-subtle lg:grid-cols-6">
+          <div className="grid grid-cols-1 gap-2 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-3 shadow-subtle lg:grid-cols-6">
             <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)] outline-none">
               <option value="">All Payments</option>
               {PAYMENT_STATUSES.map((item) => (
@@ -1589,9 +1592,9 @@ export default function OrdersPage() {
             <div className="flex flex-col gap-3 rounded-[20px] border border-[var(--color-brd)] bg-[var(--color-surf)] p-4 shadow-subtle lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--color-txt-pri)]">
                 <span>{selectedIds.length} selected</span>
-                <button onClick={runBatchMarkPrinted} className="rounded-full bg-[var(--color-surf-hover)] px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-[var(--color-txt-pri)]">
+                {can("orders.update") ? <button onClick={runBatchMarkPrinted} className="rounded-full bg-[var(--color-surf-hover)] px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-[var(--color-txt-pri)]">
                   Mark Printed
-                </button>
+                </button> : null}
                 <button onClick={copyPrintLinks} className="rounded-full bg-[var(--color-surf-hover)] px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-[var(--color-txt-pri)]">
                   Copy Print Links
                 </button>
@@ -1602,7 +1605,7 @@ export default function OrdersPage() {
                   Print Selected
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              {can("orders.update") ? <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={batchStatus}
                   onChange={(event) => setBatchStatus(event.target.value)}
@@ -1619,7 +1622,7 @@ export default function OrdersPage() {
                 >
                   {isBatchRunning ? "Updating..." : "Update Status"}
                 </button>
-              </div>
+              </div> : null}
             </div>
           ) : null}
         </section>
@@ -1638,7 +1641,7 @@ export default function OrdersPage() {
                     <th className="px-3 py-4 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">Item Qty</th>
                     <th className="px-3 py-4 text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">Bill</th>
                     <th className="px-3 py-4 text-center text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">Status</th>
-                    <th className="px-3 py-4 text-center text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">Sh No</th>
+                    <th className="px-3 py-4 text-center text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">Shipment #</th>
                     <th className="px-3 py-4 text-right text-[10px] font-black uppercase tracking-[0.18em] text-[var(--color-txt-sec)]">Action</th>
                   </tr>
                 </thead>
@@ -1740,10 +1743,10 @@ export default function OrdersPage() {
                               <button type="button" onClick={() => openDetailModal(order.id)} aria-label="View order" className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]" title="View Order">
                                 <Eye className="h-4 w-4" />
                               </button>
-                              <button onClick={() => openInvoice(order.id)} className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]" title="Print Invoice">
+                              <button onClick={() => openInvoice(order.id)} aria-label={`Print invoice for order ${order.orderNumber}`} className="rounded-lg border border-transparent p-2.5 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)]" title="Print Invoice">
                                 <Printer className="h-4 w-4" />
                               </button>
-                              <button
+                              {can("shipments.create") ? <button
                                 onClick={() => {
                                   openDetailModal(order.id);
                                   setTimeout(() => {
@@ -1759,19 +1762,21 @@ export default function OrdersPage() {
                                   }, 100);
                                 }}
                                 disabled={!canShip}
-                                className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)] disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label={`Create shipment for order ${order.orderNumber}`}
+                                className="rounded-lg border border-transparent p-2.5 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)] disabled:cursor-not-allowed disabled:opacity-40"
                                 title="Ship Order"
                               >
                                 <Truck className="h-4 w-4" />
-                              </button>
-                              <button
+                              </button> : null}
+                              {can("orders.update") ? <button
                                 onClick={() => openEditOrderPanel(order.id)}
                                 disabled={order.source?.toLowerCase() === "woocommerce"}
-                                className="rounded-lg border border-transparent p-2 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)] disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label={`Edit order ${order.orderNumber}`}
+                                className="rounded-lg border border-transparent p-2.5 text-[var(--color-txt-sec)] transition hover:border-[var(--color-brd)] hover:bg-[var(--color-surf-hover)] hover:text-[var(--color-txt-pri)] disabled:cursor-not-allowed disabled:opacity-40"
                                 title="Edit Order"
                               >
                                 <Pencil className="h-4 w-4" />
-                              </button>
+                              </button> : null}
                             </div>
                           </td>
                         </tr>
@@ -1828,13 +1833,13 @@ export default function OrdersPage() {
                     <Eye className="h-3.5 w-3.5" />
                     View
                   </button>
-                  <button onClick={() => openInvoice(order.id)} className="rounded-full bg-[var(--color-surf-hover)] p-2.5 text-[var(--color-txt-sec)]">
+                  <button onClick={() => openInvoice(order.id)} aria-label={`Print invoice for order ${order.orderNumber}`} title="Print invoice" className="rounded-full bg-[var(--color-surf-hover)] p-2.5 text-[var(--color-txt-sec)]">
                     <Printer className="h-4 w-4" />
                   </button>
-                  <button onClick={() => openEditOrderPanel(order.id)} className="rounded-full bg-[var(--color-surf-hover)] p-2.5 text-[var(--color-txt-sec)]">
+                  {can("orders.update") ? <button onClick={() => openEditOrderPanel(order.id)} aria-label={`Edit order ${order.orderNumber}`} title="Edit order" className="rounded-full bg-[var(--color-surf-hover)] p-2.5 text-[var(--color-txt-sec)]">
                     <Pencil className="h-4 w-4" />
-                  </button>
-                  <button onClick={() => openDetailModal(order.id)} className="rounded-full bg-[var(--color-surf-hover)] p-2.5 text-[var(--color-txt-sec)]">
+                  </button> : null}
+                  <button onClick={() => openDetailModal(order.id)} aria-label={`View shipping details for order ${order.orderNumber}`} title="View shipping details" className="rounded-full bg-[var(--color-surf-hover)] p-2.5 text-[var(--color-txt-sec)]">
                     <Truck className="h-4 w-4" />
                   </button>
                 </div>
@@ -2132,6 +2137,7 @@ export default function OrdersPage() {
                         <select
                           value={modalStatus}
                           onChange={(event) => setModalStatus(event.target.value)}
+                          disabled={!can("orders.update")}
                           className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-3 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)] outline-none"
                         >
                           {EDITABLE_STATUSES.map((item) => (
@@ -2144,19 +2150,19 @@ export default function OrdersPage() {
                           </div>
                         ) : null}
                         <div className="flex flex-wrap gap-2">
-                          <button onClick={saveModalStatus} disabled={isSavingStatus} className="rounded-xl bg-[#1C2032] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                          {can("orders.update") ? <button onClick={saveModalStatus} disabled={isSavingStatus} className="rounded-xl bg-[#1C2032] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
                             {isSavingStatus ? "Updating..." : "Update Status"}
-                          </button>
+                          </button> : null}
                           <button onClick={closeDetailModal} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)]">
                             Close
                           </button>
                           <button onClick={() => openInvoice(detailOrder.id)} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)]">
                             A5 Invoice
                           </button>
-                          <button onClick={markPrintedFromModal} disabled={isMarkingPrinted} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)] disabled:opacity-60">
+                          {can("orders.update") ? <button onClick={markPrintedFromModal} disabled={isMarkingPrinted} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)] disabled:opacity-60">
                             {isMarkingPrinted ? "Saving..." : "Print Label"}
-                          </button>
-                          {detailOrder.action_flags.can_edit ? (
+                          </button> : null}
+                          {can("orders.update") && detailOrder.action_flags.can_edit ? (
                             <button
                               onClick={() => {
                                 closeDetailModal();
@@ -2167,12 +2173,12 @@ export default function OrdersPage() {
                               Edit
                             </button>
                           ) : null}
-                          {detailOrder.action_flags.can_create_shipment ? (
+                          {can("shipments.create") && detailOrder.action_flags.can_create_shipment ? (
                             <button onClick={() => openShipmentModal(detailOrder)} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)]">
                               Ship Order
                             </button>
                           ) : null}
-                          {detailOrder.action_flags.can_refresh_woo ? (
+                          {can("orders.update") && detailOrder.action_flags.can_refresh_woo ? (
                             <button onClick={refreshWooOrder} disabled={isRefreshingWoo} className="rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-2.5 text-sm font-semibold text-[var(--color-txt-pri)] disabled:opacity-60">
                               {isRefreshingWoo ? "Refreshing..." : "Refresh WooCommerce"}
                             </button>

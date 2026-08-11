@@ -59,3 +59,7 @@ export function formatLabel(value: string | null | undefined) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
+
+export function formatCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}

@@ -23,6 +23,7 @@ import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatLabel } from "@/lib/format";
 import { useDialogAccessibility } from "@/components/ui/use-dialog-accessibility";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
 
 type CrmSummary = {
   total_customers: number;
@@ -287,6 +288,7 @@ function Overlay({
 }
 
 export default function CustomersPage() {
+  const { can } = useAuthorization();
   const [summary, setSummary] = useState<CrmSummary>(initialSummary);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
@@ -626,14 +628,14 @@ export default function CustomersPage() {
             <Download className="h-4 w-4" />
             Export CRM
           </button>
-          <button
+          {can("customers.create") ? <button
             type="button"
             onClick={() => openCustomerModal()}
             className="flex items-center gap-2 rounded-xl bg-[#0866FF] px-5 py-2.5 text-[13px] font-semibold text-white shadow-[var(--shadow-subtle)] transition-colors hover:bg-[#0056e0]"
           >
             <Plus className="h-4 w-4" />
             Add Customer
-          </button>
+          </button> : null}
         </div>
       </div>
 
@@ -673,19 +675,10 @@ export default function CustomersPage() {
         />
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-[11px] font-semibold text-[var(--color-secondary)] shadow-[var(--shadow-subtle)]">
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Leads {summary.leads}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Regular {summary.regular_customers}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">VIP {summary.vip_customers}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Wholesale {summary.wholesale_customers}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Reseller {summary.reseller_customers}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Blocked {summary.blocked_customers}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Followups Due {summary.followups_due}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Today {summary.followups_today}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Overdue {summary.overdue_followups}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Recent Activity {summary.recent_activity_count}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Customers with Orders {summary.customers_with_orders}</span>
-        <span className="rounded-full bg-[var(--color-surface-hover)] px-3 py-1">Total Spend {formatCurrency(summary.total_customer_spend)}</span>
+      <div className="grid gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-[11px] font-semibold text-[var(--color-secondary)] shadow-[var(--shadow-subtle)] lg:grid-cols-3">
+        <div className="flex flex-wrap gap-2"><span className="font-bold text-[var(--color-primary)]">Segments</span><span>Leads {summary.leads}</span><span>Regular {summary.regular_customers}</span><span>VIP {summary.vip_customers}</span><span>Wholesale {summary.wholesale_customers}</span><span>Reseller {summary.reseller_customers}</span><span>Blocked {summary.blocked_customers}</span></div>
+        <div className="flex flex-wrap gap-2 border-[var(--color-border)] lg:border-l lg:pl-3"><span className="font-bold text-[var(--color-primary)]">Follow-ups</span><span>Due {summary.followups_due}</span><span>Today {summary.followups_today}</span><span>Overdue {summary.overdue_followups}</span><span>Recent activity {summary.recent_activity_count}</span></div>
+        <div className="flex flex-wrap gap-2 border-[var(--color-border)] lg:border-l lg:pl-3"><span className="font-bold text-[var(--color-primary)]">Value</span><span>With orders {summary.customers_with_orders}</span><span>Total spend {formatCurrency(summary.total_customer_spend)}</span></div>
       </div>
 
       <div className="grid min-h-[600px] grid-cols-1 gap-6 lg:h-[calc(100vh-320px)] lg:grid-cols-12">
@@ -889,25 +882,25 @@ export default function CustomersPage() {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-2 md:justify-end">
-                    <button
+                    {can("customers.update") ? <button
                       type="button"
                       onClick={() => openCustomerModal(selectedCustomer)}
                       className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-secondary)] shadow-[var(--shadow-subtle)] transition-colors hover:bg-[var(--color-surface-hover)]"
                       title="Edit Customer"
                     >
                       <Edit className="h-3.5 w-3.5" />
-                    </button>
-                    <button
+                    </button> : null}
+                    {can("customers.delete") ? <button
                       type="button"
                       onClick={() => void handleDeleteCustomer(selectedCustomer.id)}
                       className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-secondary)] shadow-[var(--shadow-subtle)] transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-500"
                       title="Delete Customer"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    </button> : null}
                     <div className="flex items-center gap-1.5 rounded-lg border border-[#FFEDD5] bg-orange-50 px-3 py-1.5 text-[11px] font-bold text-[#EA580C] shadow-[var(--shadow-subtle)]">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                      0 Points
+                      0 Loyalty points
                     </div>
                   </div>
                 </div>
@@ -1320,12 +1313,8 @@ function SummaryCard({
           <p className="text-2xl font-bold text-[var(--color-primary)]">{value}</p>
         </div>
       </div>
-      <div className="mt-4 flex items-center justify-between">
+      <div className="mt-4">
         <p className="text-[11px] text-[var(--color-muted)]">{footnote}</p>
-        <div className="flex items-center gap-1 text-[11px] font-bold text-green-500">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m19 12-7-7-7 7"/><path d="M12 19V5"/></svg>
-          0%
-        </div>
       </div>
     </div>
   );

@@ -3,10 +3,15 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, ClipboardList, Columns3, Loader2, Plus, Search, TicketCheck } from "lucide-react";
 
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
+import { ControlModal } from "@/components/ui/control-modal";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
-import { PageHeader } from "@/components/ui/page-header";
+import { FormActions } from "@/components/ui/form-actions";
+import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatDateTime, formatLabel } from "@/lib/format";
 
@@ -114,15 +119,8 @@ function getPriorityClasses(priority: string) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
-function getStatusClasses(status: string) {
-  if (status === "completed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (status === "review") return "border-violet-200 bg-violet-50 text-violet-700";
-  if (status === "in_progress") return "border-sky-200 bg-sky-50 text-sky-700";
-  if (status === "cancelled") return "border-slate-200 bg-slate-100 text-slate-600";
-  return "border-amber-200 bg-amber-50 text-amber-700";
-}
-
 export default function TasksPage() {
+  const { can } = useAuthorization();
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [summary, setSummary] = useState<TaskSummary | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -130,6 +128,8 @@ export default function TasksPage() {
   const [form, setForm] = useState<TaskForm>(initialForm);
   const [filters, setFilters] = useState<TaskFilters>(initialFilters);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [modalBaseline, setModalBaseline] = useState(JSON.stringify(initialForm));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -200,7 +200,7 @@ export default function TasksPage() {
 
   function populateForm(task: Task) {
     setEditingTaskId(task.id);
-    setForm({
+    const nextForm = {
       title: task.title,
       description: task.description || "",
       status: task.status,
@@ -210,7 +210,10 @@ export default function TasksPage() {
       related_entity_type: task.related_entity_type || "",
       related_entity_id: task.related_entity_id || "",
       due_date: task.due_date ? new Date(task.due_date).toISOString().slice(0, 16) : "",
-    });
+    };
+    setForm(nextForm);
+    setModalBaseline(JSON.stringify(nextForm));
+    setTaskModalOpen(true);
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -239,6 +242,7 @@ export default function TasksPage() {
       }
       resetForm();
       await refreshWorkspace();
+      setTaskModalOpen(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save task");
     } finally {
@@ -290,6 +294,7 @@ export default function TasksPage() {
   }
 
   async function handleCancel(taskId: string) {
+    if (!window.confirm("Cancel this task? Its history will be preserved.")) return;
     setBusyId(taskId);
     setError("");
     setSuccess("");
@@ -311,11 +316,12 @@ export default function TasksPage() {
   return (
     <div className="space-y-4">
       <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)] sm:p-8">
-        <PageHeader
+        <OpsPageHeader
           eyebrow="Tasks Foundation"
           title="Internal tasks"
           description="Track daily internal work with assignees, priorities, due dates, list filters, and a lightweight kanban workflow."
           meta="List + Kanban"
+          actions={can("tasks.create") ? <button type="button" onClick={() => { const next = { ...initialForm }; setEditingTaskId(null); setForm(next); setModalBaseline(JSON.stringify(next)); setError(""); setTaskModalOpen(true); }} className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add Task</button> : null}
         />
       </section>
 
@@ -327,7 +333,7 @@ export default function TasksPage() {
       ) : null}
 
       {summary ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="flex flex-wrap gap-2 rounded-[24px] border border-slate-200 bg-white p-3 shadow-[var(--shadow-soft)]">
           {[
             { label: "Total", value: summary.total_tasks, icon: TicketCheck },
             { label: "Todo", value: summary.todo_tasks, icon: ClipboardList },
@@ -338,16 +344,9 @@ export default function TasksPage() {
             { label: "Urgent", value: summary.urgent_tasks, icon: TicketCheck },
             { label: "My Open", value: summary.my_open_tasks, icon: Plus },
           ].map(({ label, value, icon: Icon }) => (
-            <article key={label} className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[var(--shadow-soft)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">{label}</p>
-                  <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{value}</p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                  <Icon className="h-5 w-5" />
-                </div>
-              </div>
+            <article key={label} className="flex min-w-[130px] flex-1 items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+              <Icon className="h-4 w-4 text-slate-500" />
+              <div><p className="text-xs text-slate-500">{label}</p><p className="text-lg font-semibold text-slate-950">{value}</p></div>
             </article>
           ))}
         </section>
@@ -364,7 +363,7 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+      {taskModalOpen ? <ControlModal title={editingTaskId ? "Edit Task" : "Add Task"} description="Assign work, set timing, and optionally link it to a business record." onClose={() => setTaskModalOpen(false)} size="lg" dirty={JSON.stringify(form) !== modalBaseline}>
         <FormCard title={editingTaskId ? "Edit task" : "Create task"} description="Assign internal work, connect it to a module or entity if needed, and set a realistic due date.">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
@@ -400,35 +399,27 @@ export default function TasksPage() {
                 <input type="datetime-local" value={form.due_date} onChange={(event) => setForm((current) => ({ ...current, due_date: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
               </label>
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Related module</span>
-                <input value={form.related_module} onChange={(event) => setForm((current) => ({ ...current, related_module: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
+                <span className="mb-2 block text-sm font-medium text-slate-700">Link task to module</span>
+                <select value={form.related_module} onChange={(event) => setForm((current) => ({ ...current, related_module: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"><option value="">No linked module</option>{["orders", "products", "customers", "inventory", "shipments", "returns", "purchase_orders"].map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}</select>
               </label>
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Related entity type</span>
+                <span className="mb-2 block text-sm font-medium text-slate-700">Record type</span>
                 <input value={form.related_entity_type} onChange={(event) => setForm((current) => ({ ...current, related_entity_type: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
               </label>
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-700">Related entity ID</span>
+                <span className="mb-2 block text-sm font-medium text-slate-700">Record identifier</span>
                 <input value={form.related_entity_id} onChange={(event) => setForm((current) => ({ ...current, related_entity_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
+                <span className="mt-1 block text-xs text-slate-500">Optional. Paste the record identifier only when it is available from that record.</span>
               </label>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" disabled={isSaving} className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {editingTaskId ? "Save task" : "Create task"}
-              </button>
-              {editingTaskId ? (
-                <button type="button" onClick={resetForm} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                  Cancel edit
-                </button>
-              ) : null}
-            </div>
+            <FormActions pending={isSaving} onCancel={() => setTaskModalOpen(false)} saveLabel={editingTaskId ? "Save Task" : "Create Task"} pendingLabel="Saving..." sticky />
           </form>
         </FormCard>
+      </ControlModal> : null}
 
-        <FormCard title="Filters" description="Narrow the list view with quick status, priority, assignee, and search filters.">
+        <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[var(--shadow-soft)]" aria-label="Task filters">
           <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.2fr_1.5fr_auto_auto] xl:items-end">
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-slate-700">Status</span>
                 <select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white">
@@ -454,25 +445,23 @@ export default function TasksPage() {
                 <span className="mb-2 block text-sm font-medium text-slate-700">Search</span>
                 <input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Title or description" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white" />
               </label>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => void handleApplyFilters()} className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">Apply filters</button>
-              <button type="button" onClick={() => { setFilters(initialFilters); void handleApplyFilters(initialFilters); }} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Clear filters</button>
+              <button type="button" onClick={() => void handleApplyFilters()} className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Apply</button>
+              <button type="button" onClick={() => { setFilters(initialFilters); void handleApplyFilters(initialFilters); }} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Clear</button>
             </div>
           </div>
-        </FormCard>
-      </div>
+        </section>
 
       {viewMode === "list" ? (
         <FormCard title="Task list" description="Use the action buttons to edit, cancel, or move work through the status workflow.">
           <div className="space-y-3">
+            {tasks.length === 0 ? <EmptyState title="No tasks match these filters" description="Clear the filters or add a task." /> : null}
             {tasks.map((task) => (
               <div key={task.id} className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h3 className="text-base font-semibold text-slate-950">{task.title}</h3>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClasses(task.status)}`}>{formatLabel(task.status)}</span>
+                      <StatusBadge status={task.status} />
                       <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getPriorityClasses(task.priority)}`}>{formatLabel(task.priority)}</span>
                     </div>
                     <p className="mt-3 text-sm text-slate-600">{task.description || "No description"}</p>
@@ -481,14 +470,14 @@ export default function TasksPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => populateForm(task)} className="rounded-full border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white">Edit</button>
-                    {task.status !== "completed" ? (
+                    {can("tasks.update") ? <button type="button" onClick={() => populateForm(task)} className="rounded-full border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white">Edit</button> : null}
+                    {can("tasks.update") && task.status !== "completed" ? (
                       <button type="button" onClick={() => void handleStatusChange(task.id, "completed")} disabled={busyId === task.id} className="rounded-full border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60">Complete</button>
                     ) : null}
-                    {task.status !== "in_progress" ? (
+                    {can("tasks.update") && task.status !== "in_progress" ? (
                       <button type="button" onClick={() => void handleStatusChange(task.id, "in_progress")} disabled={busyId === task.id} className="rounded-full border border-sky-200 px-3 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-50 disabled:opacity-60">Start</button>
                     ) : null}
-                    {task.status !== "cancelled" ? (
+                    {can("tasks.delete") && task.status !== "cancelled" ? (
                       <button type="button" onClick={() => void handleCancel(task.id)} disabled={busyId === task.id} className="rounded-full border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-60">Cancel</button>
                     ) : null}
                   </div>
@@ -510,7 +499,7 @@ export default function TasksPage() {
                     </div>
                     <p className="mt-3 text-sm text-slate-600">{task.assigned_to?.full_name || "Unassigned"}</p>
                     <p className="mt-1 text-xs text-slate-500">{task.due_date ? formatDateTime(task.due_date) : "No due date"}</p>
-                    <select value={task.status} onChange={(event) => void handleStatusChange(task.id, event.target.value)} disabled={busyId === task.id} className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400">
+                    <select value={task.status} onChange={(event) => void handleStatusChange(task.id, event.target.value)} disabled={busyId === task.id || !can("tasks.update")} className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 disabled:opacity-60">
                       {kanbanStatuses.map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
                     </select>
                   </div>

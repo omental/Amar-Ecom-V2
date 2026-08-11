@@ -8,6 +8,7 @@ import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
+import { formatCount } from "@/lib/format";
 import type { OnlineStoreMenu, OnlineStoreSettings } from "@/lib/online-store";
 
 const initialSettings: OnlineStoreSettings = {
@@ -132,13 +133,13 @@ export default function OnlineStoreHeaderFooterPage() {
               <div className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
                 <p className="text-sm font-semibold text-[var(--color-txt-pri)]">Main nav location</p>
                 <p className="mt-2 text-sm text-[var(--color-txt-sec)]">
-                  {menusByLocation.main_nav?.name || "Main Navigation"} with {menusByLocation.main_nav?.items.length || 0} items
+                  {menusByLocation.main_nav?.name || "Main Navigation"} with {formatCount(menusByLocation.main_nav?.items.length || 0, "item")}
                 </p>
               </div>
               <div className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
                 <p className="text-sm font-semibold text-[var(--color-txt-pri)]">Category nav location</p>
                 <p className="mt-2 text-sm text-[var(--color-txt-sec)]">
-                  {menusByLocation.category_nav?.name || "Category Navigation"} with {menusByLocation.category_nav?.items.length || 0} items
+                  {menusByLocation.category_nav?.name || "Category Navigation"} with {formatCount(menusByLocation.category_nav?.items.length || 0, "item")}
                 </p>
               </div>
             </div>
@@ -164,7 +165,7 @@ export default function OnlineStoreHeaderFooterPage() {
                 <div key={location} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
                   <p className="text-sm font-semibold text-[var(--color-txt-pri)]">{location.replace(/_/g, " ")}</p>
                   <p className="mt-2 text-sm text-[var(--color-txt-sec)]">
-                    {menusByLocation[location]?.items.length || 0} linked items
+                    {formatCount(menusByLocation[location]?.items.length || 0, "linked item")}
                   </p>
                 </div>
               ))}

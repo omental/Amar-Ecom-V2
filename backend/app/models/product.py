@@ -3,8 +3,8 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,6 +37,13 @@ class Product(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     cost_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    gallery_image_urls: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    size_guide_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

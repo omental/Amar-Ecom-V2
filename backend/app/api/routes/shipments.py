@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.courier import Courier, Shipment, ShipmentEvent
 from app.models.order import Order
@@ -139,7 +139,7 @@ async def list_shipments(
     return list(result.scalars().unique().all())
 
 
-@router.post("/batch-status-update", response_model=ShipmentBatchStatusUpdateResultRead)
+@router.post("/batch-status-update", response_model=ShipmentBatchStatusUpdateResultRead, dependencies=[Depends(require_permission("shipments", "update"))])
 async def batch_update_shipment_statuses(
     payload: ShipmentBatchStatusUpdateRequest,
     db: DBSession,
@@ -235,7 +235,7 @@ async def get_shipment(shipment_id: UUID, db: DBSession) -> Shipment:
     return await fetch_one_or_404(db, _shipment_query().where(Shipment.id == shipment_id), "Shipment not found")
 
 
-@router.post("", response_model=ShipmentRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ShipmentRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("shipments", "create"))])
 async def create_shipment(
     shipment_in: ShipmentCreate,
     db: DBSession,
@@ -283,7 +283,7 @@ async def create_shipment(
     return await fetch_one_or_404(db, _shipment_query().where(Shipment.id == shipment.id), "Shipment not found")
 
 
-@router.patch("/{shipment_id}", response_model=ShipmentRead)
+@router.patch("/{shipment_id}", response_model=ShipmentRead, dependencies=[Depends(require_permission("shipments", "update"))])
 async def update_shipment(
     shipment_id: UUID,
     shipment_in: ShipmentUpdate,

@@ -8,6 +8,7 @@ from app.models.customer import Customer, CustomerActivity
 from app.models.finance import Account, PettyCashEntry, SupplierPayment, Transaction
 from app.models.hr import AttendanceRecord, Designation, Employee, SalaryAdvance, SalaryRecord
 from app.models.invoice_template import InvoiceTemplate
+from app.models.media import MediaAsset
 from app.models.inventory import InventoryItem
 from app.models.inventory_ops import StockTransfer, StockTransferItem, WastageLog
 from app.models.notification import Notification
@@ -51,6 +52,7 @@ __all__ = [
     "Transaction",
     "InvoiceTemplate",
     "InventoryItem",
+    "MediaAsset",
     "Notification",
     "Order",
     "OrderEvent",

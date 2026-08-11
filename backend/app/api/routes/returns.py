@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.courier import Shipment
 from app.models.order import Order, OrderEvent
@@ -86,7 +86,7 @@ async def get_return(return_id: UUID, db: DBSession) -> ReturnRequest:
     return await fetch_one_or_404(db, _return_query().where(ReturnRequest.id == return_id), "Return request not found")
 
 
-@router.post("", response_model=ReturnRequestRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ReturnRequestRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("returns", "create"))])
 async def create_return(return_in: ReturnRequestCreate, db: DBSession) -> ReturnRequest:
     order = await fetch_one_or_404(
         db,
@@ -121,7 +121,7 @@ async def create_return(return_in: ReturnRequestCreate, db: DBSession) -> Return
     return await fetch_one_or_404(db, _return_query().where(ReturnRequest.id == return_request.id), "Return request not found")
 
 
-@router.patch("/{return_id}", response_model=ReturnRequestRead)
+@router.patch("/{return_id}", response_model=ReturnRequestRead, dependencies=[Depends(require_permission("returns", "update"))])
 async def update_return(return_id: UUID, return_in: ReturnRequestUpdate, db: DBSession) -> ReturnRequest:
     return_request = await fetch_one_or_404(
         db,

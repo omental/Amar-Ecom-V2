@@ -1,232 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BadgePlus, Loader2, Plus } from "lucide-react";
-
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useAuthorization } from "@/components/dashboard/authorization-provider";
+import { ControlModal } from "@/components/ui/control-modal";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorAlert } from "@/components/ui/error-alert";
-import { FormCard } from "@/components/ui/form-card";
+import { FormActions } from "@/components/ui/form-actions";
+import { FormField } from "@/components/ui/form-field";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
-import { PageHeader } from "@/components/ui/page-header";
 import { api, ApiError } from "@/lib/api";
+import { formatCount } from "@/lib/format";
 
-type Brand = {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-};
-
-type BrandForm = {
-  name: string;
-  slug: string;
-  description: string;
-};
-
-const initialForm: BrandForm = {
-  name: "",
-  slug: "",
-  description: "",
-};
+type Brand = { id: string; name: string; slug: string; description: string | null };
+type BrandForm = { name: string; slug: string; description: string };
+const emptyForm: BrandForm = { name: "", slug: "", description: "" };
+const inputClass = "w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none focus:border-slate-400 focus:bg-white";
 
 export default function BrandsPage() {
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [form, setForm] = useState<BrandForm>(initialForm);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadInitialBrands() {
-      try {
-        const data = await api.get<Brand[]>("/brands?skip=0&limit=20");
-        if (!isMounted) return;
-        setBrands(data);
-      } catch (err) {
-        if (!isMounted) return;
-        setError(err instanceof ApiError ? err.message : "Failed to load brands");
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadInitialBrands();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  async function loadBrands() {
-    setError("");
-
-    try {
-      const data = await api.get<Brand[]>("/brands?skip=0&limit=20");
-      setBrands(data);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load brands");
-    }
-  }
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setSuccess("");
-    setIsSubmitting(true);
-
-    try {
-      await api.post<Brand>("/brands", {
-        name: form.name,
-        slug: form.slug,
-        description: form.description || null,
-      });
-      setForm(initialForm);
-      setSuccess("Brand created successfully.");
-      await loadBrands();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create brand");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <section className="card-base p-6 sm:p-8">
-        <OpsPageHeader
-          eyebrow="Catalog Identity"
-          title="Brands"
-          description="Manage brand records used by your product catalog and customer-facing merchandising."
-          meta={<span className="text-sm font-semibold text-[var(--color-txt-pri)]">{brands.length} items</span>}
-        />
-      </section>
-
-      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <FormCard
-          title="Create brand"
-          description="Add a brand with a clean slug and optional internal description."
-          action={
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-              <BadgePlus className="h-5 w-5" />
-            </div>
-          }
-        >
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700">
-                Name
-              </span>
-              <input
-                value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, name: event.target.value }))
-                }
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                placeholder="Acme"
-                required
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700">
-                Slug
-              </span>
-              <input
-                value={form.slug}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, slug: event.target.value }))
-                }
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                placeholder="acme"
-                required
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700">
-                Description
-              </span>
-              <textarea
-                rows={4}
-                value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
-                placeholder="Optional notes about the brand"
-              />
-            </label>
-
-            {error ? <ErrorAlert message={error} /> : null}
-            {success ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                {success}
-              </div>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <Plus className="h-4 w-4" />
-                  Create Brand
-                </>
-              )}
-            </button>
-          </form>
-        </FormCard>
-
-        <section className="card-base p-6">
-          <PageHeader
-            eyebrow="Saved Records"
-            title="Existing brands"
-            description="Review and verify the brand records available to the catalog."
-          />
-
-          <div className="mt-6">
-            {isLoading ? (
-              <LoadingState label="Loading brands..." />
-            ) : brands.length === 0 ? (
-              <EmptyState
-                title="No brands yet"
-                description="Create the first brand from the form to begin organizing product ownership."
-              />
-            ) : (
-              <DataTable columns={["Name", "Slug", "Description"]}>
-                {brands.map((brand) => (
-                  <div
-                    key={brand.id}
-                    className="grid grid-cols-1 gap-3 px-5 py-4 text-sm text-slate-600 md:grid-cols-3 md:gap-4"
-                  >
-                    <span className="font-medium text-slate-950">
-                      {brand.name}
-                    </span>
-                    <span>{brand.slug}</span>
-                    <span>{brand.description || "No description"}</span>
-                  </div>
-                ))}
-              </DataTable>
-            )}
-          </div>
-        </section>
-      </div>
-    </div>
-  );
+  const { can } = useAuthorization();
+  const [items, setItems] = useState<Brand[]>([]); const [form, setForm] = useState<BrandForm>(emptyForm); const [baseline, setBaseline] = useState(JSON.stringify(emptyForm)); const [editing, setEditing] = useState<Brand | null>(null); const [modalOpen, setModalOpen] = useState(false); const [search, setSearch] = useState(""); const [loading, setLoading] = useState(true); const [pending, setPending] = useState(false); const [error, setError] = useState(""); const [modalError, setModalError] = useState(""); const [success, setSuccess] = useState("");
+  const filtered = useMemo(() => items.filter((item) => [item.name, item.slug, item.description].filter(Boolean).join(" ").toLowerCase().includes(search.trim().toLowerCase())), [items, search]);
+  async function load() { setItems(await api.get<Brand[]>("/brands?skip=0&limit=100")); }
+  useEffect(() => { let mounted = true; api.get<Brand[]>("/brands?skip=0&limit=100").then((data) => { if (mounted) setItems(data); }).catch((reason) => { if (mounted) setError(reason instanceof ApiError ? reason.message : "Failed to load brands"); }).finally(() => { if (mounted) setLoading(false); }); return () => { mounted = false; }; }, []);
+  function openCreate() { const next = { ...emptyForm }; setEditing(null); setForm(next); setBaseline(JSON.stringify(next)); setModalError(""); setModalOpen(true); }
+  function openEdit(item: Brand) { const next = { name: item.name, slug: item.slug, description: item.description || "" }; setEditing(item); setForm(next); setBaseline(JSON.stringify(next)); setModalError(""); setModalOpen(true); }
+  async function submit(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setModalError(""); try { const payload = { ...form, description: form.description || null }; if (editing) await api.patch(`/brands/${editing.id}`, payload); else await api.post("/brands", payload); await load(); setModalOpen(false); setSuccess(editing ? "Brand updated successfully." : "Brand created successfully."); } catch (reason) { setModalError(reason instanceof ApiError ? reason.message : "Failed to save brand"); } finally { setPending(false); } }
+  async function remove(item: Brand) { if (!window.confirm(`Delete ${item.name}? Products using this brand will prevent deletion.`)) return; try { await api.delete(`/brands/${item.id}`); await load(); setSuccess("Brand deleted successfully."); } catch (reason) { setError(reason instanceof ApiError ? reason.message : "Failed to delete brand"); } }
+  return <div className="space-y-4"><section className="card-base p-6 sm:p-8"><OpsPageHeader eyebrow="Catalog Identity" title="Brands" description="Maintain catalog brands while keeping the full record list readable." meta={<span className="text-sm font-semibold">{formatCount(items.length, "item")}</span>} actions={can("brands.create") ? <button type="button" onClick={openCreate} className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add Brand</button> : null} /></section>{error ? <ErrorAlert message={error} onRetry={() => void load()} /> : null}{success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div> : null}<section className="card-base p-6"><div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="ops-micro-label">Saved Records</p><h2 className="mt-2 text-xl font-semibold">Existing brands</h2></div><label className="relative w-full sm:max-w-sm"><span className="sr-only">Search brands</span><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-txt-mut)]" /><input value={search} onChange={(event) => setSearch(event.target.value)} className={`${inputClass} pl-11`} placeholder="Search brands" /></label></div>{loading ? <LoadingState label="Loading brands..." /> : filtered.length === 0 ? <EmptyState title="No brands found" description="Adjust the search or add the first brand." /> : <DataTable columns={["Name", "Slug", "Description", "Actions"]} columnTemplate="minmax(180px,1fr) minmax(170px,1fr) minmax(260px,2fr) minmax(160px,0.8fr)" minWidth="780px">{filtered.map((item) => <div key={item.id} className="grid items-center gap-4 px-5 py-4 text-sm text-[var(--color-txt-sec)]" style={{ gridTemplateColumns: "minmax(180px,1fr) minmax(170px,1fr) minmax(260px,2fr) minmax(160px,0.8fr)" }}><span className="font-semibold text-[var(--color-txt-pri)]">{item.name}</span><span>{item.slug}</span><span>{item.description || "No description"}</span><div className="flex gap-2">{can("brands.update") ? <button type="button" onClick={() => openEdit(item)} className="inline-flex items-center gap-1 rounded-full border px-3 py-2 text-xs font-semibold"><Pencil className="h-3.5 w-3.5" />Edit</button> : null}{can("brands.delete") ? <button type="button" onClick={() => void remove(item)} className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700"><Trash2 className="h-3.5 w-3.5" />Delete</button> : null}</div></div>)}</DataTable>}</section>{modalOpen ? <ControlModal title={editing ? "Edit Brand" : "Add Brand"} description="Use a clear brand name, unique slug, and optional internal description." onClose={() => setModalOpen(false)} size="sm" dirty={JSON.stringify(form) !== baseline}><form onSubmit={submit} className="space-y-4"><FormField label="Name" required><input name="name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className={inputClass} /></FormField><FormField label="Slug" description="Must be unique." required><input name="slug" value={form.slug} onChange={(event) => setForm((current) => ({ ...current, slug: event.target.value }))} className={inputClass} /></FormField><FormField label="Description"><textarea name="description" rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} className={inputClass} /></FormField>{modalError ? <ErrorAlert message={modalError} persistent /> : null}<FormActions pending={pending} onCancel={() => setModalOpen(false)} saveLabel={editing ? "Save Brand" : "Create Brand"} pendingLabel="Saving..." sticky /></form></ControlModal> : null}</div>;
 }

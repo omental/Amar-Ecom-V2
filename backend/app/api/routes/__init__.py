@@ -16,6 +16,7 @@ from app.api.routes import (
     invoice_templates,
     inventory,
     logistics,
+    media,
     notifications,
     orders,
     petty_cash,
@@ -71,6 +72,7 @@ api_router.include_router(finance.router, prefix="/finance", tags=["finance"], d
 api_router.include_router(hr.router, prefix="/hr", tags=["hr"], dependencies=[Depends(require_permission("hr"))])
 api_router.include_router(invoice_templates.router, prefix="/invoice-templates", tags=["invoice-templates"], dependencies=[Depends(require_permission("settings"))])
 api_router.include_router(logistics.router, prefix="/logistics", tags=["logistics"], dependencies=[Depends(require_permission("logistics"))])
+api_router.include_router(media.router, prefix="/media", tags=["media"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(permissions.router, tags=["permissions"], dependencies=[Depends(require_permission("permissions"))])
 api_router.include_router(pos.router, prefix="/pos", tags=["pos"], dependencies=[Depends(require_permission("pos"))])

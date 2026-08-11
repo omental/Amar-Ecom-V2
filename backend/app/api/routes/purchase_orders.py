@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.product import Product
 from app.models.supplier import PurchaseOrder, PurchaseOrderItem, Supplier
@@ -107,7 +107,7 @@ async def get_purchase_order(purchase_order_id: UUID, db: DBSession) -> Purchase
     )
 
 
-@router.post("", response_model=PurchaseOrderRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PurchaseOrderRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("purchase_orders", "create"))])
 async def create_purchase_order(purchase_order_in: PurchaseOrderCreate, db: DBSession) -> PurchaseOrder:
     po_number = purchase_order_in.po_number or _generate_po_number()
     await ensure_unique(db, PurchaseOrder, "po_number", po_number, "Purchase order number already exists")
@@ -151,7 +151,7 @@ async def create_purchase_order(purchase_order_in: PurchaseOrderCreate, db: DBSe
     )
 
 
-@router.patch("/{purchase_order_id}", response_model=PurchaseOrderRead)
+@router.patch("/{purchase_order_id}", response_model=PurchaseOrderRead, dependencies=[Depends(require_permission("purchase_orders", "update"))])
 async def update_purchase_order(
     purchase_order_id: UUID,
     purchase_order_in: PurchaseOrderUpdate,
