@@ -27,3 +27,5 @@ manual-start.log
 *.dump
 *.bak
 backend/storage/media/
+artifacts/
+.DS_Store

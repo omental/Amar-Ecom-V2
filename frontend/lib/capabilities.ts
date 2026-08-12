@@ -17,6 +17,7 @@ const legacyCapabilities: Record<keyof LegacyPermissions, Capability[]> = {
   settings: ["settings.view", "settings.update", "online_store.view", "online_store.update"],
   team: ["team.view", "team.create", "team.update", "users.view", "permissions.view", "activity_logs.view"],
   pos: ["pos.view", "pos.checkout", "pos.refund"],
+  inbox: ["inbox.view"],
 };
 
 export const moduleViewCapabilities: Record<string, Capability> = {
@@ -47,6 +48,7 @@ export const moduleViewCapabilities: Record<string, Capability> = {
   users: "users.view",
   activity_logs: "activity_logs.view",
   settings: "settings.view",
+  inbox: "inbox.view",
   admin_tools: "settings.view",
 };
 

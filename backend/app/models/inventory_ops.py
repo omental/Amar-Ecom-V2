@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,9 +10,12 @@ from app.core.database import Base
 
 class StockTransfer(Base):
     __tablename__ = "stock_transfers"
+    __table_args__ = (
+        UniqueConstraint("store_id", "transfer_number", name="uq_stock_transfers_store_transfer_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    transfer_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    transfer_number: Mapped[str] = mapped_column(String(100), nullable=False)
     from_warehouse_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("warehouses.id", ondelete="CASCADE"),
@@ -71,9 +74,12 @@ class StockTransferItem(Base):
 
 class WastageLog(Base):
     __tablename__ = "wastage_logs"
+    __table_args__ = (
+        UniqueConstraint("store_id", "wastage_number", name="uq_wastage_logs_store_wastage_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    wastage_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    wastage_number: Mapped[str] = mapped_column(String(100), nullable=False)
     product_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),

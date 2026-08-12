@@ -1,927 +1,198 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { MediaPicker } from "@/components/dashboard/online-store/MediaPicker";
+import { BuilderShell } from "@/components/dashboard/online-store/builder/BuilderShell";
+import type { BuilderSaveState, BuilderSelection } from "@/components/dashboard/online-store/builder/types";
 import { OnlineStoreTabs } from "@/components/dashboard/online-store/OnlineStoreTabs";
-import { ProductPicker } from "@/components/dashboard/online-store/ProductPicker";
 import { ErrorAlert } from "@/components/ui/error-alert";
-import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
+import { useBuilderHistory } from "@/hooks/use-builder-history";
 import { api, ApiError } from "@/lib/api";
-import type { OnlineStorePage, OnlineStoreSection, OnlineStoreSettings } from "@/lib/online-store";
-import { buildBlockFromPreset, storefrontBlockPresets } from "@/lib/storefront-block-presets";
-import { buildSectionFromPreset, getSectionPreset, storefrontSectionPresets } from "@/lib/storefront-section-presets";
+import type { OnlineStoreMenu, OnlineStoreMenuItem, OnlineStorePage, OnlineStoreSavedSection, OnlineStoreSection, OnlineStoreSettings, OnlineStoreTemplate, OnlineStoreTheme } from "@/lib/online-store";
+import { indexBuilderMenus, selectBuilderTheme } from "@/lib/storefront-builder-bootstrap";
+import { canAcceptBuilderChild, createBlockFromRegistry } from "@/lib/storefront-block-registry";
+import { cloneBlockWithNewIds, cloneSectionWithNewBlockIds, findBuilderBlock, getBuilderBlocks, normalizeBuilderPage, updateBuilderBlock, type BuilderBlock, type BuilderBlockType, type BuilderDevice } from "@/lib/storefront-builder";
+import { findBuilderLocation, findBuilderParent, insertTreeNode, moveTreeNode, removeTreeNode, sanitizeTreeRelationships, wrapTreeNode, type BuilderDropTarget } from "@/lib/storefront-builder-tree";
+import { copyBuilderStyles, pasteBuilderStyles } from "@/lib/storefront-builder-style";
+import { buildSectionFromPreset } from "@/lib/storefront-section-presets";
+import type { StoreCategory, StoreProductListResponse } from "@/lib/storefront";
 
-type PublicCategory = {
-  id: string;
-  name: string;
-  slug: string;
-};
-
-type FaqItem = {
-  question: string;
-  answer: string;
-};
-
-type TestimonialItem = {
-  customer_name: string;
-  quote: string;
-  rating: number;
-  image_url?: string;
-  location?: string;
-};
-
-type BrandItem = {
-  name: string;
-  logo_url?: string;
-  link_url?: string;
-};
-
-function toPrettyLabel(value: string) {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function parseIdTextarea(value: string) {
-  return value
-    .split(/[\n,]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function stringifyIdTextarea(values: unknown) {
-  return Array.isArray(values) ? values.map((item) => String(item)).join("\n") : "";
-}
-
-function reorderItems<T>(items: T[], index: number, direction: "up" | "down") {
-  const swapIndex = direction === "up" ? index - 1 : index + 1;
-  if (swapIndex < 0 || swapIndex >= items.length) {
-    return items;
-  }
-  const next = [...items];
-  [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-  return next;
+function normalizePageTree(page: OnlineStorePage) {
+  const normalized = normalizeBuilderPage(page);
+  return { ...normalized, sections: normalized.sections.map((section) => section.type === "flexible_grid" ? { ...section, content: { ...(section.content || {}), blocks: sanitizeTreeRelationships(getBuilderBlocks(section), canAcceptBuilderChild) } } : section) };
 }
 
 export default function OnlineStoreCustomizePage() {
-  const [page, setPage] = useState<OnlineStorePage | null>(null);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [newSectionType, setNewSectionType] = useState<string>(storefrontSectionPresets[0].type);
+  const history = useBuilderHistory<OnlineStorePage>(null);
+  const page = history.present;
+  const resetHistory = history.reset;
+  const undoHistory = history.undo;
+  const redoHistory = history.redo;
+  const commitHistory = history.commit;
+  const [pages, setPages] = useState<OnlineStorePage[]>([]);
+  const [theme, setTheme] = useState<OnlineStoreTheme | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<OnlineStoreTemplate | null>(null);
+  const [previewResources, setPreviewResources] = useState<Array<{ slug: string; label: string }>>([]);
+  const [previewResourceSlug, setPreviewResourceSlug] = useState("");
   const [settings, setSettings] = useState<OnlineStoreSettings | null>(null);
-  const [categories, setCategories] = useState<PublicCategory[]>([]);
+  const [menus, setMenus] = useState<Record<string, OnlineStoreMenuItem[]>>({});
+  const [savedSections, setSavedSections] = useState<OnlineStoreSavedSection[]>([]);
+  const [selection, setSelection] = useState<BuilderSelection>(null);
+  const [clipboard, setClipboard] = useState<BuilderBlock | null>(null);
+  const [styleClipboard, setStyleClipboard] = useState<ReturnType<typeof copyBuilderStyles> | null>(null);
+  const [device, setDevice] = useState<BuilderDevice>("desktop");
+  const [saveState, setSaveState] = useState<BuilderSaveState>("saved");
   const [loading, setLoading] = useState(true);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [publishLoading, setPublishLoading] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  async function loadPage() {
-    const pages = await api.get<OnlineStorePage[]>("/admin/storefront/pages");
-    const home = pages.find((item) => item.slug === "home") || pages[0] || null;
-    if (!home?.id) {
-      throw new Error("Homepage configuration is missing.");
+  const loadSavedSections = useCallback(async () => setSavedSections(await api.get<OnlineStoreSavedSection[]>("/admin/storefront/saved-sections")), []);
+  const loadThemeTemplate = useCallback(async (themeId: string, templateId?: string) => {
+    const [loadedTheme, styleClasses] = await Promise.all([
+      api.get<OnlineStoreTheme>(`/admin/storefront/themes/${themeId}`),
+      api.get<NonNullable<OnlineStoreTheme["style_classes"]>>(`/admin/storefront/themes/${themeId}/style-classes`),
+    ]);
+    loadedTheme.style_classes = styleClasses;
+    const target = loadedTheme.templates.find((item) => item.id === templateId)
+      || loadedTheme.templates.find((item) => item.resource_type === "home" && item.is_default)
+      || loadedTheme.templates[0];
+    if (!target) throw new Error("The theme has no storefront templates.");
+    const header = loadedTheme.section_groups.find((group) => group.group_type === "header");
+    const footer = loadedTheme.section_groups.find((group) => group.group_type === "footer");
+    const virtualPages = loadedTheme.templates.map((item) => ({ id: item.id, title: `${item.resource_type.replace("_", " ")} / ${item.name}`, slug: item.key, page_type: item.resource_type, status: loadedTheme.status, sections: item.sections }));
+    const virtualPage: OnlineStorePage = { id: target.id, title: `${target.resource_type.replace("_", " ")} / ${target.name}`, slug: target.key, page_type: target.resource_type, status: loadedTheme.status, sections: [...(header?.sections || []), ...target.sections, ...(footer?.sections || [])] };
+    let resources: Array<{ slug: string; label: string }> = [];
+    if (target.resource_type === "product") {
+      const result = await api.get<Array<Pick<StoreProductListResponse["items"][number], "slug" | "name">>>("/products?skip=0&limit=50");
+      resources = result.map((item) => ({ slug: item.slug, label: item.name }));
+    } else if (target.resource_type === "collection") {
+      resources = (await api.get<StoreCategory[]>("/categories?skip=0&limit=100")).map((item) => ({ slug: item.slug, label: item.name }));
+    } else if (target.resource_type === "page") {
+      resources = (await api.get<OnlineStorePage[]>("/admin/storefront/pages")).filter((item) => item.page_type !== "home").map((item) => ({ slug: item.slug, label: item.title }));
     }
-    const fullPage = await api.get<OnlineStorePage>(`/admin/storefront/pages/${home.id}`);
-    setPage(fullPage);
-    setHasUnsavedChanges(false);
-    setSelectedSectionId((current) => current || fullPage.sections[0]?.id || null);
-  }
+    const normalized = normalizePageTree(virtualPage);
+    setTheme(loadedTheme); setActiveTemplate(target); setPages(virtualPages); setPreviewResources(resources); setPreviewResourceSlug(resources[0]?.slug || ""); resetHistory(normalized);
+    setSelection(normalized.sections[0]?.id ? { type: "section", id: normalized.sections[0].id } : null);
+    setSaveState(JSON.stringify(virtualPage) === JSON.stringify(normalized) ? "saved" : "unsaved");
+    return loadedTheme;
+  }, [resetHistory]);
 
   useEffect(() => {
-    let mounted = true;
-    async function run() {
+    let active = true;
+    async function bootstrap() {
       try {
-        if (!mounted) return;
-        const [categoryPayload] = await Promise.all([
-          api.get<PublicCategory[]>("/public/categories").catch(() => []),
-          api.get<OnlineStoreSettings>("/admin/storefront/settings").then(setSettings),
-          loadPage(),
+        const [storeSettings, adminMenus, reusable, themes] = await Promise.all([
+          api.get<OnlineStoreSettings>("/admin/storefront/settings"),
+          api.get<OnlineStoreMenu[]>("/admin/storefront/menus"),
+          api.get<OnlineStoreSavedSection[]>("/admin/storefront/saved-sections"),
+          api.get<OnlineStoreTheme[]>("/admin/storefront/themes"),
         ]);
-        if (!mounted) return;
-        setCategories(categoryPayload);
-      } catch (err) {
-        if (!mounted) return;
-        setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Failed to load homepage builder.");
-      } finally {
-        if (mounted) setLoading(false);
+        const requestedThemeId = new URLSearchParams(window.location.search).get("theme");
+        const selectedTheme = selectBuilderTheme(themes, requestedThemeId);
+        if (!selectedTheme) throw new Error(requestedThemeId ? "The requested storefront theme is unavailable." : "Storefront theme configuration is missing.");
+        const loadedTheme = await loadThemeTemplate(selectedTheme.id);
+        if (active) { setSettings({ ...storeSettings, ...loadedTheme.settings }); setMenus(indexBuilderMenus(adminMenus)); setSavedSections(reusable); }
+      } catch (caught) { if (active) setError(caught instanceof ApiError ? caught.message : caught instanceof Error ? caught.message : "Failed to load Builder V2."); }
+      finally { if (active) setLoading(false); }
+    }
+    void bootstrap();
+    return () => { active = false; };
+  }, [loadThemeTemplate]);
+
+  useEffect(() => { const protect = (event: BeforeUnloadEvent) => { if (saveState === "unsaved") event.preventDefault(); }; window.addEventListener("beforeunload", protect); return () => window.removeEventListener("beforeunload", protect); }, [saveState]);
+
+  useEffect(() => {
+    const shortcuts = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+      const key = event.key.toLowerCase();
+      if (key === "z") { event.preventDefault(); if (event.shiftKey) redoHistory(); else undoHistory(); setSaveState("unsaved"); return; }
+      if (key === "c" && selection?.type === "block" && page) {
+        const owner = page.sections.find((section) => findBuilderBlock(getBuilderBlocks(section), selection.id));
+        const node = owner && findBuilderBlock(getBuilderBlocks(owner), selection.id);
+        if (node) { event.preventDefault(); setClipboard(structuredClone(node)); setSuccess("Block copied."); }
       }
-    }
-    void run();
-    return () => {
-      mounted = false;
+      if (key === "v" && clipboard && page) {
+        event.preventDefault();
+        const owner = selection?.type === "section" ? page.sections.find((section) => section.id === selection.id) : selection?.type === "block" ? page.sections.find((section) => findBuilderBlock(getBuilderBlocks(section), selection.id)) : null;
+        if (!owner?.id || owner.type !== "flexible_grid") return;
+        const blocks = getBuilderBlocks(owner);
+        const selectedNode = selection?.type === "block" ? findBuilderBlock(blocks, selection.id) : null;
+        const parent = selectedNode && canAcceptBuilderChild(selectedNode, clipboard) ? selectedNode : selectedNode ? findBuilderParent(blocks, selectedNode.id) : null;
+        if (!canAcceptBuilderChild(parent, clipboard)) { setError("Copied block is not compatible with the selected parent."); return; }
+        const clone = cloneBlockWithNewIds(clipboard);
+        const next = insertTreeNode(blocks, parent?.id || null, parent?.children.length || blocks.length, clone);
+        commitHistory((current) => ({ ...current, sections: current.sections.map((section) => section.id === owner!.id ? { ...section, content: { ...(section.content || {}), blocks: next } } : section) }));
+        setSelection({ type: "block", id: clone.id }); setSaveState("unsaved"); setSuccess("Block pasted with new IDs.");
+      }
+      if (key === "d" && selection?.type === "block") { const owner = ownerForNode(selection.id); if (owner?.id) { event.preventDefault(); duplicateBlock(owner.id, selection.id); } }
     };
-  }, []);
+    window.addEventListener("keydown", shortcuts);
+    return () => window.removeEventListener("keydown", shortcuts);
+  });
 
-  const selectedSection = useMemo(
-    () => page?.sections.find((item) => item.id === selectedSectionId) || null,
-    [page, selectedSectionId],
-  );
+  useEffect(() => {
+    const destructiveShortcuts = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+      if ((event.key === "Delete" || event.key === "Backspace") && selection?.type === "block") { const owner = ownerForNode(selection.id); const node = owner && findBuilderBlock(getBuilderBlocks(owner), selection.id); if (owner?.id && node && !node.meta.locked) { event.preventDefault(); deleteBlock(owner.id, node.id); } }
+      if (event.key === "Escape") setSelection(null);
+    };
+    window.addEventListener("keydown", destructiveShortcuts); return () => window.removeEventListener("keydown", destructiveShortcuts);
+  });
 
-  function updateSelectedSection(updater: (section: OnlineStoreSection) => OnlineStoreSection) {
-    setPage((current) => {
-      if (!current || !selectedSectionId) return current;
-      setHasUnsavedChanges(true);
-      return {
-        ...current,
-        sections: current.sections.map((item) => (item.id === selectedSectionId ? updater(item) : item)),
-      };
-    });
+  function mutate(updater: (current: OnlineStorePage) => OnlineStorePage) { commitHistory(updater); setSaveState("unsaved"); setSuccess(""); }
+  function updateBlocks(sectionId: string, blocks: BuilderBlock[]) { mutate((current) => ({ ...current, sections: current.sections.map((section) => section.id === sectionId ? { ...section, content: { ...(section.content || {}), blocks } } : section) })); }
+  function ownerForNode(id: string) { return page?.sections.find((section) => findBuilderBlock(getBuilderBlocks(section), id)); }
+
+  async function persistPage(target: OnlineStorePage) {
+    if (!target.id) return;
+    await Promise.all(target.sections.filter((section) => section.id).map((section) => api.put(`/admin/storefront/sections/${section.id}`, { title: section.title, subtitle: section.subtitle, is_enabled: section.is_enabled, settings: section.settings || {}, content: section.content || {} })));
+    if (theme && activeTemplate) {
+      await api.post(`/admin/storefront/templates/${activeTemplate.id}/sections/reorder`, { ordered_ids: target.sections.filter((section) => section.template_id === activeTemplate.id).flatMap((section) => section.id ? [section.id] : []) });
+      for (const group of theme.section_groups) await api.post(`/admin/storefront/section-groups/${group.id}/sections/reorder`, { ordered_ids: target.sections.filter((section) => section.section_group_id === group.id).flatMap((section) => section.id ? [section.id] : []) });
+    } else await api.post(`/admin/storefront/pages/${target.id}/sections/reorder`, { ordered_ids: target.sections.flatMap((section) => section.id ? [section.id] : []) });
   }
 
-  function updateSelectedSettings(partial: Record<string, unknown>) {
-    updateSelectedSection((section) => ({
-      ...section,
-      settings: {
-        ...(section.settings || {}),
-        ...partial,
-      },
-    }));
-  }
+  async function reloadCurrent(targetId?: string) { if (!theme) throw new Error("Storefront theme configuration is missing."); await loadThemeTemplate(theme.id, targetId || activeTemplate?.id); }
+  async function save() { if (!page) return false; setError(""); setSaveState("saving"); try { await persistPage(page); await reloadCurrent(page.id); setSaveState("saved"); setSuccess(theme ? "Theme draft saved." : "Storefront configuration saved."); return true; } catch (caught) { setSaveState("unsaved"); setError(caught instanceof ApiError ? caught.message : "Failed to save storefront changes."); return false; } }
+  async function publish() { if (!page?.id) return; setPublishing(true); setError(""); try { if (saveState === "unsaved" && !(await save())) return; const response = theme ? await api.post<{ message?: string }>(`/admin/storefront/themes/${theme.id}/publish`) : await api.post<{ message?: string }>(`/admin/storefront/pages/${page.id}/publish`); await reloadCurrent(page.id); setSaveState("published"); setSuccess(response.message || (theme ? "Theme published." : "Storefront page published.")); } catch (caught) { setError(caught instanceof ApiError ? caught.message : "Failed to publish storefront changes."); } finally { setPublishing(false); } }
+  async function withPersistedStructure(action: () => Promise<void>) { if (!page) return; try { setError(""); if (saveState === "unsaved") await persistPage(page); await action(); await reloadCurrent(page.id); } catch (caught) { setError(caught instanceof ApiError ? caught.message : "Could not update storefront structure."); } }
 
-  function updateSelectedContent(partial: Record<string, unknown>) {
-    updateSelectedSection((section) => ({
-      ...section,
-      content: {
-        ...(section.content || {}),
-        ...partial,
-      },
-    }));
-  }
+  function updateSection(section: OnlineStoreSection) { mutate((current) => ({ ...current, sections: current.sections.map((item) => item.id === section.id ? section : item) })); }
+  function updateBlock(sectionId: string, blockId: string, updater: (block: BuilderBlock) => BuilderBlock) { const section = page?.sections.find((item) => item.id === sectionId); if (section) updateBlocks(sectionId, updateBuilderBlock(getBuilderBlocks(section), blockId, updater)); }
+  function moveBlock(sectionId: string, nodeId: string, target: BuilderDropTarget) { const section = page?.sections.find((item) => item.id === sectionId); if (!section) return; const source = findBuilderBlock(getBuilderBlocks(section), nodeId); if (source?.meta.locked) { setError("Unlock this node before moving it."); return; } const result = moveTreeNode(getBuilderBlocks(section), nodeId, target, canAcceptBuilderChild); if (!result.moved) { setError(result.reason || "Invalid block drop."); return; } updateBlocks(sectionId, result.tree); }
+  function duplicateBlock(sectionId: string, blockId: string) { const section = page?.sections.find((item) => item.id === sectionId); if (!section) return; const blocks = getBuilderBlocks(section); const block = findBuilderBlock(blocks, blockId); const location = findBuilderLocation(blocks, blockId); if (!block || !location) return; const clone = cloneBlockWithNewIds(block); updateBlocks(sectionId, insertTreeNode(blocks, location.parentId, location.index + 1, clone)); setSelection({ type: "block", id: clone.id }); }
+  function deleteBlock(sectionId: string, blockId: string) { const section = page?.sections.find((item) => item.id === sectionId); if (!section) return; const blocks = getBuilderBlocks(section); const node = findBuilderBlock(blocks, blockId); if (node?.meta.locked) { setError("Unlock this node before deleting it."); return; } const parent = findBuilderParent(blocks, blockId); const removed = removeTreeNode(blocks, blockId); if (!removed.node) return; updateBlocks(sectionId, removed.tree); setSelection(parent ? { type: "block", id: parent.id } : { type: "section", id: sectionId }); }
+  function updateBlockMeta(sectionId: string, blockId: string, meta: BuilderBlock["meta"]) { updateBlock(sectionId, blockId, (block) => ({ ...block, meta })); }
+  function wrapBlock(sectionId: string, blockId: string) { const section = page?.sections.find((item) => item.id === sectionId); if (!section) return; const wrapper = createBlockFromRegistry("div"); wrapper.meta.label = "Wrapper"; const result = wrapTreeNode(getBuilderBlocks(section), blockId, wrapper); if (result.moved) { updateBlocks(sectionId, result.tree); setSelection({ type: "block", id: wrapper.id }); } }
+  function copyBlock(sectionId: string, blockId: string) { const section = page?.sections.find((item) => item.id === sectionId); const block = section && findBuilderBlock(getBuilderBlocks(section), blockId); if (block) { setClipboard(structuredClone(block)); setSuccess("Block copied."); } }
+  function pasteBlock(sectionId: string, targetId: string) { const section = page?.sections.find((item) => item.id === sectionId); if (!section || !clipboard) { setError("Copy a block first."); return; } const blocks = getBuilderBlocks(section); const target = findBuilderBlock(blocks, targetId); if (!target) return; const parent = canAcceptBuilderChild(target, clipboard) ? target : findBuilderParent(blocks, target.id); if (!canAcceptBuilderChild(parent, clipboard)) { setError("Copied block is not compatible with this location."); return; } const clone = cloneBlockWithNewIds(clipboard); const location = findBuilderLocation(blocks, target.id); const index = parent?.id === target.id ? target.children.length : (location?.index ?? blocks.length - 1) + 1; updateBlocks(sectionId, insertTreeNode(blocks, parent?.id || null, index, clone)); setSelection({ type: "block", id: clone.id }); }
+  function copyStyles(sectionId: string, blockId: string) { const section = page?.sections.find((item) => item.id === sectionId); const block = section && findBuilderBlock(getBuilderBlocks(section), blockId); if (block) { setStyleClipboard(copyBuilderStyles(block)); setSuccess("Styles copied."); } }
+  function pasteStyles(sectionId: string, blockId: string) { if (!styleClipboard) { setError("Copy styles from another node first."); return; } updateBlock(sectionId, blockId, (block) => pasteBuilderStyles(block, styleClipboard)); setSuccess("Styles pasted."); }
+  function insertBlock(sectionId: string, parentId: string | null, type: BuilderBlockType) { const section = page?.sections.find((item) => item.id === sectionId); if (!section) return; const blocks = getBuilderBlocks(section); const parent = parentId ? findBuilderBlock(blocks, parentId) : null; const block = createBlockFromRegistry(type); if (!canAcceptBuilderChild(parent, block)) { setError("That block cannot be inserted into the selected parent."); return; } updateBlocks(sectionId, insertTreeNode(blocks, parentId, parent?.children.length || blocks.length, block)); setSelection({ type: "block", id: block.id }); }
+  function updateInlineText(id: string, text: string) { const owner = ownerForNode(id); if (owner?.id) updateBlock(owner.id, id, (block) => ({ ...block, props: { ...block.props, text } })); }
 
-  async function saveSection(section: OnlineStoreSection) {
-    if (!section.id) return;
-    try {
-      setError("");
-      setSuccess("");
-      await api.put(`/admin/storefront/sections/${section.id}`, {
-        title: section.title,
-        subtitle: section.subtitle,
-        is_enabled: section.is_enabled,
-        settings: section.settings,
-        content: section.content,
-      });
-      await loadPage();
-      setSuccess("Section updated.");
-      setHasUnsavedChanges(false);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update section.");
-    }
-  }
+  async function saveReusable(section: OnlineStoreSection) { const name = window.prompt("Name this reusable section", section.title || "Reusable section"); if (!name?.trim()) return; try { await api.post("/admin/storefront/saved-sections", { name: name.trim(), description: section.subtitle || null, category: section.type, snapshot: section }); await loadSavedSections(); setSuccess("Reusable section saved."); } catch (caught) { setError(caught instanceof ApiError ? caught.message : "Could not save reusable section."); } }
+  function insertSaved(item: OnlineStoreSavedSection) { if (!page?.id) return; void withPersistedStructure(async () => { const clone = cloneSectionWithNewBlockIds({ ...item.snapshot, id: undefined }); const owner = theme && activeTemplate ? `/admin/storefront/templates/${activeTemplate.id}/sections` : `/admin/storefront/pages/${page.id}/sections`; await api.post(owner, { type: clone.type, title: clone.title, subtitle: clone.subtitle, is_enabled: clone.is_enabled ?? true, settings: clone.settings || {}, content: clone.content || {} }); }); }
+  async function deleteSaved(item: OnlineStoreSavedSection) { if (!window.confirm(`Delete saved section “${item.name}”?`)) return; try { await api.delete(`/admin/storefront/saved-sections/${item.id}`); await loadSavedSections(); } catch (caught) { setError(caught instanceof ApiError ? caught.message : "Could not delete reusable section."); } }
 
-  async function moveSection(sectionId: string, direction: "up" | "down") {
-    if (!page?.id) return;
-    const ids = page.sections.map((item) => item.id!).filter(Boolean);
-    const index = ids.indexOf(sectionId);
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || swapIndex < 0 || swapIndex >= ids.length) return;
-    [ids[index], ids[swapIndex]] = [ids[swapIndex], ids[index]];
-    try {
-      await api.post(`/admin/storefront/pages/${page.id}/sections/reorder`, { ordered_ids: ids });
-      await loadPage();
-      setSuccess("Section order updated.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to reorder sections.");
-    }
-  }
-
-  async function createSection() {
-    if (!page?.id) return;
-    const payload = buildSectionFromPreset(newSectionType);
-    try {
-      await api.post(`/admin/storefront/pages/${page.id}/sections`, {
-        ...payload,
-      });
-      await loadPage();
-      setSuccess("Section added.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to add section.");
-    }
-  }
-
-  async function duplicateSection(section: OnlineStoreSection) {
-    if (!page?.id) return;
-    try {
-      await api.post(`/admin/storefront/pages/${page.id}/sections`, {
-        type: section.type,
-        title: section.title,
-        subtitle: section.subtitle,
-        is_enabled: section.is_enabled ?? true,
-        settings: section.settings || {},
-        content: section.content || {},
-      });
-      await loadPage();
-      setSuccess("Section duplicated.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to duplicate section.");
-    }
-  }
-
-  async function deleteSection(sectionId: string) {
-    try {
-      await api.delete(`/admin/storefront/sections/${sectionId}`);
-      await loadPage();
-      setSuccess("Section deleted.");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to delete section.");
-    }
-  }
-
-  async function publishPage() {
-    if (!page?.id) return;
-    try {
-      setError("");
-      setSuccess("");
-      setPublishLoading(true);
-      const response = await api.post<{ message?: string; revision_id?: string }>(`/admin/storefront/pages/${page.id}/publish`);
-      await loadPage();
-      setSuccess(response.message || "Homepage published.");
-      setHasUnsavedChanges(false);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to publish homepage.");
-    } finally {
-      setPublishLoading(false);
-    }
-  }
-
-  function renderStructuredEditor(section: OnlineStoreSection) {
-    const settings = (section.settings || {}) as Record<string, unknown>;
-    const content = (section.content || {}) as Record<string, unknown>;
-
-    if (section.type === "hero_slider") {
-      const slides = Array.isArray(content.slides) ? (content.slides as Array<Record<string, unknown>>) : [];
-      const primarySlide = slides[0] || {};
-      return (
-        <div className="space-y-4">
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Hero headline</span>
-            <input
-              value={String(primarySlide.title || "")}
-              onChange={(e) => updateSelectedContent({ slides: [{ ...primarySlide, title: e.target.value }, ...slides.slice(1)] })}
-              className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Hero subtitle</span>
-            <input
-              value={String(primarySlide.subtitle || "")}
-              onChange={(e) => updateSelectedContent({ slides: [{ ...primarySlide, subtitle: e.target.value }, ...slides.slice(1)] })}
-              className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-            />
-          </label>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Discount label</span>
-              <input
-                value={String(primarySlide.discount || "")}
-                onChange={(e) => updateSelectedContent({ slides: [{ ...primarySlide, discount: e.target.value }, ...slides.slice(1)] })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Button text</span>
-              <input
-                value={String(primarySlide.button_text || "")}
-                onChange={(e) => updateSelectedContent({ slides: [{ ...primarySlide, button_text: e.target.value }, ...slides.slice(1)] })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-          </div>
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Button URL</span>
-            <input
-              value={String(primarySlide.button_url || "")}
-              onChange={(e) => updateSelectedContent({ slides: [{ ...primarySlide, button_url: e.target.value }, ...slides.slice(1)] })}
-              className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-            />
-          </label>
-          <MediaPicker
-            label="Hero image"
-            mediaType="banner"
-            value={String(primarySlide.image_url || "")}
-            onChange={(value) => updateSelectedContent({ slides: [{ ...primarySlide, image_url: value }, ...slides.slice(1)] })}
-          />
-          <MediaPicker
-            label="Hero mobile image"
-            mediaType="banner"
-            value={String(primarySlide.mobile_image_url || "")}
-            onChange={(value) => updateSelectedContent({ slides: [{ ...primarySlide, mobile_image_url: value }, ...slides.slice(1)] })}
-            helperText="Optional mobile-specific hero image."
-          />
-        </div>
-      );
-    }
-
-    if (["product_grid", "new_arrivals", "featured_collection", "best_selling", "flash_sale"].includes(section.type)) {
-      return (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Section title</span>
-              <input
-                value={section.title || ""}
-                onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Subtitle</span>
-              <input
-                value={section.subtitle || ""}
-                onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Source</span>
-              <select
-                value={String(settings.source || section.type)}
-                onChange={(e) => updateSelectedSettings({ source: e.target.value })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              >
-                {["new_arrivals", "best_selling", "flash_sale", "category", "manual"].map((value) => (
-                  <option key={value} value={value}>{toPrettyLabel(value)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Limit</span>
-              <input
-                type="number"
-                min={1}
-                max={24}
-                value={Number(settings.limit || 8)}
-                onChange={(e) => updateSelectedSettings({ limit: Number(e.target.value) || 8 })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-          </div>
-          {String(settings.source || section.type) === "category" ? (
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Category</span>
-              <select
-                value={String(settings.category_slug || "")}
-                onChange={(e) => updateSelectedSettings({ category_slug: e.target.value })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              >
-                <option value="">Select category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.slug}>{category.name}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {String(settings.source || section.type) === "manual" ? (
-            <div className="space-y-3">
-              <ProductPicker
-                value={(Array.isArray(settings.product_ids) ? settings.product_ids : []).map((item) => String(item))}
-                onChange={(ids) => updateSelectedSettings({ product_ids: ids })}
-                maxSelection={Number(settings.limit || 8)}
-              />
-              <label className="block text-sm">
-                <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Advanced product IDs</span>
-                <textarea
-                  value={stringifyIdTextarea(settings.product_ids)}
-                  onChange={(e) => updateSelectedSettings({ product_ids: parseIdTextarea(e.target.value) })}
-                  className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 font-mono text-xs outline-none"
-                />
-              </label>
-            </div>
-          ) : null}
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Desktop columns</span>
-              <input
-                type="number"
-                min={1}
-                max={6}
-                value={Number(settings.columns_desktop || 4)}
-                onChange={(e) => updateSelectedSettings({ columns_desktop: Number(e.target.value) || 4 })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Mobile columns</span>
-              <input
-                type="number"
-                min={1}
-                max={3}
-                value={Number(settings.columns_mobile || 2)}
-                onChange={(e) => updateSelectedSettings({ columns_mobile: Number(e.target.value) || 2 })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm font-medium text-[var(--color-txt-sec)]">
-              <input
-                type="checkbox"
-                checked={Boolean(settings.show_shop_more)}
-                onChange={(e) => updateSelectedSettings({ show_shop_more: e.target.checked })}
-              />
-              Show &quot;Shop More&quot;
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Shop more URL</span>
-              <input
-                value={String(settings.shop_more_url || "/products")}
-                onChange={(e) => updateSelectedSettings({ shop_more_url: e.target.value })}
-                className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-              />
-            </label>
-          </div>
-        </div>
-      );
-    }
-
-    if (section.type === "category_grid") {
-      const items = Array.isArray(content.items) ? (content.items as Array<Record<string, unknown>>) : [];
-      return (
-        <div className="space-y-4">
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Section title</span>
-            <input
-              value={section.title || ""}
-              onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))}
-              className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-            />
-          </label>
-          <div className="grid gap-4 md:grid-cols-3">
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Limit</span>
-              <input type="number" value={Number(settings.limit || 8)} onChange={(e) => updateSelectedSettings({ limit: Number(e.target.value) || 8 })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Tile style</span>
-              <input value={String(settings.tile_style || "light")} onChange={(e) => updateSelectedSettings({ tile_style: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Menu source</span>
-              <input value={String(settings.menu_source || "category_nav")} onChange={(e) => updateSelectedSettings({ menu_source: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-            </label>
-          </div>
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Selected categories</span>
-            <textarea
-              value={items.map((item) => String(item.label || "")).join("\n")}
-              onChange={(e) => updateSelectedContent({
-                items: e.target.value.split("\n").map((label) => label.trim()).filter(Boolean).map((label) => ({
-                  label,
-                  image_url: "",
-                })),
-              })}
-              className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none"
-            />
-          </label>
-        </div>
-      );
-    }
-
-    if (section.type === "single_banner" || section.type === "banner_grid") {
-      return (
-        <div className="space-y-4">
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Section title</span>
-            <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Subtitle</span>
-            <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          </label>
-          <MediaPicker
-            label="Section image"
-            mediaType="section"
-            value={String(content.image_url || "")}
-            onChange={(value) => updateSelectedContent({ image_url: value })}
-          />
-          <div className="grid gap-4 md:grid-cols-2">
-            <input value={String(content.button_text || "")} onChange={(e) => updateSelectedContent({ button_text: e.target.value })} placeholder="Button text" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-            <input value={String(content.button_url || "")} onChange={(e) => updateSelectedContent({ button_url: e.target.value })} placeholder="Button URL" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          </div>
-        </div>
-      );
-    }
-
-    if (section.type === "text_block") {
-      return (
-        <div className="space-y-4">
-          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          <textarea value={String(content.text || section.subtitle || "")} onChange={(e) => updateSelectedContent({ text: e.target.value })} placeholder="Content" className="min-h-28 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <select value={String(settings.alignment || "left")} onChange={(e) => updateSelectedSettings({ alignment: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-            {["left", "center", "right"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-          </select>
-        </div>
-      );
-    }
-
-    if (section.type === "image_text") {
-      return (
-        <div className="space-y-4">
-          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          <textarea value={String(content.body || section.subtitle || "")} onChange={(e) => updateSelectedContent({ body: e.target.value })} placeholder="Body content" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <MediaPicker
-            label="Image"
-            mediaType="section"
-            value={String(content.image_url || "")}
-            onChange={(value) => updateSelectedContent({ image_url: value })}
-          />
-          <div className="grid gap-4 md:grid-cols-3">
-            <input value={String(content.button_text || "")} onChange={(e) => updateSelectedContent({ button_text: e.target.value })} placeholder="Button text" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-            <input value={String(content.button_url || "")} onChange={(e) => updateSelectedContent({ button_url: e.target.value })} placeholder="Button URL" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-            <select value={String(settings.image_position || "right")} onChange={(e) => updateSelectedSettings({ image_position: e.target.value })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["left", "right"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-          </div>
-        </div>
-      );
-    }
-
-    if (section.type === "newsletter") {
-      return (
-        <div className="space-y-4">
-          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <input value={String(content.button_text || "Subscribe")} onChange={(e) => updateSelectedContent({ button_text: e.target.value })} placeholder="Button text" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-        </div>
-      );
-    }
-
-    if (section.type === "faq") {
-      const items = Array.isArray(content.items) ? (content.items as FaqItem[]) : [];
-      const updateItems = (nextItems: FaqItem[]) => updateSelectedContent({ items: nextItems });
-      return (
-        <div className="space-y-4">
-          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <div className="space-y-3">
-            {items.map((item, index) => (
-              <div key={`${item.question}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
-                <input value={item.question} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, question: e.target.value } : entry))} placeholder="Question" className="w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
-                <textarea value={item.answer} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, answer: e.target.value } : entry))} placeholder="Answer" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 outline-none" />
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
-                  <button type="button" disabled={index === 0} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index - 1 ? items[index] : itemIndex === index ? items[index - 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
-                  <button type="button" disabled={index === items.length - 1} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index + 1 ? items[index] : itemIndex === index ? items[index + 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => updateItems([...items, { question: "", answer: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add FAQ Item</button>
-        </div>
-      );
-    }
-
-    if (section.type === "testimonials") {
-      const items = Array.isArray(content.items) ? (content.items as TestimonialItem[]) : [];
-      const updateItems = (nextItems: TestimonialItem[]) => updateSelectedContent({ items: nextItems });
-      return (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-            <select value={String(settings.layout_style || "grid")} onChange={(e) => updateSelectedSettings({ layout_style: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["grid", "carousel_static"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-          </div>
-          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <div className="space-y-3">
-            {items.map((item, index) => (
-              <div key={`${item.customer_name}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <input value={item.customer_name} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, customer_name: e.target.value } : entry))} placeholder="Customer name" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
-                  <input value={item.location || ""} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, location: e.target.value } : entry))} placeholder="Location" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
-                </div>
-                <textarea value={item.quote} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, quote: e.target.value } : entry))} placeholder="Quote" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 outline-none" />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="block text-sm">
-                    <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Rating</span>
-                    <input type="number" min={1} max={5} value={item.rating || 5} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, rating: Number(e.target.value) || 5 } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 outline-none" />
-                  </label>
-                  <MediaPicker
-                    label="Customer image"
-                    mediaType="section"
-                    value={item.image_url || ""}
-                    onChange={(value) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
-                  <button type="button" disabled={index === 0} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index - 1 ? items[index] : itemIndex === index ? items[index - 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
-                  <button type="button" disabled={index === items.length - 1} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index + 1 ? items[index] : itemIndex === index ? items[index + 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => updateItems([...items, { customer_name: "", quote: "", rating: 5, image_url: "", location: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add Testimonial</button>
-        </div>
-      );
-    }
-
-    if (section.type === "brand_strip") {
-      const items = Array.isArray(content.items) ? (content.items as BrandItem[]) : [];
-      const updateItems = (nextItems: BrandItem[]) => updateSelectedContent({ items: nextItems });
-      return (
-        <div className="space-y-4">
-          <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <div className="space-y-3">
-            {items.map((item, index) => (
-              <div key={`${item.name}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <input value={item.name} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, name: e.target.value } : entry))} placeholder="Brand name" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
-                  <input value={item.link_url || ""} onChange={(e) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, link_url: e.target.value } : entry))} placeholder="Link URL (optional)" className="rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 text-sm outline-none" />
-                </div>
-                <MediaPicker
-                  label="Brand logo"
-                  mediaType="section"
-                  value={item.logo_url || ""}
-                  onChange={(value) => updateItems(items.map((entry, itemIndex) => itemIndex === index ? { ...entry, logo_url: value } : entry))}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => updateItems(items.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
-                  <button type="button" disabled={index === 0} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index - 1 ? items[index] : itemIndex === index ? items[index - 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
-                  <button type="button" disabled={index === items.length - 1} onClick={() => updateItems(items.map((entry, itemIndex) => itemIndex === index + 1 ? items[index] : itemIndex === index ? items[index + 1] : entry))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => updateItems([...items, { name: "", logo_url: "", link_url: "" }])} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">Add Brand</button>
-        </div>
-      );
-    }
-
-    if (section.type === "flexible_grid") {
-      const blocks = Array.isArray(content.blocks) ? (content.blocks as Array<Record<string, unknown>>) : [];
-      const style = (settings.style || {}) as Record<string, unknown>;
-      const updateBlocks = (nextBlocks: Array<Record<string, unknown>>) => updateSelectedContent({ blocks: nextBlocks });
-      return (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <input value={section.title || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, title: e.target.value }))} placeholder="Section title" className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-            <select value={String(settings.layout || "two_column")} onChange={(e) => updateSelectedSettings({ layout: e.target.value })} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["one_column", "two_column", "three_column", "left_wide", "right_wide"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-          </div>
-          <textarea value={section.subtitle || ""} onChange={(e) => updateSelectedSection((current) => ({ ...current, subtitle: e.target.value }))} placeholder="Section subtitle" className="min-h-20 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <select value={String(style.background_preset || "white")} onChange={(e) => updateSelectedSettings({ style: { ...style, background_preset: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["white", "soft", "dark"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-            <select value={String(style.padding_y || "md")} onChange={(e) => updateSelectedSettings({ style: { ...style, padding_y: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["sm", "md", "lg"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-            <select value={String(style.max_width || "default")} onChange={(e) => updateSelectedSettings({ style: { ...style, max_width: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["narrow", "default", "wide"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-            <select value={String(style.alignment || "left")} onChange={(e) => updateSelectedSettings({ style: { ...style, alignment: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["left", "center", "right"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-            <select value={String(style.animation_preset || "inherit")} onChange={(e) => updateSelectedSettings({ style: { ...style, animation_preset: e.target.value } })} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-              {["inherit", "none", "subtle_fade", "slide_up", "scale_in", "premium_smooth", "deal_pop"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-            </select>
-          </div>
-          <div className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[var(--color-txt-pri)]">Blocks</p>
-              <div className="flex flex-wrap gap-2">
-                {storefrontBlockPresets.map((preset) => (
-                  <button key={preset.type} type="button" onClick={() => updateBlocks([...blocks, buildBlockFromPreset(preset.type)])} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">
-                    Add {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 space-y-3">
-              {blocks.map((block, index) => (
-                <div key={`${String(block.type)}-${index}`} className="space-y-3 rounded-2xl border border-[var(--color-brd)] bg-white p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-[var(--color-txt-pri)]">{toPrettyLabel(String(block.type || "block"))}</span>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={index === 0} onClick={() => updateBlocks(reorderItems(blocks, index, "up"))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
-                      <button type="button" disabled={index === blocks.length - 1} onClick={() => updateBlocks(reorderItems(blocks, index, "down"))} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
-                      <button type="button" onClick={() => updateBlocks(blocks.filter((_, blockIndex) => blockIndex !== index))} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Remove</button>
-                    </div>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label className="block text-sm">
-                      <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Column</span>
-                      <input type="number" min={1} max={3} value={Number(block.column || 1)} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, column: Number(e.target.value) || 1 } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-                    </label>
-                    {(block.type === "heading" || block.type === "paragraph" || block.type === "button") ? (
-                      <label className="block text-sm">
-                        <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Align</span>
-                        <select value={String(block.align || "left")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, align: e.target.value } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-                          {["left", "center", "right"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-                        </select>
-                      </label>
-                    ) : null}
-                  </div>
-                  {block.type === "heading" ? (
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <input value={String(block.text || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, text: e.target.value } : entry))} placeholder="Heading text" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-                      <select value={String(block.level || "h2")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, level: e.target.value } : entry))} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-                        {["h1", "h2", "h3"].map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
-                      </select>
-                    </div>
-                  ) : null}
-                  {block.type === "paragraph" ? (
-                    <textarea value={String(block.text || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, text: e.target.value } : entry))} placeholder="Paragraph text" className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none" />
-                  ) : null}
-                  {block.type === "image" ? (
-                    <div className="space-y-3">
-                      <MediaPicker label="Image" mediaType="section" value={String(block.image_url || "")} onChange={(value) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, image_url: value } : entry))} />
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <input value={String(block.alt || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, alt: e.target.value } : entry))} placeholder="Alt text" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-                        <input value={String(block.link_url || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, link_url: e.target.value } : entry))} placeholder="Link URL (optional)" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-                      </div>
-                    </div>
-                  ) : null}
-                  {block.type === "button" ? (
-                    <div className="grid gap-3 md:grid-cols-3">
-                      <input value={String(block.label || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, label: e.target.value } : entry))} placeholder="Button label" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-                      <input value={String(block.href || "")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, href: e.target.value } : entry))} placeholder="Button href" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
-                      <select value={String(block.style || "primary")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, style: e.target.value } : entry))} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-                        {["primary", "secondary"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-                      </select>
-                    </div>
-                  ) : null}
-                  {block.type === "spacer" ? (
-                    <select value={String(block.size || "md")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, size: e.target.value } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-                      {["sm", "md", "lg"].map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
-                    </select>
-                  ) : null}
-                  {block.type === "divider" ? (
-                    <select value={String(block.style || "subtle")} onChange={(e) => updateBlocks(blocks.map((entry, blockIndex) => blockIndex === index ? { ...entry, style: e.target.value } : entry))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 outline-none">
-                      {["solid", "dashed", "subtle"].map((value) => <option key={value} value={value}>{toPrettyLabel(value)}</option>)}
-                    </select>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <p className="text-sm text-[var(--color-txt-sec)]">
-        This section does not have a dedicated structured editor yet. Use the advanced settings below.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <OpsPageHeader
-        eyebrow="Online Store"
-        title="Customize Homepage"
-        description="Use predefined storefront sections with structured controls first, then fall back to advanced JSON only when needed."
-      />
-      <OnlineStoreTabs />
-      {!loading && page ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-[var(--color-brd)] bg-[var(--color-surf)] px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-[var(--color-txt-sec)]">Status</span>
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              page.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-            }`}>
-              {page.status === "published" ? "Published" : "Draft"}
-            </span>
-            <span className="rounded-full bg-[var(--color-surf-hover)] px-3 py-1 text-xs font-semibold text-[var(--color-txt-pri)]">
-              Template: {(settings?.active_template_key || "live_shopping_classic").replace(/_/g, " ")}
-            </span>
-            {hasUnsavedChanges ? (
-              <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
-                Unsaved edits
-              </span>
-            ) : null}
-            {page.last_published_at ? (
-              <span className="text-xs text-[var(--color-txt-sec)]">
-                Last published {new Date(page.last_published_at).toLocaleString()}
-              </span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => window.open(`/dashboard/online-store/preview?pageId=${page.id}`, "_blank", "noopener,noreferrer")}
-              className="rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-pri)]"
-            >
-              Preview Draft
-            </button>
-            <button
-              type="button"
-              onClick={() => void publishPage()}
-              disabled={publishLoading}
-              className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white"
-            >
-              {publishLoading ? "Publishing..." : "Publish Changes"}
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {loading ? <LoadingState label="Loading homepage sections..." /> : null}
-      {!loading && error ? <ErrorAlert message={error} /> : null}
-      {success ? (
-        <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-medium text-emerald-700">
-          {success}
-        </div>
-      ) : null}
-
-      {!loading && page ? (
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <FormCard
-            title="Homepage Sections"
-            description="Reorder, hide, and manage the predefined sections that make up the public storefront home page."
-            action={(
-              <div className="flex gap-2">
-                <select value={newSectionType} onChange={(e) => setNewSectionType(e.target.value)} className="rounded-full border border-[var(--color-brd)] bg-[var(--color-surf)] px-4 py-2 text-sm">
-                  {storefrontSectionPresets.map((preset) => <option key={preset.type} value={preset.type}>{preset.label}</option>)}
-                </select>
-                <button type="button" onClick={() => void createSection()} className="rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-white">
-                  Add Section
-                </button>
-              </div>
-            )}
-          >
-            <div className="space-y-3">
-              {page.sections.map((section, index) => (
-                <div key={section.id} className={`rounded-[18px] border p-4 ${selectedSectionId === section.id ? "border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_8%,white)]" : "border-[var(--color-brd)] bg-[var(--color-surf-hover)]"}`}>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--color-txt-pri)]">[{getSectionPreset(section.type)?.label || toPrettyLabel(section.type)}] {section.title || "Untitled section"}</p>
-                      <p className="mt-1 text-xs text-[var(--color-txt-sec)]">{getSectionPreset(section.type)?.description || "Storefront section block"}</p>
-                      <p className="mt-1 text-xs text-[var(--color-txt-sec)]">{section.is_enabled ? "Visible" : "Hidden"}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setSelectedSectionId(section.id || null)} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">Edit</button>
-                      <button type="button" onClick={() => void duplicateSection(section)} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">Duplicate</button>
-                      <button type="button" onClick={() => void saveSection({ ...section, is_enabled: !section.is_enabled })} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold">{section.is_enabled ? "Hide" : "Show"}</button>
-                      <button type="button" disabled={index === 0} onClick={() => void moveSection(section.id!, "up")} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Up</button>
-                      <button type="button" disabled={index === page.sections.length - 1} onClick={() => void moveSection(section.id!, "down")} className="rounded-full border border-[var(--color-brd)] px-3 py-2 text-xs font-semibold disabled:opacity-50">Move Down</button>
-                      <button type="button" onClick={() => void deleteSection(section.id!)} className="rounded-full border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600">Delete</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </FormCard>
-
-          <FormCard title="Section Editor" description="Edit the selected section with structured fields first. Advanced JSON remains available for uncommon cases.">
-            {selectedSection ? (
-              <div className="space-y-5">
-                <label className="flex items-center gap-3 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm font-medium text-[var(--color-txt-sec)]">
-                  <input type="checkbox" checked={selectedSection.is_enabled ?? true} onChange={(e) => updateSelectedSection((current) => ({ ...current, is_enabled: e.target.checked }))} />
-                  Enabled
-                </label>
-
-                {renderStructuredEditor(selectedSection)}
-
-                <details className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)]">
-                  <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-txt-pri)]">Advanced settings</summary>
-                  <div className="space-y-4 border-t border-[var(--color-brd)] p-4">
-                    <label className="block text-sm">
-                      <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Settings JSON</span>
-                      <textarea
-                        value={JSON.stringify(selectedSection.settings || {}, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            const parsed = JSON.parse(e.target.value || "{}");
-                            updateSelectedSection((current) => ({ ...current, settings: parsed }));
-                          } catch {}
-                        }}
-                        className="min-h-40 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 font-mono text-xs outline-none"
-                      />
-                    </label>
-                    <label className="block text-sm">
-                      <span className="mb-2 block font-medium text-[var(--color-txt-sec)]">Content JSON</span>
-                      <textarea
-                        value={JSON.stringify(selectedSection.content || {}, null, 2)}
-                        onChange={(e) => {
-                          try {
-                            const parsed = JSON.parse(e.target.value || "{}");
-                            updateSelectedSection((current) => ({ ...current, content: parsed }));
-                          } catch {}
-                        }}
-                        className="min-h-40 w-full rounded-2xl border border-[var(--color-brd)] bg-white px-4 py-3 font-mono text-xs outline-none"
-                      />
-                    </label>
-                  </div>
-                </details>
-
-                <div className="flex justify-end">
-                  <button type="button" onClick={() => void saveSection(selectedSection)} className="rounded-full bg-[var(--color-accent)] px-5 py-3 text-sm font-semibold text-white">
-                    Save Section
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--color-txt-sec)]">Select a section from the left to edit it.</p>
-            )}
-          </FormCard>
-        </div>
-      ) : null}
-    </div>
-  );
+  const effectiveSelection = selection?.type === "section" ? (page?.sections.some((section) => section.id === selection.id) ? selection : null) : selection?.type === "block" ? (ownerForNode(selection.id) ? selection : null) : null;
+  if (loading) return <div className="space-y-6"><OpsPageHeader eyebrow="Online Store" title="Builder V2" description="Loading the recursive visual storefront builder." /><OnlineStoreTabs /><LoadingState label="Loading Builder V2…" /></div>;
+  return <div className="space-y-5"><OpsPageHeader eyebrow="Online Store" title="Builder V2" description="Author the real storefront with safe recursive responsive layouts." /><OnlineStoreTabs />{error ? <ErrorAlert message={error} /> : null}{success ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">{success}</div> : null}
+    {page && settings ? <BuilderShell pages={pages} page={page} settings={settings} menus={menus} theme={theme} template={activeTemplate} previewResources={previewResources} previewResourceSlug={previewResourceSlug} savedSections={savedSections} device={device} selection={effectiveSelection} saveState={saveState} canUndo={history.canUndo} canRedo={history.canRedo} publishing={publishing} refreshKey={refreshKey}
+      onPreviewResourceChange={setPreviewResourceSlug}
+      onThemeChange={setTheme}
+      onPageChange={(id) => { if (saveState === "unsaved" && !window.confirm("Discard unsaved changes and open another template?")) return; if (theme) void loadThemeTemplate(theme.id, id); }} onDeviceChange={setDevice} onSelection={setSelection} onUndo={() => { undoHistory(); setSaveState("unsaved"); }} onRedo={() => { redoHistory(); setSaveState("unsaved"); }} onSave={() => void save()} onPublish={() => void publish()} onRefresh={() => setRefreshKey((value) => value + 1)}
+      onReorderSections={(sections) => mutate((current) => ({ ...current, sections }))} onMoveBlock={moveBlock} onUpdateSection={updateSection} onUpdateBlock={updateBlock} onToggleSection={(section) => updateSection({ ...section, is_enabled: section.is_enabled === false })}
+      onDuplicateSection={(section) => void withPersistedStructure(async () => { if (page.id) { const clone = cloneSectionWithNewBlockIds(section); const owner = section.template_id ? `/admin/storefront/templates/${section.template_id}/sections` : section.section_group_id ? `/admin/storefront/section-groups/${section.section_group_id}/sections` : `/admin/storefront/pages/${page.id}/sections`; await api.post(owner, { type: clone.type, title: `${clone.title || "Section"} copy`, subtitle: clone.subtitle, is_enabled: clone.is_enabled, settings: clone.settings || {}, content: clone.content || {} }); } })}
+      onDeleteSection={(section) => { if (section.id && window.confirm(`Delete ${section.title || "this section"}?`)) void withPersistedStructure(() => api.delete(`/admin/storefront/sections/${section.id}`)); }} onSaveReusable={(section) => void saveReusable(section)} onDuplicateBlock={duplicateBlock} onDeleteBlock={deleteBlock} onInsertBlock={insertBlock}
+      onUpdateBlockMeta={updateBlockMeta} onWrapBlock={wrapBlock} onCopyBlock={copyBlock} onPasteBlock={pasteBlock} onCopyStyles={copyStyles} onPasteStyles={pasteStyles}
+      onCreateSection={(type) => void withPersistedStructure(async () => { if (page.id) await api.post(theme && activeTemplate ? `/admin/storefront/templates/${activeTemplate.id}/sections` : `/admin/storefront/pages/${page.id}/sections`, buildSectionFromPreset(type)); })} onInsertSaved={insertSaved} onDeleteSaved={(item) => void deleteSaved(item)} onUpdateInlineText={updateInlineText} /> : null}
+  </div>;
 }

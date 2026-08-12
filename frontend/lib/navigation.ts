@@ -32,6 +32,7 @@ export const navigationRegistry: NavigationEntry[] = [
   { label: "Shipments", href: "/dashboard/shipments", group: "Operations", icon: "shipments", capability: "shipments.view", matchers: ["/dashboard/shipments"] },
   { label: "Couriers", href: "/dashboard/couriers", group: "Operations", icon: "couriers", capability: "couriers.view" },
   { label: "Customers", href: "/dashboard/customers", group: "Customers", icon: "customers", capability: "customers.view", matchers: ["/dashboard/customers"] },
+  { label: "Inbox", href: "/dashboard/inbox", group: "Customers", icon: "inbox", capability: "inbox.view", matchers: ["/dashboard/inbox"] },
   { label: "Finance", href: "/dashboard/finance", group: "Finance", icon: "finance", capability: "finance.view" },
   { label: "HR", href: "/dashboard/hr", group: "People", icon: "hr", capability: "hr.view" },
   { label: "Tasks", href: "/dashboard/tasks", group: "People", icon: "tasks", capability: "tasks.view" },
@@ -41,6 +42,8 @@ export const navigationRegistry: NavigationEntry[] = [
   { label: "Courier Integrations", href: "/dashboard/courier-integrations", group: "Channels", icon: "integrations", capability: "courier_integrations.view" },
   { label: "Activity Logs", href: "/dashboard/activity-logs", group: "Administration", icon: "activity", capability: "activity_logs.view" },
   { label: "Settings", href: "/dashboard/settings", group: "Administration", icon: "settings", capability: "settings.view" },
+  { label: "Plan & Usage", href: "/dashboard/plan", group: "Administration", icon: "plan", capability: "settings.view" },
+  { label: "Billing", href: "/dashboard/billing", group: "Administration", icon: "plan", capability: "settings.view", matchers: ["/dashboard/billing"] },
   { label: "Admin Tools", href: "/dashboard/admin-tools", group: "Administration", icon: "admin", capability: "settings.view" },
 ];
 

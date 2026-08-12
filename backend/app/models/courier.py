@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,10 +11,11 @@ from app.core.database import Base
 
 class Courier(Base):
     __tablename__ = "couriers"
+    __table_args__ = (UniqueConstraint("store_id", "code", name="uq_couriers_store_code"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    code: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(100), nullable=False)
     contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     website: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
@@ -31,9 +32,12 @@ class Courier(Base):
 
 class Shipment(Base):
     __tablename__ = "shipments"
+    __table_args__ = (
+        UniqueConstraint("store_id", "shipment_number", name="uq_shipments_store_shipment_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    shipment_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    shipment_number: Mapped[str] = mapped_column(String(100), nullable=False)
     order_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("orders.id", ondelete="CASCADE"),

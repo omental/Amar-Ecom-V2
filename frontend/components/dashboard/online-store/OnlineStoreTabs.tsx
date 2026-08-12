@@ -5,12 +5,15 @@ import { usePathname } from "next/navigation";
 
 const tabs = [
   { label: "Overview", href: "/dashboard/online-store" },
+  { label: "Themes", href: "/dashboard/online-store/themes" },
   { label: "Customize", href: "/dashboard/online-store/customize" },
   { label: "Templates", href: "/dashboard/online-store/templates" },
   { label: "Revisions", href: "/dashboard/online-store/revisions" },
   { label: "Header & Footer", href: "/dashboard/online-store/header-footer" },
   { label: "Navigation", href: "/dashboard/online-store/navigation" },
   { label: "Pages", href: "/dashboard/online-store/pages" },
+  { label: "Custom Data", href: "/dashboard/online-store/custom-data" },
+  { label: "Domains", href: "/dashboard/online-store/domains" },
   { label: "Banners", href: "/dashboard/online-store/banners" },
   { label: "Coupons", href: "/dashboard/online-store/coupons" },
   { label: "Theme Settings", href: "/dashboard/online-store/theme" },

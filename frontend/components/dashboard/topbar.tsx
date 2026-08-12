@@ -35,6 +35,7 @@ import {
   markNotificationRead,
   type DashboardNotification,
 } from "@/lib/notifications";
+import { useDashboardStore } from "@/components/dashboard/store-provider";
 
 type TopbarProps = {
   user: AuthUser | null;
@@ -180,6 +181,7 @@ export function DashboardTopbar({
   onToggleTheme,
   onOpenMobileMenu,
 }: TopbarProps) {
+  const tenant = useDashboardStore();
   const quickActionRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
@@ -310,6 +312,27 @@ export function DashboardTopbar({
       </div>
 
       <div className="flex items-center gap-3 sm:gap-6">
+        <div className="hidden min-w-0 md:block">
+          <label className="sr-only" htmlFor="amar-store-switcher">Current store</label>
+          {tenant.stores.length > 1 ? (
+            <select
+              id="amar-store-switcher"
+              value={tenant.store.slug}
+              disabled={tenant.switching}
+              onChange={(event) => {
+                const store = tenant.stores.find((candidate) => candidate.slug === event.target.value);
+                if (store) void tenant.switchStore(store);
+              }}
+              className="max-w-48 rounded-xl border border-[var(--color-brd)] bg-[var(--color-surf)] px-3 py-2 text-sm font-bold text-[var(--color-txt-pri)]"
+            >
+              {tenant.stores.map((store) => <option key={store.id} value={store.slug}>{store.name}</option>)}
+            </select>
+          ) : (
+            <div className="max-w-44 truncate text-sm font-bold text-[var(--color-txt-pri)]" title={tenant.store.name}>
+              {tenant.store.name}
+            </div>
+          )}
+        </div>
         {canAccessModule("pos", user) ? (
           <Link
             href="/dashboard/pos"

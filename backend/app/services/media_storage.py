@@ -14,6 +14,7 @@ from fastapi import HTTPException, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 
 from app.core.config import settings
+from app.core.tenant import current_store_id
 
 
 SUPPORTED_IMAGE_FORMATS = {
@@ -60,7 +61,9 @@ class LocalMediaStorage(MediaStorage):
     def save(self, content: bytes, extension: str) -> tuple[str, str]:
         now = datetime.now(timezone.utc)
         filename = f"{uuid.uuid4().hex}{extension}"
-        storage_key = PurePosixPath(str(now.year), f"{now.month:02d}", filename).as_posix()
+        store_id = current_store_id.get()
+        prefix = ("stores", str(store_id)) if store_id else ("platform",)
+        storage_key = PurePosixPath(*prefix, str(now.year), f"{now.month:02d}", filename).as_posix()
         target = self._safe_path(storage_key)
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("xb") as media_file:

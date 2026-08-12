@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, get_entitlement_context
 from app.api.utils import commit_or_409
 from app.core.crypto import (
     decrypt_secret,
@@ -36,6 +36,7 @@ from app.schemas.woocommerce import (
     WooCommerceSyncStatusRead,
 )
 from app.services.activity_log_service import log_activity
+from app.services.commercial_access_service import EntitlementService
 from app.services.woocommerce_service import (
     fetch_orders_preview,
     fetch_products_preview,
@@ -283,8 +284,10 @@ async def import_selected_products(
     db: DBSession,
     request: Request,
     current_user: User = Depends(get_current_user),
+    access: EntitlementService = Depends(get_entitlement_context),
 ) -> WooCommerceImportResult:
     _ensure_admin(current_user)
+    await access.require_capacity("product_limit", requested_amount=len(set(import_in.external_ids)))
     result = await import_products(db, import_in.external_ids, current_user)
     await log_activity(
         db,

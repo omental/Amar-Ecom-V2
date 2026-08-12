@@ -15,11 +15,13 @@ import { SectionRenderer } from "./sections/SectionRenderer";
 export function StorefrontSectionRenderer({
   section,
   settings = FALLBACK_STOREFRONT_HOME.settings,
+  themeDefinition,
 }: {
   section: OnlineStoreSection;
   settings?: OnlineStoreSettings;
+  themeDefinition?: import("@/lib/online-store").OnlineStoreTheme | null;
 }) {
-  return <SectionRenderer section={section} settings={settings} />;
+  return <SectionRenderer section={section} settings={settings} themeDefinition={themeDefinition} />;
 }
 
 export function StorefrontHome({
@@ -35,9 +37,9 @@ export function StorefrontHome({
 
   return (
     <div className={theme.spacingClass} style={theme.cssVars}>
-      {sections.map((section, index) => (
-        <div key={`${section.type}-${section.title || index}`}>
-          <StorefrontSectionRenderer section={section} settings={storefront.settings} />
+      {sections.map((section) => (
+        <div key={section.id || `${section.type}-${section.sort_order}`}>
+          <StorefrontSectionRenderer section={section} settings={storefront.settings} themeDefinition={storefront.theme} />
         </div>
       ))}
     </div>

@@ -10,7 +10,7 @@ from app.models.brand import Brand
 from app.models.category import Category
 from app.models.inventory import InventoryItem
 from app.models.inventory_ops import StockTransfer, WastageLog
-from app.models.product import Product
+from app.models.product import Product, ProductVariant
 from app.models.user import User
 from app.models.return_request import ReturnRequest
 from app.models.stock_movement import StockMovement
@@ -173,6 +173,13 @@ async def get_inventory_item(inventory_item_id: UUID, db: DBSession) -> Inventor
 @router.post("", response_model=InventoryItemRead, status_code=status.HTTP_201_CREATED)
 async def create_inventory_item(inventory_in: InventoryItemCreate, db: DBSession) -> InventoryItem:
     payload = inventory_in.model_dump()
+    await fetch_one_or_404(db, select(Warehouse).where(Warehouse.id == inventory_in.warehouse_id), "Warehouse not found")
+    if inventory_in.product_id:
+        await fetch_one_or_404(db, select(Product).where(Product.id == inventory_in.product_id), "Product not found")
+    if inventory_in.variant_id:
+        variant = await fetch_one_or_404(db, select(ProductVariant).where(ProductVariant.id == inventory_in.variant_id), "Product variant not found")
+        if inventory_in.product_id and variant.product_id != inventory_in.product_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Variant does not belong to product")
     initial_quantity = payload.pop("quantity")
     inventory_item = InventoryItem(**payload, quantity=initial_quantity)
     db.add(inventory_item)

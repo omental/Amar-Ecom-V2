@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { CheckoutView } from "@/components/storefront/CheckoutView";
 import {
   FALLBACK_STOREFRONT_SETTINGS,
-  fetchPublicStorefrontSettings,
 } from "@/lib/online-store";
+import { fetchPublicStorefrontSettingsServer } from "@/lib/storefront-public-server";
 
 export const metadata: Metadata = {
   title: "Checkout",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default async function CheckoutPage() {
-  const settings = await fetchPublicStorefrontSettings().catch(
+  const settings = await fetchPublicStorefrontSettingsServer().catch(
     () => FALLBACK_STOREFRONT_SETTINGS,
   );
 

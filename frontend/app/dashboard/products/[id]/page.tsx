@@ -23,6 +23,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
+import type { OnlineStoreTemplate, OnlineStoreTheme } from "@/lib/online-store";
+import { CustomFieldsEditor } from "@/components/dashboard/online-store/CustomFieldsEditor";
 
 type OptionItem = {
   id: string;
@@ -68,6 +70,7 @@ type Product = {
   category?: { id: string; name: string } | null;
   brand?: { id: string; name: string } | null;
   variants?: ProductVariant[];
+  storefront_template_id?: string | null;
 };
 
 type InventoryItem = {
@@ -92,6 +95,7 @@ type ProductForm = {
   cost_price: string;
   image_url: string;
   status: string;
+  storefront_template_id: string;
 };
 
 type VariantForm = {
@@ -112,6 +116,7 @@ const initialProductForm: ProductForm = {
   cost_price: "",
   image_url: "",
   status: "active",
+  storefront_template_id: "",
 };
 
 const initialVariantForm: VariantForm = {
@@ -133,6 +138,7 @@ function productToForm(product: Product): ProductForm {
     cost_price: String(product.cost_price),
     image_url: product.image_url || "",
     status: product.status,
+    storefront_template_id: product.storefront_template_id || "",
   };
 }
 
@@ -164,6 +170,7 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<OptionItem[]>([]);
   const [brands, setBrands] = useState<OptionItem[]>([]);
+  const [productTemplates, setProductTemplates] = useState<OnlineStoreTemplate[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
@@ -199,6 +206,7 @@ export default function ProductDetailPage() {
           brandsData,
           inventoryData,
           warehousesData,
+          themesData,
         ] = await Promise.all([
           api.get<Product>(`/products/${productId}`),
           api.get<ProductVariant[]>(`/products/${productId}/variants`),
@@ -206,6 +214,7 @@ export default function ProductDetailPage() {
           api.get<OptionItem[]>("/brands?skip=0&limit=100"),
           api.get<InventoryItem[]>("/inventory?skip=0&limit=100"),
           api.get<Warehouse[]>("/warehouses?skip=0&limit=100"),
+          api.get<OnlineStoreTheme[]>("/admin/storefront/themes"),
         ]);
 
         if (!isMounted) {
@@ -221,6 +230,7 @@ export default function ProductDetailPage() {
           inventoryData.filter((item) => item.product_id === productData.id),
         );
         setWarehouses(warehousesData);
+        setProductTemplates(themesData.filter((theme) => theme.status === "published").flatMap((theme) => theme.templates).filter((template) => template.resource_type === "product"));
       } catch (err) {
         if (!isMounted) {
           return;
@@ -282,6 +292,7 @@ export default function ProductDetailPage() {
         cost_price: Number(productForm.cost_price),
         image_url: productForm.image_url || null,
         status: productForm.status,
+        storefront_template_id: productForm.storefront_template_id || null,
       });
       await refreshProductContext();
       setProductSuccess("Product updated successfully.");
@@ -470,6 +481,7 @@ export default function ProductDetailPage() {
         </div>
       ) : null}
 
+      <CustomFieldsEditor ownerType="product" ownerId={product.id} />
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-4">
           <FormCard
@@ -562,6 +574,15 @@ export default function ProductDetailPage() {
                   }
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white"
                 />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-700">Storefront template</span>
+                <select value={productForm.storefront_template_id} onChange={(event) => setProductForm((current) => ({ ...current, storefront_template_id: event.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-slate-400 focus:bg-white">
+                  <option value="">Default product template</option>
+                  {productTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                </select>
+                <span className="mt-2 block text-xs text-slate-500">Only compatible templates from the live theme are available.</span>
               </label>
 
               <div className="grid gap-4 md:grid-cols-2">

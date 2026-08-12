@@ -4,9 +4,10 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.persistence import commit_or_409
-from app.models.storefront import StorefrontPage, StorefrontSection, StorefrontRevision
+from app.models.storefront import StorefrontPage, StorefrontSection, StorefrontRevision, StorefrontTemplate, StorefrontTheme
 from app.schemas.storefront import StorefrontTemplatePresetRead
 from app.models.user import User
 from app.services.storefront_revision_service import create_storefront_revision
@@ -271,7 +272,9 @@ async def apply_template_preset(
     sections_result = await db.execute(
         select(StorefrontSection).where(StorefrontSection.page_id == home_page.id).order_by(StorefrontSection.sort_order.asc(), StorefrontSection.created_at.asc())
     )
-    home_page.sections = list(sections_result.scalars().all())
+    # The relationship is lazy by default. Assigning to it through the normal
+    # descriptor can issue async IO outside SQLAlchemy's greenlet context.
+    set_committed_value(home_page, "sections", list(sections_result.scalars().all()))
     revision = await create_storefront_revision(
         db,
         revision_type="template_apply",
@@ -283,10 +286,25 @@ async def apply_template_preset(
 
     await db.execute(delete(StorefrontSection).where(StorefrontSection.page_id == home_page.id))
 
+    # Compatibility bridge: the legacy preset action has always been an
+    # immediate live-homepage operation. Mirror it atomically into the active
+    # theme's Home template so upgrades do not make this existing action appear
+    # to succeed while the public template resolver continues serving stale data.
+    home_template = (await db.execute(
+        select(StorefrontTemplate)
+        .join(StorefrontTheme, StorefrontTheme.id == StorefrontTemplate.theme_id)
+        .where(StorefrontTheme.status == "published", StorefrontTemplate.resource_type == "home", StorefrontTemplate.is_default.is_(True))
+        .limit(1)
+    )).scalar_one_or_none()
+    if home_template is not None:
+        await db.execute(delete(StorefrontSection).where(StorefrontSection.template_id == home_template.id))
+
     for index, section in enumerate(preset["default_homepage_sections"]):
-        db.add(
-            StorefrontSection(
-                page_id=home_page.id,
+        for owner in ({"page_id": home_page.id}, {"template_id": home_template.id} if home_template is not None else None):
+            if owner is None:
+                continue
+            db.add(StorefrontSection(
+                **owner,
                 type=section["type"],
                 title=section.get("title"),
                 subtitle=section.get("subtitle"),
@@ -294,8 +312,7 @@ async def apply_template_preset(
                 is_enabled=True,
                 settings=section.get("settings") or {},
                 content=section.get("content") or {},
-            )
-        )
+            ))
 
     await commit_or_409(db, "Could not apply storefront template")
     await db.refresh(home_page)

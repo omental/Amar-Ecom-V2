@@ -95,14 +95,14 @@ export default function OnlineStoreRevisionsPage() {
                       {revision.created_by_name ? ` • ${revision.created_by_name}` : ""}
                     </p>
                   </div>
-                  <button
+                  {revision.revision_type === "theme_publish" ? <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600">Republish from Themes</span> : <button
                     type="button"
                     onClick={() => void handleRestore(revision.id)}
                     disabled={restoringId === revision.id}
                     className="rounded-full border border-[var(--color-brd)] px-4 py-2 text-sm font-semibold text-[var(--color-txt-pri)] disabled:opacity-60"
                   >
                     {restoringId === revision.id ? "Restoring..." : "Restore"}
-                  </button>
+                  </button>}
                 </div>
               ))
             )}

@@ -3,10 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession, get_current_user, require_permission
+from app.api.deps import DBSession, get_current_user, get_entitlement_context, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.warehouse import Warehouse
 from app.schemas.warehouse import WarehouseCreate, WarehouseRead, WarehouseUpdate
+from app.services.commercial_access_service import EntitlementService
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -29,7 +30,8 @@ async def get_warehouse(warehouse_id: UUID, db: DBSession) -> Warehouse:
 
 
 @router.post("", response_model=WarehouseRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("warehouses", "create"))])
-async def create_warehouse(warehouse_in: WarehouseCreate, db: DBSession) -> Warehouse:
+async def create_warehouse(warehouse_in: WarehouseCreate, db: DBSession, access: EntitlementService = Depends(get_entitlement_context)) -> Warehouse:
+    await access.require_capacity("warehouse_limit")
     await ensure_unique(db, Warehouse, "code", warehouse_in.code, "Warehouse code already exists")
     warehouse = Warehouse(**warehouse_in.model_dump())
     db.add(warehouse)

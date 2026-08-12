@@ -7,6 +7,7 @@ import { ArrowRight, LockKeyhole, Mail } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { getApiBaseUrl } from "@/lib/api-config";
 import { fetchCurrentUser, saveToken, saveUser } from "@/lib/auth";
+import Link from "next/link";
 
 type LoginResponse = {
   access_token: string;
@@ -160,6 +161,13 @@ export default function LoginPage() {
                 <ArrowRight className="h-4 w-4" />
               </button>
             </form>
+
+            <p className="mt-6 text-center text-sm text-slate-500">
+              New to Amar?{" "}
+              <Link href="/signup" className="font-semibold text-slate-950 hover:underline">
+                Create your store
+              </Link>
+            </p>
 
             <div className="mt-8 rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5">
               <p className="text-sm font-medium text-slate-700">

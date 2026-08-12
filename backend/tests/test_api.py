@@ -942,8 +942,10 @@ def test_storefront_coupon_validation_rejects_invalid_and_usage_limited_coupons(
                 headers=headers,
                 json={
                     "name": f"Coupon Test Product {uuid.uuid4().hex[:6]}",
+                    "slug": f"coupon-test-product-{uuid.uuid4().hex[:8]}",
                     "sku": f"COUPON-{uuid.uuid4().hex[:6].upper()}",
                     "price": 1500,
+                    "cost_price": 900,
                     "sale_price": 1200,
                     "status": "active",
                     "image": "https://example.com/coupon-product.jpg",
@@ -1213,6 +1215,7 @@ def test_storefront_pages_sections_and_public_visibility() -> None:
             home_payload = home_response.json()
             assert home_payload["page"]["slug"] == "home"
             assert isinstance(home_payload["page"]["sections"], list)
+            assert all("id" in item and "sort_order" in item for item in home_payload["page"]["sections"])
             assert "id" not in home_payload["page"]
             assert "id" not in home_payload["settings"]
     except (ProgrammingError, InterfaceError, AttributeError, RuntimeError) as exc:
@@ -1220,6 +1223,216 @@ def test_storefront_pages_sections_and_public_visibility() -> None:
             pytest.skip("Apply the storefront builder migration before running this test.")
         raise
 
+    dispose_engine()
+
+
+def test_storefront_saved_sections_crud_and_snapshot_safety() -> None:
+    headers = auth_headers()
+    nested_id = str(uuid.uuid4())
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/v1/admin/storefront/saved-sections",
+            headers=headers,
+            json={
+                "name": "Reusable campaign",
+                "description": "Nested builder content",
+                "category": "campaign",
+                "snapshot": {
+                    "id": str(uuid.uuid4()),
+                    "page_id": str(uuid.uuid4()),
+                    "sort_order": 99,
+                    "type": "flexible_grid",
+                    "title": "Campaign",
+                    "is_enabled": True,
+                    "settings": {"layout": "one_column"},
+                    "content": {
+                        "blocks": [
+                            {
+                                "id": nested_id,
+                                "type": "container",
+                                "props": {},
+                                "children": [{"id": str(uuid.uuid4()), "type": "heading", "props": {"text": "Hello"}, "children": []}],
+                            }
+                        ]
+                    },
+                },
+            },
+        )
+        assert create_response.status_code == 201, create_response.text
+        created = create_response.json()
+        assert created["snapshot"]["type"] == "flexible_grid"
+        assert "id" not in created["snapshot"]
+        assert "page_id" not in created["snapshot"]
+        assert "sort_order" not in created["snapshot"]
+        assert created["snapshot"]["content"]["blocks"][0]["id"] == nested_id
+
+        list_response = client.get("/api/v1/admin/storefront/saved-sections", headers=headers)
+        assert list_response.status_code == 200, list_response.text
+        assert any(item["id"] == created["id"] for item in list_response.json())
+
+        update_response = client.put(
+            f"/api/v1/admin/storefront/saved-sections/{created['id']}",
+            headers=headers,
+            json={"name": "Reusable campaign updated"},
+        )
+        assert update_response.status_code == 200, update_response.text
+        assert update_response.json()["name"] == "Reusable campaign updated"
+
+        delete_response = client.delete(f"/api/v1/admin/storefront/saved-sections/{created['id']}", headers=headers)
+        assert delete_response.status_code == 204, delete_response.text
+
+        missing_response = client.post(
+            "/api/v1/admin/storefront/saved-sections",
+            headers=headers,
+            json={"name": "Invalid", "snapshot": {"content": {}}},
+        )
+        assert missing_response.status_code == 422, missing_response.text
+    dispose_engine()
+
+
+def test_storefront_theme_engine_bootstrap_duplication_isolation_and_publish() -> None:
+    headers = auth_headers()
+    suffix = uuid.uuid4().hex[:8]
+
+    with TestClient(app) as client:
+        first = client.get("/api/v1/admin/storefront/themes", headers=headers)
+        assert first.status_code == 200, first.text
+        themes = first.json()
+        published = next(theme for theme in themes if theme["status"] == "published")
+        assert {template["resource_type"] for template in published["templates"] if template["is_default"]} == {
+            "home", "product", "collection", "page", "search", "cart", "not_found"
+        }
+        assert {group["group_type"] for group in published["section_groups"]} == {"header", "footer"}
+
+        second = client.get("/api/v1/admin/storefront/themes", headers=headers)
+        assert second.status_code == 200, second.text
+        assert len(second.json()) == len(themes), "theme bootstrap must be idempotent"
+
+        duplicate_response = client.post(
+            f"/api/v1/admin/storefront/themes/{published['id']}/duplicate",
+            headers=headers,
+            json={"name": f"Theme engine test {suffix}", "key": f"theme-engine-test-{suffix}", "version": "1.0.0", "settings": {}},
+        )
+        assert duplicate_response.status_code == 201, duplicate_response.text
+        draft = duplicate_response.json()
+        assert draft["status"] == "draft"
+        assert len(draft["templates"]) == len(published["templates"])
+        assert {section["id"] for template in draft["templates"] for section in template["sections"]}.isdisjoint(
+            {section["id"] for template in published["templates"] for section in template["sections"]}
+        )
+
+        draft_product = next(template for template in draft["templates"] if template["resource_type"] == "product" and template["is_default"])
+        template_duplicate = client.post(
+            f"/api/v1/admin/storefront/templates/{draft_product['id']}/duplicate",
+            headers=headers,
+            json={"name": "Editorial product", "key": f"editorial-product-{suffix}", "resource_type": "product", "settings": {}},
+        )
+        assert template_duplicate.status_code == 201, template_duplicate.text
+        editorial = template_duplicate.json()
+        assert editorial["resource_type"] == "product" and editorial["is_default"] is False
+        assert {section["id"] for section in editorial["sections"]}.isdisjoint({section["id"] for section in draft_product["sections"]})
+
+        incompatible_page = client.post(
+            "/api/v1/admin/storefront/pages",
+            headers=headers,
+            json={"title": "Invalid assignment", "slug": f"invalid-assignment-{suffix}", "page_type": "custom", "status": "draft", "template_id": editorial["id"]},
+        )
+        assert incompatible_page.status_code == 422, incompatible_page.text
+
+        public_before = client.get("/api/v1/public/storefront/theme/resolve/product")
+        assert public_before.status_code == 200, public_before.text
+        assert public_before.json()["theme"]["id"] == published["id"], "draft themes must not leak publicly"
+
+        preview = client.get(f"/api/v1/admin/storefront/themes/{draft['id']}/preview?resource_type=product", headers=headers)
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["theme"]["id"] == draft["id"]
+
+        publish = client.post(f"/api/v1/admin/storefront/themes/{draft['id']}/publish", headers=headers)
+        assert publish.status_code == 200, publish.text
+        assert publish.json()["revision_id"]
+        public_after = client.get("/api/v1/public/storefront/theme/resolve/product")
+        assert public_after.status_code == 200, public_after.text
+        assert public_after.json()["theme"]["id"] == draft["id"]
+
+        delete_live = client.delete(f"/api/v1/admin/storefront/themes/{draft['id']}", headers=headers)
+        assert delete_live.status_code == 409
+
+        restore = client.post(f"/api/v1/admin/storefront/themes/{published['id']}/publish", headers=headers)
+        assert restore.status_code == 200, restore.text
+        cleanup = client.delete(f"/api/v1/admin/storefront/themes/{draft['id']}", headers=headers)
+        assert cleanup.status_code == 204, cleanup.text
+
+    dispose_engine()
+
+
+def test_storefront_style_classes_crud_usage_validation_and_theme_remapping() -> None:
+    headers = auth_headers()
+    suffix = uuid.uuid4().hex[:8]
+    with TestClient(app) as client:
+        themes = client.get("/api/v1/admin/storefront/themes", headers=headers).json()
+        published = next(theme for theme in themes if theme["status"] == "published")
+        draft_response = client.post(
+            f"/api/v1/admin/storefront/themes/{published['id']}/duplicate",
+            headers=headers,
+            json={"name": f"Style test {suffix}", "key": f"style-test-{suffix}", "version": "1.0.0", "settings": {}},
+        )
+        assert draft_response.status_code == 201, draft_response.text
+        draft = draft_response.json()
+        class_response = client.post(
+            f"/api/v1/admin/storefront/themes/{draft['id']}/style-classes",
+            headers=headers,
+            json={"name": f"card-{suffix}", "styles": {"padding": {"top": {"value": 24, "unit": "px"}}, "backgroundColor": "#ffffff"}, "states": {"hover": {"opacity": 0.9}}, "responsive": {"mobile": {"base": {"width": {"value": 100, "unit": "%"}}}}},
+        )
+        assert class_response.status_code == 201, class_response.text
+        style_class = class_response.json()
+
+        invalid = client.post(
+            f"/api/v1/admin/storefront/themes/{draft['id']}/style-classes",
+            headers=headers,
+            json={"name": f"unsafe-{suffix}", "styles": {}, "states": {"hover": {"unsafeCss": "position:fixed"}}, "responsive": {}},
+        )
+        assert invalid.status_code == 422, invalid.text
+
+        home = next(template for template in draft["templates"] if template["resource_type"] == "home" and template["is_default"])
+        node_id = str(uuid.uuid4())
+        section_response = client.post(
+            f"/api/v1/admin/storefront/templates/{home['id']}/sections",
+            headers=headers,
+            json={"type": "flexible_grid", "title": "Styled card", "settings": {"layout": "one_column"}, "content": {"blocks": [{"id": node_id, "type": "div", "props": {}, "style": {"base": {}}, "responsive": {}, "class_ids": [style_class["id"]], "children": []}]}},
+        )
+        assert section_response.status_code == 201, section_response.text
+
+        listed = client.get(f"/api/v1/admin/storefront/themes/{draft['id']}/style-classes", headers=headers)
+        assert listed.status_code == 200, listed.text
+        assert next(item for item in listed.json() if item["id"] == style_class["id"])["usage_count"] == 1
+        in_use_delete = client.delete(f"/api/v1/admin/storefront/style-classes/{style_class['id']}", headers=headers)
+        assert in_use_delete.status_code == 409
+
+        class_copy_response = client.post(
+            f"/api/v1/admin/storefront/style-classes/{style_class['id']}/duplicate",
+            headers=headers,
+            json={"name": f"card-copy-{suffix}", "styles": {}, "states": {}, "responsive": {}},
+        )
+        assert class_copy_response.status_code == 201, class_copy_response.text
+        assert client.delete(f"/api/v1/admin/storefront/style-classes/{class_copy_response.json()['id']}", headers=headers).status_code == 204
+
+        theme_copy_response = client.post(
+            f"/api/v1/admin/storefront/themes/{draft['id']}/duplicate",
+            headers=headers,
+            json={"name": f"Style test copy {suffix}", "key": f"style-test-copy-{suffix}", "version": "1.0.0", "settings": {}},
+        )
+        assert theme_copy_response.status_code == 201, theme_copy_response.text
+        theme_copy = theme_copy_response.json()
+        copied_class = next(item for item in theme_copy["style_classes"] if item["name"] == style_class["name"])
+        assert copied_class["id"] != style_class["id"]
+        copied_home = next(template for template in theme_copy["templates"] if template["resource_type"] == "home" and template["is_default"])
+        copied_section = next(section for section in copied_home["sections"] if section["title"] == "Styled card")
+        copied_node = copied_section["content"]["blocks"][0]
+        assert copied_node["id"] != node_id
+        assert copied_node["class_ids"] == [copied_class["id"]]
+
+        assert client.delete(f"/api/v1/admin/storefront/themes/{theme_copy['id']}", headers=headers).status_code == 204
+        assert client.delete(f"/api/v1/admin/storefront/themes/{draft['id']}", headers=headers).status_code == 204
     dispose_engine()
 
 
@@ -4675,6 +4888,7 @@ def test_tasks_foundation_flow() -> None:
 
 def test_hr_foundation_flow() -> None:
     headers = auth_headers()
+    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
     try:
         with TestClient(app) as client:
@@ -4776,7 +4990,7 @@ def test_hr_foundation_flow() -> None:
                 headers=headers,
                 json={
                     "employee_id": employee["id"],
-                    "salary_month": "2026-05",
+                    "salary_month": current_month,
                     "basic_salary": 25000,
                     "advance_deduction": 3000,
                     "bonus": 2000,
@@ -5861,6 +6075,9 @@ def test_supplier_and_purchase_order_receiving_flow() -> None:
 
 
 def test_reports_foundation_endpoints() -> None:
+    now = datetime.now(timezone.utc)
+    report_start_date = now.replace(day=1).date().isoformat()
+    report_end_date = now.date().isoformat()
     try:
         headers = auth_headers()
         with TestClient(app) as client:
@@ -6050,7 +6267,7 @@ def test_reports_foundation_endpoints() -> None:
             assert stock_movement_summary_response.status_code == 200, stock_movement_summary_response.text
             assert len(stock_movement_summary_response.json()) >= 1
             revenue_by_date_response = client.get(
-                "/api/v1/reports/revenue-by-date?start_date=2026-05-01&end_date=2026-05-31&limit=14",
+                f"/api/v1/reports/revenue-by-date?start_date={report_start_date}&end_date={report_end_date}&limit=31",
                 headers=headers,
             )
             assert revenue_by_date_response.status_code == 200, revenue_by_date_response.text
@@ -7521,4 +7738,42 @@ def test_order_and_shipment_batch_operator_endpoints() -> None:
             pytest.skip("Skipped due to local asyncpg/TestClient event loop instability on Windows.")
         raise
 
+    dispose_engine()
+def test_storefront_custom_data_crud_and_public_product_resolution() -> None:
+    headers = auth_headers()
+    suffix = uuid.uuid4().hex[:8]
+    with TestClient(app) as client:
+        products = client.get("/api/v1/public/products?limit=1")
+        assert products.status_code == 200, products.text
+        assert products.json()["items"]
+        product_id = products.json()["items"][0]["id"]
+        definition_response = client.post("/api/v1/admin/storefront/custom-fields", headers=headers, json={"namespace": "custom", "key": f"material_{suffix}", "name": "Material", "owner_type": "product", "value_type": "single_line_text", "validation": {"max_length": 50}, "is_public": True})
+        assert definition_response.status_code == 201, definition_response.text
+        definition = definition_response.json()
+        saved = client.put(f"/api/v1/admin/storefront/custom-field-values/product/{product_id}", headers=headers, json=[{"definition_id": definition["id"], "value": "Cotton"}])
+        assert saved.status_code == 200, saved.text
+        public_product = client.get(f"/api/v1/public/products/{product_id}")
+        assert public_product.status_code == 200
+        assert public_product.json()["custom_fields"][f"custom.material_{suffix}"] == "Cotton"
+        cleared = client.put(f"/api/v1/admin/storefront/custom-field-values/product/{product_id}", headers=headers, json=[{"definition_id": definition["id"], "value": None}])
+        assert cleared.status_code == 200, cleared.text
+        assert client.delete(f"/api/v1/admin/storefront/custom-fields/{definition['id']}", headers=headers).status_code == 204
+    dispose_engine()
+
+
+def test_storefront_content_model_entry_and_reference_validation() -> None:
+    headers = auth_headers()
+    suffix = uuid.uuid4().hex[:8]
+    with TestClient(app) as client:
+        created = client.post("/api/v1/admin/storefront/content-models", headers=headers, json={"name": "Designer", "key": f"designer_{suffix}", "fields": [{"key": "name", "name": "Name", "value_type": "single_line_text", "is_required": True, "validation": {"max_length": 80}, "sort_order": 0}]})
+        assert created.status_code == 201, created.text
+        model = created.json()
+        entry_response = client.post(f"/api/v1/admin/storefront/content-models/{model['id']}/entries", headers=headers, json={"handle": f"jane_{suffix}", "values": {"name": "Jane Smith"}, "status": "active"})
+        assert entry_response.status_code == 201, entry_response.text
+        entry = entry_response.json()
+        invalid = client.post(f"/api/v1/admin/storefront/content-models/{model['id']}/entries", headers=headers, json={"handle": f"bad_{suffix}", "values": {"unknown": "value"}, "status": "active"})
+        assert invalid.status_code == 422
+        assert client.delete(f"/api/v1/admin/storefront/content-models/{model['id']}", headers=headers).status_code == 409
+        assert client.delete(f"/api/v1/admin/storefront/content-entries/{entry['id']}", headers=headers).status_code == 204
+        assert client.delete(f"/api/v1/admin/storefront/content-models/{model['id']}", headers=headers).status_code == 204
     dispose_engine()

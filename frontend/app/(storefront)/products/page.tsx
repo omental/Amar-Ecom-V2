@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { ProductGrid } from "@/components/storefront/ProductGrid";
-import { fetchStorefrontJson, type StoreCategory } from "@/lib/storefront";
+import type { StoreCategory } from "@/lib/storefront";
+import { fetchPublicCategoriesServer } from "@/lib/storefront-public-server";
 
 export const metadata: Metadata = {
   title: "Shop Product",
@@ -21,7 +22,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
   let categories: StoreCategory[] = [];
 
   try {
-    categories = await fetchStorefrontJson<StoreCategory[]>("/public/categories");
+    categories = await fetchPublicCategoriesServer();
   } catch {
     categories = [];
   }

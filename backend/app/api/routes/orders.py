@@ -14,6 +14,7 @@ from app.models.customer import Customer
 from app.models.business_settings import BusinessSettings
 from app.models.invoice_template import InvoiceTemplate
 from app.models.order import Order, OrderEvent, OrderItem
+from app.models.product import Product, ProductVariant
 from app.models.user import User
 from app.models.warehouse import Warehouse
 from app.models.woocommerce import WooCommerceSetting
@@ -836,6 +837,15 @@ async def create_order(
             select(Warehouse).where(Warehouse.id == order_in.warehouse_id),
             "Warehouse not found",
         )
+    if order_in.customer_id is not None:
+        await fetch_one_or_404(db, select(Customer).where(Customer.id == order_in.customer_id), "Customer not found")
+    for item in order_in.items:
+        if item.product_id is not None:
+            await fetch_one_or_404(db, select(Product).where(Product.id == item.product_id), "Product not found")
+        if item.variant_id is not None:
+            variant = await fetch_one_or_404(db, select(ProductVariant).where(ProductVariant.id == item.variant_id), "Product variant not found")
+            if item.product_id is not None and variant.product_id != item.product_id:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Variant does not belong to product")
     payload = order_in.model_dump(
         exclude={
             "items",

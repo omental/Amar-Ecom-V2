@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
 from app.models.user import User
+from app.models.tenant import OrganizationMember
+from app.core.tenant import current_organization_id
 
 
 async def create_notification(
@@ -67,7 +69,14 @@ async def notify_admins(
     module: str | None = None,
     metadata: dict | None = None,
 ) -> list[Notification]:
-    result = await db.execute(select(User.id).where(User.role.in_(("admin", "super_admin"))))
+    organization_id = current_organization_id.get()
+    stmt = select(User.id).where(User.role.in_(("admin", "super_admin")))
+    if organization_id is not None:
+        stmt = stmt.join(OrganizationMember, OrganizationMember.user_id == User.id).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.status == "active",
+        )
+    result = await db.execute(stmt)
     admin_ids = list(result.scalars().all())
     return await notify_users(
         db,

@@ -1,14 +1,17 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, get_entitlement_context, get_tenant_context
+from app.core.tenant import TenantContext
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.core.security import get_password_hash
 from app.models.access_control import UserPermission
 from app.models.user import User
+from app.models.tenant import OrganizationMember, StoreMember
 from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services.activity_log_service import log_activity
 from app.services.permission_service import (
@@ -17,6 +20,7 @@ from app.services.permission_service import (
     get_default_permission_keys,
     set_user_permissions,
 )
+from app.services.commercial_access_service import EntitlementService
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -79,8 +83,13 @@ def _normalize_permission_input(permissions: list[str] | dict[str, bool] | None)
     return permissions
 
 
-def _user_with_permissions_stmt():
-    return select(User).options(selectinload(User.permission_assignments).selectinload(UserPermission.permission))
+def _user_with_permissions_stmt(ctx: TenantContext):
+    return (
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(OrganizationMember.organization_id == ctx.organization.id)
+        .options(selectinload(User.permission_assignments).selectinload(UserPermission.permission))
+    )
 
 
 @router.get("", response_model=list[UserRead])
@@ -88,17 +97,18 @@ async def list_users(
     db: DBSession,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    ctx: TenantContext = Depends(get_tenant_context),
 ) -> list[UserRead]:
     skip, limit = normalize_pagination(skip, limit)
     result = await db.execute(
-        _user_with_permissions_stmt().order_by(User.created_at.desc()).offset(skip).limit(limit)
+        _user_with_permissions_stmt(ctx).order_by(User.created_at.desc()).offset(skip).limit(limit)
     )
     return [_to_user_read(user) for user in result.scalars().all()]
 
 
 @router.get("/{user_id}", response_model=UserRead)
-async def get_user(user_id: UUID, db: DBSession) -> UserRead:
-    user = await fetch_one_or_404(db, _user_with_permissions_stmt().where(User.id == user_id), "User not found")
+async def get_user(user_id: UUID, db: DBSession, ctx: TenantContext = Depends(get_tenant_context)) -> UserRead:
+    user = await fetch_one_or_404(db, _user_with_permissions_stmt(ctx).where(User.id == user_id), "User not found")
     return _to_user_read(user)
 
 
@@ -108,7 +118,10 @@ async def create_user(
     db: DBSession,
     request: Request,
     current_user: User = Depends(get_current_user),
+    ctx: TenantContext = Depends(get_tenant_context),
+    access: EntitlementService = Depends(get_entitlement_context),
 ) -> UserRead:
+    await access.require_capacity("staff_limit")
     await ensure_unique(db, User, "email", user_in.email, "Email already registered")
     permission_keys = _normalize_permission_input(user_in.permissions)
 
@@ -116,10 +129,14 @@ async def create_user(
         full_name=user_in.full_name,
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
-        role=user_in.role,
+        role=user_in.role if user_in.role in {"admin", "staff"} else "staff",
         is_active=user_in.is_active,
+        email_verified_at=datetime.now(timezone.utc),
     )
     db.add(user)
+    await db.flush()
+    db.add(OrganizationMember(organization_id=ctx.organization.id, user_id=user.id, role="member", status="active"))
+    db.add(StoreMember(store_id=ctx.store.id, user_id=user.id, role="admin" if user.role in {"admin", "super_admin"} else "staff", status="active"))
     await db.flush()
 
     if permission_keys is not None:
@@ -139,7 +156,7 @@ async def create_user(
 
     refreshed_user = await fetch_one_or_404(
         db,
-        _user_with_permissions_stmt().where(User.id == user.id),
+        _user_with_permissions_stmt(ctx).where(User.id == user.id),
         "User not found",
     )
     return _to_user_read(refreshed_user)
@@ -152,8 +169,9 @@ async def update_user(
     db: DBSession,
     request: Request,
     current_user: User = Depends(get_current_user),
+    ctx: TenantContext = Depends(get_tenant_context),
 ) -> UserRead:
-    user = await fetch_one_or_404(db, _user_with_permissions_stmt().where(User.id == user_id), "User not found")
+    user = await fetch_one_or_404(db, _user_with_permissions_stmt(ctx).where(User.id == user_id), "User not found")
     payload = user_in.model_dump(exclude_unset=True)
     previous_is_active = user.is_active
     permission_input = _normalize_permission_input(payload.pop("permissions", None))
@@ -191,7 +209,7 @@ async def update_user(
 
     refreshed_user = await fetch_one_or_404(
         db,
-        _user_with_permissions_stmt().where(User.id == user.id),
+        _user_with_permissions_stmt(ctx).where(User.id == user.id),
         "User not found",
     )
     return _to_user_read(refreshed_user)

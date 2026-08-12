@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  BarChart3, Boxes, Building2, Calculator, ClipboardList, History, LogOut, Package,
-  PanelLeftClose, PanelLeftOpen, RotateCcw, Settings, ShieldCheck, ShoppingCart, Store,
+  BarChart3, BadgeDollarSign, Boxes, Building2, Calculator, ClipboardList, History, LogOut, Package,
+  MessageSquareText, PanelLeftClose, PanelLeftOpen, RotateCcw, Settings, ShieldCheck, ShoppingCart, Store,
   Images, Tags, Truck, UserPlus, Users, Wallet, Warehouse, Waypoints, Workflow, X, type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +30,8 @@ const icons: Record<string, LucideIcon> = {
   couriers: Truck, customers: Users, finance: Wallet, hr: Users, tasks: ClipboardList, team: UserPlus,
   woocommerce: Waypoints, store: Store, integrations: Workflow, activity: History, settings: Settings,
   admin: ShieldCheck,
+  plan: BadgeDollarSign,
+  inbox: MessageSquareText,
 };
 
 function SidebarContent({ pathname, user, isCollapsed, onToggleCollapse, onNavigate, onLogout }: {

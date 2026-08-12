@@ -1,4 +1,5 @@
 import { buildApiUrl, getApiBaseUrl } from "@/lib/api-config";
+import { getPublicStoreSlug, getSelectedStoreSlug } from "@/lib/tenant";
 
 export type ApiErrorKind = "unauthenticated" | "forbidden" | "conflict" | "validation" | "network" | "server" | "request";
 export type FieldError = { field: string; message: string };
@@ -63,6 +64,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
     if (response.status === 401 && typeof window !== "undefined") {
       window.localStorage.removeItem("amar_token");
       window.localStorage.removeItem("amar_user");
+      window.localStorage.removeItem("amar_current_store");
       window.dispatchEvent(new CustomEvent("amar:session-expired"));
     }
     throw new ApiError(message, response.status, payload, kind, fieldErrors);
@@ -86,6 +88,14 @@ export async function request<T>(
   const token = authenticated ? getAuthToken() : null;
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
+    const storeSlug = getSelectedStoreSlug();
+    if (storeSlug) headers.set("X-Amar-Store", storeSlug);
+  }
+  if (!authenticated) {
+    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+      const publicStoreSlug = getPublicStoreSlug();
+      if (publicStoreSlug && process.env.NEXT_PUBLIC_API_BASE_URL) headers.set("X-Storefront-Store", publicStoreSlug);
+    }
   }
 
   try {
@@ -102,6 +112,8 @@ async function download(path: string) {
   const headers = new Headers({ Accept: "text/csv, application/octet-stream" });
   const token = getAuthToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const storeSlug = getSelectedStoreSlug();
+  if (storeSlug) headers.set("X-Amar-Store", storeSlug);
   try {
     const response = await fetch(buildApiUrl(path), { headers, cache: "no-store" });
     if (!response.ok) await parseResponse<never>(response);

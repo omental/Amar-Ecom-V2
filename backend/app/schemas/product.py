@@ -63,6 +63,7 @@ class ProductCreate(BaseModel):
     size_guide_image_url: str | None = None
     status: str = "active"
     variants: list[ProductVariantCreate] = Field(default_factory=list)
+    storefront_template_id: UUID | None = None
 
     @field_validator("gallery_image_urls")
     @classmethod
@@ -83,6 +84,7 @@ class ProductUpdate(BaseModel):
     gallery_image_urls: list[str] | None = None
     size_guide_image_url: str | None = None
     status: str | None = None
+    storefront_template_id: UUID | None = None
 
     @field_validator("gallery_image_urls")
     @classmethod
@@ -113,6 +115,7 @@ class ProductRead(ORMBaseSchema):
     gallery_image_urls: list[str] = Field(default_factory=list)
     size_guide_image_url: str | None = None
     status: str
+    storefront_template_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
     category: CategoryRead | None = None

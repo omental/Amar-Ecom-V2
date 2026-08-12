@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 
-import { ProductDetailView } from "@/components/storefront/ProductDetailView";
+import { StorefrontTemplateRenderer } from "@/components/storefront/StorefrontTemplateRenderer";
+import { FALLBACK_STOREFRONT_SETTINGS } from "@/lib/online-store";
+import { fetchPublicResolvedTemplateServer, fetchPublicStorefrontSettingsServer, getServerCanonicalStorefrontUrl } from "@/lib/storefront-public-server";
+import { getServerStorefrontOrigin } from "@/lib/storefront-domain-server";
 
 type ProductDetailPageProps = {
   params: Promise<{
@@ -12,9 +15,12 @@ export async function generateMetadata({
   params,
 }: ProductDetailPageProps): Promise<Metadata> {
   const { slug } = await params;
+  const canonical = await getServerCanonicalStorefrontUrl(`products/${slug}`).catch(() => getServerStorefrontOrigin(`products/${slug}`));
   return {
     title: slug.replace(/-/g, " "),
     description: "LiveShopping-style public product detail page.",
+    alternates: { canonical },
+    openGraph: { url: canonical },
   };
 }
 
@@ -22,19 +28,6 @@ export default async function ProductDetailPage({
   params,
 }: ProductDetailPageProps) {
   const { slug } = await params;
-
-  return (
-    <section className="space-y-5">
-      <div className="rounded-2xl border border-[#e5e7eb] bg-white px-5 py-6 sm:px-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#db011c]">Product Detail</p>
-        <h1 className="mt-3 text-3xl font-black tracking-tight text-black sm:text-4xl">
-          Product Details
-        </h1>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-[#4b5563]">
-          Product-first detail view with pricing clarity, delivery notes, stock messaging, and fast order actions.
-        </p>
-      </div>
-      <ProductDetailView productSlug={slug} />
-    </section>
-  );
+  const [resolved, settings] = await Promise.all([fetchPublicResolvedTemplateServer("product", slug), fetchPublicStorefrontSettingsServer().catch(() => FALLBACK_STOREFRONT_SETTINGS)]);
+  return <StorefrontTemplateRenderer sections={resolved.template.sections} settings={settings} context={{ resourceType: "product", resource: null, resourceSlug: slug, theme: resolved.theme, template: resolved.template, builderMode: false }} />;
 }

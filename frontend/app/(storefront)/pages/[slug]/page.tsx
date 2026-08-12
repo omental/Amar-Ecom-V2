@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { StorefrontSectionRenderer } from "@/components/storefront/StorefrontHome";
+import { StorefrontTemplateRenderer } from "@/components/storefront/StorefrontTemplateRenderer";
 import {
   FALLBACK_STOREFRONT_HOME,
-  fetchPublicStorefrontPage,
   type PublicStorefrontResponse,
 } from "@/lib/online-store";
+import { fetchPublicResolvedTemplateServer, fetchPublicStorefrontPageServer, getServerCanonicalStorefrontUrl } from "@/lib/storefront-public-server";
+import { getServerStorefrontOrigin } from "@/lib/storefront-domain-server";
 
 type StorefrontContentPageProps = {
   params: Promise<{ slug: string }>;
@@ -14,7 +16,7 @@ type StorefrontContentPageProps = {
 
 async function getStorefrontPage(slug: string): Promise<PublicStorefrontResponse | null> {
   try {
-    return await fetchPublicStorefrontPage(slug);
+    return await fetchPublicStorefrontPageServer(slug);
   } catch {
     return null;
   }
@@ -32,6 +34,8 @@ export async function generateMetadata({
     description:
       page?.seo_description ||
       `${FALLBACK_STOREFRONT_HOME.settings.brand_name} storefront page`,
+    alternates: { canonical: await getServerCanonicalStorefrontUrl(`pages/${slug}`).catch(() => getServerStorefrontOrigin(`pages/${slug}`)) },
+    openGraph: { url: await getServerCanonicalStorefrontUrl(`pages/${slug}`).catch(() => getServerStorefrontOrigin(`pages/${slug}`)) },
   };
 }
 
@@ -47,26 +51,7 @@ export default async function StorefrontContentPage({
 
   const page = storefront.page;
 
-  return (
-    <div className="space-y-6 pb-8 sm:space-y-8">
-      <section className="rounded-2xl border border-[#e5e7eb] bg-white px-5 py-8 sm:px-8">
-        <h1 className="text-3xl font-bold tracking-tight text-black">
-          {page.title}
-        </h1>
-        {page.content ? (
-          <div
-            className="prose mt-4 max-w-none text-sm leading-7 text-[#4b5563] prose-a:text-[#db011c] prose-blockquote:border-l-[#db011c] prose-headings:text-black"
-            // HTML is sanitized server-side before being returned by the public storefront API.
-            dangerouslySetInnerHTML={{ __html: page.content }}
-          />
-        ) : null}
-      </section>
-
-      {page.sections.map((section, index) => (
-        <div key={`${section.type}-${section.title || index}`}>
-          <StorefrontSectionRenderer section={section} settings={storefront.settings} />
-        </div>
-      ))}
-    </div>
-  );
+  const resolved = await fetchPublicResolvedTemplateServer("page", slug).catch(() => null);
+  if (resolved) return <StorefrontTemplateRenderer sections={resolved.template.sections} settings={storefront.settings} context={{ resourceType: "page", resource: page, resourceSlug: slug, theme: resolved.theme, template: resolved.template, builderMode: false }} />;
+  return <div className="space-y-6 pb-8 sm:space-y-8"><section className="rounded-2xl border border-[#e5e7eb] bg-white px-5 py-8 sm:px-8"><h1 className="text-3xl font-bold tracking-tight text-black">{page.title}</h1>{page.content ? <div className="prose mt-4 max-w-none text-sm leading-7 text-[#4b5563]" dangerouslySetInnerHTML={{ __html: page.content }} /> : null}</section>{page.sections.map((section) => <StorefrontSectionRenderer key={section.id} section={section} settings={storefront.settings} />)}</div>;
 }

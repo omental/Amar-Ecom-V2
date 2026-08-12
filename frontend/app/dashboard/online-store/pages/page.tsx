@@ -3,12 +3,13 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { OnlineStoreTabs } from "@/components/dashboard/online-store/OnlineStoreTabs";
+import { CustomFieldsEditor } from "@/components/dashboard/online-store/CustomFieldsEditor";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { FormCard } from "@/components/ui/form-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { OpsPageHeader } from "@/components/ui/ops-page-header";
 import { api, ApiError } from "@/lib/api";
-import type { OnlineStorePage } from "@/lib/online-store";
+import type { OnlineStorePage, OnlineStoreTemplate, OnlineStoreTheme } from "@/lib/online-store";
 import { buildSectionFromPreset, storefrontSectionPresets } from "@/lib/storefront-section-presets";
 
 const initialPage = {
@@ -19,10 +20,12 @@ const initialPage = {
   seo_title: "",
   seo_description: "",
   status: "draft",
+  template_id: "",
 };
 
 export default function OnlineStorePagesPage() {
   const [pages, setPages] = useState<OnlineStorePage[]>([]);
+  const [templates, setTemplates] = useState<OnlineStoreTemplate[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -41,7 +44,8 @@ export default function OnlineStorePagesPage() {
     async function run() {
       try {
         if (!mounted) return;
-        await loadPages();
+        const [, themes] = await Promise.all([loadPages(), api.get<OnlineStoreTheme[]>("/admin/storefront/themes")]);
+        setTemplates(themes.filter((theme) => theme.status === "published").flatMap((theme) => theme.templates).filter((template) => template.resource_type === "page"));
       } catch (err) {
         if (!mounted) return;
         setError(err instanceof ApiError ? err.message : "Failed to load storefront pages.");
@@ -60,7 +64,7 @@ export default function OnlineStorePagesPage() {
   async function createPage(event: FormEvent) {
     event.preventDefault();
     try {
-      await api.post("/admin/storefront/pages", createForm);
+      await api.post("/admin/storefront/pages", { ...createForm, template_id: createForm.template_id || null });
       setCreateForm(initialPage);
       await loadPages();
       setSuccess("Page created.");
@@ -80,6 +84,7 @@ export default function OnlineStorePagesPage() {
         seo_description: page.seo_description,
         status: page.status,
         page_type: page.page_type,
+        template_id: page.template_id || null,
       });
       await loadPages();
       setSuccess("Page updated.");
@@ -166,6 +171,7 @@ export default function OnlineStorePagesPage() {
                 </select>
               </div>
               <textarea value={createForm.content} onChange={(e) => setCreateForm((c) => ({ ...c, content: e.target.value }))} placeholder="Page content" className="min-h-32 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+              <select value={createForm.template_id} onChange={(e) => setCreateForm((c) => ({ ...c, template_id: e.target.value }))} className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none"><option value="">Default page template</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
               <input value={createForm.seo_title} onChange={(e) => setCreateForm((c) => ({ ...c, seo_title: e.target.value }))} placeholder="SEO title" className="rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
               <textarea value={createForm.seo_description} onChange={(e) => setCreateForm((c) => ({ ...c, seo_description: e.target.value }))} placeholder="SEO description" className="min-h-24 rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
               <button type="submit" className="rounded-full bg-[var(--color-accent)] px-4 py-3 text-sm font-semibold text-white">Create Page</button>
@@ -198,6 +204,8 @@ export default function OnlineStorePagesPage() {
                   <textarea value={selectedPage.content || ""} onChange={(e) => setPages((current) => current.map((item) => item.id === selectedPage.id ? { ...item, content: e.target.value } : item))} className="min-h-36 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
                   <input value={selectedPage.seo_title || ""} onChange={(e) => setPages((current) => current.map((item) => item.id === selectedPage.id ? { ...item, seo_title: e.target.value } : item))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
                   <textarea value={selectedPage.seo_description || ""} onChange={(e) => setPages((current) => current.map((item) => item.id === selectedPage.id ? { ...item, seo_description: e.target.value } : item))} className="min-h-24 w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none" />
+                  <select value={selectedPage.template_id || ""} onChange={(e) => setPages((current) => current.map((item) => item.id === selectedPage.id ? { ...item, template_id: e.target.value || null } : item))} className="w-full rounded-2xl border border-[var(--color-brd)] bg-[var(--color-surf-hover)] px-4 py-3 text-sm outline-none"><option value="">Default page template</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select>
+                  {selectedPage.id && selectedPage.page_type !== "home" ? <CustomFieldsEditor ownerType="page" ownerId={selectedPage.id} /> : null}
                   <div className="flex flex-wrap justify-end gap-3">
                     {!selectedPage.is_system ? (
                       <button type="button" onClick={() => void deletePage(selectedPage)} className="rounded-full border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-600">

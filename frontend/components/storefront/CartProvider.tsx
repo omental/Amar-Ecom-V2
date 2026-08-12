@@ -17,6 +17,7 @@ import {
   type CartItem,
 } from "@/lib/storefront-cart";
 import type { StoreProduct } from "@/lib/storefront";
+import { getStorefrontCartNamespace } from "@/lib/storefront-domain";
 
 type CartContextValue = {
   items: CartItem[];
@@ -28,6 +29,9 @@ type CartContextValue = {
       quantity?: number;
       selectedSize?: string;
       selectedColor?: string;
+      selectedVariantId?: string;
+      selectedVariantSku?: string;
+      price?: number;
     },
   ) => void;
   removeItem: (itemId: string) => void;
@@ -37,13 +41,18 @@ type CartContextValue = {
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+function cartStorageKey() {
+  if (typeof window === "undefined") return STOREFRONT_CART_STORAGE_KEY;
+  return getStorefrontCartNamespace(window.location.host);
+}
+
 function readStoredCartItems(): CartItem[] {
   if (typeof window === "undefined") {
     return [];
   }
 
   try {
-    const raw = window.localStorage.getItem(STOREFRONT_CART_STORAGE_KEY);
+    const raw = window.localStorage.getItem(cartStorageKey());
     if (!raw) {
       return [];
     }
@@ -64,7 +73,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     window.localStorage.setItem(
-      STOREFRONT_CART_STORAGE_KEY,
+      cartStorageKey(),
       JSON.stringify(items),
     );
   }, [items]);

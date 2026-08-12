@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, func, text
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,11 +12,15 @@ from app.core.database import Base
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = (
+        UniqueConstraint("store_id", "slug", name="uq_products_store_slug"),
+        UniqueConstraint("store_id", "sku", name="uq_products_store_sku"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    sku: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    sku: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     external_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
@@ -45,6 +49,7 @@ class Product(Base):
     )
     size_guide_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active", server_default="active")
+    storefront_template_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_templates.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -58,6 +63,7 @@ class Product(Base):
     variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
     inventory_items = relationship("InventoryItem", back_populates="product")
     stock_movements = relationship("StockMovement", back_populates="product")
+    storefront_template = relationship("StorefrontTemplate", foreign_keys=[storefront_template_id])
 
     @property
     def external_stock_quantity(self) -> int | None:
@@ -83,6 +89,7 @@ class Product(Base):
 
 class ProductVariant(Base):
     __tablename__ = "product_variants"
+    __table_args__ = (UniqueConstraint("store_id", "sku", name="uq_product_variants_store_sku"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     product_id: Mapped[uuid.UUID] = mapped_column(
@@ -91,7 +98,7 @@ class ProductVariant(Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    sku: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    sku: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     stock_quantity: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

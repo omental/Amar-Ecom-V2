@@ -3,7 +3,11 @@ export type StoreCategory = {
   name: string;
   slug: string;
   description?: string | null;
+  image?: string | null;
+  custom_fields?: Record<string, unknown>;
 };
+
+export type StoreProductVariant = { id: string; name: string; sku: string; price: string; stock_quantity: number; image?: string | null };
 
 export type StoreBrand = {
   id: string;
@@ -16,6 +20,7 @@ export type StoreProduct = {
   id: string;
   name: string;
   slug: string;
+  sku?: string | null;
   price: string;
   sale_price: string;
   image?: string | null;
@@ -33,6 +38,8 @@ export type StoreProduct = {
   demo_notice?: string | null;
   is_active: boolean;
   is_public: boolean;
+  variants?: StoreProductVariant[];
+  custom_fields?: Record<string, unknown>;
 };
 
 export type StoreProductListResponse = {

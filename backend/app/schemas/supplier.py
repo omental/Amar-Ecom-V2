@@ -33,7 +33,10 @@ class SupplierRead(ORMBaseSchema):
     name: str
     contact_person: str | None
     phone: str | None
-    email: EmailStr | None
+    # Persisted supplier contacts can originate from imports and older fixtures.
+    # Keep strict validation on create/update, but never turn a readable row into
+    # a response-serialization 500 solely because its stored address is legacy.
+    email: str | None
     address: str | None
     notes: str | None
     is_active: bool

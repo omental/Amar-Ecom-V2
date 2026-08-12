@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,10 +11,11 @@ from app.core.database import Base
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("store_id", "code", name="uq_accounts_store_code"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False)
     account_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     opening_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     current_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
@@ -40,9 +41,12 @@ class Account(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        UniqueConstraint("store_id", "transaction_number", name="uq_transactions_store_transaction_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    transaction_number: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    transaction_number: Mapped[str] = mapped_column(String(100), nullable=False)
     account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="RESTRICT"),
@@ -84,9 +88,12 @@ class Transaction(Base):
 
 class PettyCashEntry(Base):
     __tablename__ = "petty_cash_entries"
+    __table_args__ = (
+        UniqueConstraint("store_id", "entry_number", name="uq_petty_cash_entries_store_entry_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    entry_number: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    entry_number: Mapped[str] = mapped_column(String(100), nullable=False)
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="SET NULL"),
@@ -132,6 +139,9 @@ class PettyCashEntry(Base):
 
 class SupplierPayment(Base):
     __tablename__ = "supplier_payments"
+    __table_args__ = (
+        UniqueConstraint("store_id", "payment_number", name="uq_supplier_payments_store_payment_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     supplier_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -152,7 +162,7 @@ class SupplierPayment(Base):
         nullable=True,
         index=True,
     )
-    payment_number: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    payment_number: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     payment_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(255), nullable=True)

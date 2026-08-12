@@ -111,16 +111,23 @@ def _default_social_links() -> dict[str, str]:
     }
 
 
-async def get_or_create_storefront_settings(db: AsyncSession) -> StorefrontSetting:
+async def get_or_create_storefront_settings(
+    db: AsyncSession,
+    *,
+    commit: bool = True,
+    brand_name: str | None = None,
+    email: str | None = None,
+    currency: str | None = None,
+) -> StorefrontSetting:
     result = await db.execute(select(StorefrontSetting).limit(1))
     settings = result.scalar_one_or_none()
 
     if settings is None:
         settings = StorefrontSetting(
-            brand_name="Amar-eCom",
-            phone="+880 1711-000000",
-            email="email@amar-ecom.com",
-            address="Dhaka, Bangladesh",
+            brand_name=brand_name or "Amar-eCom",
+            phone=None if brand_name else "+880 1711-000000",
+            email=email or "email@amar-ecom.com",
+            address=None if brand_name else "Dhaka, Bangladesh",
             active_template_key="live_shopping_classic",
             typography_preset="modern_commerce",
             color_preset="live_red",
@@ -134,19 +141,26 @@ async def get_or_create_storefront_settings(db: AsyncSession) -> StorefrontSetti
             shadow_style="soft",
             primary_color="#db011c",
             accent_color="#111111",
-            currency="BDT",
+            currency=currency or "BDT",
             show_topbar=True,
             show_search=True,
             show_cart=True,
             show_track_order=True,
-            footer_description="Amar-eCom brings compact, offer-heavy Bangladesh fashion shopping with fast product discovery and order-first browsing.",
+            footer_description=(
+                f"Shop {brand_name} online."
+                if brand_name
+                else "Amar-eCom brings compact, offer-heavy Bangladesh fashion shopping with fast product discovery and order-first browsing."
+            ),
             footer_copyright_text="Powered by Amar-eCom",
             social_links=_default_social_links(),
             is_active=True,
         )
         db.add(settings)
-        await commit_or_409(db, "Could not initialize storefront settings")
-        await db.refresh(settings)
+        if commit:
+            await commit_or_409(db, "Could not initialize storefront settings")
+            await db.refresh(settings)
+        else:
+            await db.flush()
     else:
         defaults = {
             "active_template_key": "live_shopping_classic",
@@ -168,14 +182,30 @@ async def get_or_create_storefront_settings(db: AsyncSession) -> StorefrontSetti
                 setattr(settings, field, value)
                 dirty = True
         if dirty:
-            await commit_or_409(db, "Could not upgrade storefront design defaults")
-            await db.refresh(settings)
+            if commit:
+                await commit_or_409(db, "Could not upgrade storefront design defaults")
+                await db.refresh(settings)
+            else:
+                await db.flush()
 
     return settings
 
 
-async def ensure_storefront_defaults(db: AsyncSession) -> None:
-    settings = await get_or_create_storefront_settings(db)
+async def ensure_storefront_defaults(
+    db: AsyncSession,
+    *,
+    commit: bool = True,
+    brand_name: str | None = None,
+    email: str | None = None,
+    currency: str | None = None,
+) -> None:
+    settings = await get_or_create_storefront_settings(
+        db,
+        commit=commit,
+        brand_name=brand_name,
+        email=email,
+        currency=currency,
+    )
     del settings
 
     existing_menus_result = await db.execute(select(StorefrontMenu.location))
@@ -274,8 +304,8 @@ async def ensure_storefront_defaults(db: AsyncSession) -> None:
             page_type="home",
             status="published",
             is_system=True,
-            seo_title="Amar-eCom | LiveShopping Style Fashion Store",
-            seo_description="Compact, offer-heavy Bangladeshi storefront with dynamic sections.",
+            seo_title=f"{brand_name or 'Amar-eCom'} | Online Store",
+            seo_description=f"Shop online with {brand_name or 'Amar-eCom'}.",
         )
         db.add(home_page)
         await db.flush()
@@ -366,7 +396,10 @@ async def ensure_storefront_defaults(db: AsyncSession) -> None:
                 )
             )
 
-    await commit_or_409(db, "Could not initialize storefront defaults")
+    if commit:
+        await commit_or_409(db, "Could not initialize storefront defaults")
+    else:
+        await db.flush()
 
 
 def build_menu_tree(items: list[StorefrontMenuItem], *, include_inactive: bool = False) -> list[StorefrontMenuItem]:

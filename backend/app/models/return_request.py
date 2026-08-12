@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,9 +11,12 @@ from app.core.database import Base
 
 class ReturnRequest(Base):
     __tablename__ = "return_requests"
+    __table_args__ = (
+        UniqueConstraint("store_id", "return_number", name="uq_return_requests_store_return_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    return_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    return_number: Mapped[str] = mapped_column(String(100), nullable=False)
     order_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("orders.id", ondelete="CASCADE"),

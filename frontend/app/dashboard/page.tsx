@@ -32,6 +32,7 @@ import {
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { api } from "@/lib/api";
 import { getUser } from "@/lib/auth";
+import { OnboardingChecklist } from "@/components/onboarding/OnboardingChecklist";
 
 type BusinessSettingsResponse = {
   company_name: string;
@@ -531,6 +532,7 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-[1600px] space-y-8 px-4 pb-20 pt-4 sm:px-6 lg:px-8 lg:pt-8">
       {error ? <ErrorAlert message={error} /> : null}
+      <OnboardingChecklist />
 
       <div className="mb-8 flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
         <div className="space-y-1">

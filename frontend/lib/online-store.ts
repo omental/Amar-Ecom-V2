@@ -91,6 +91,8 @@ export type OnlineStoreMenu = {
 export type OnlineStoreSection = {
   id?: string;
   page_id?: string;
+  template_id?: string | null;
+  section_group_id?: string | null;
   type: string;
   title?: string | null;
   subtitle?: string | null;
@@ -107,12 +109,25 @@ export type OnlineStorePage = {
   slug: string;
   page_type?: string;
   content?: string | null;
+  custom_fields?: Record<string, unknown>;
   seo_title?: string | null;
   seo_description?: string | null;
   status?: string;
   is_system?: boolean;
   last_published_at?: string | null;
+  template_id?: string | null;
   sections: OnlineStoreSection[];
+};
+
+export type OnlineStoreSavedSection = {
+  id: string;
+  name: string;
+  description?: string | null;
+  category: string;
+  snapshot: Pick<OnlineStoreSection, "type" | "title" | "subtitle" | "is_enabled" | "settings" | "content">;
+  created_by_id?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type OnlineStoreBanner = {
@@ -183,7 +198,8 @@ export type OnlineStoreTemplatePreset = {
 export type OnlineStoreRevision = {
   id: string;
   page_id?: string | null;
-  revision_type: "page" | "template_apply" | "publish" | "theme_settings";
+  theme_id?: string | null;
+  revision_type: "page" | "template_apply" | "publish" | "theme_settings" | "theme_publish";
   title: string;
   snapshot: Record<string, unknown>;
   created_by_id?: string | null;
@@ -210,6 +226,72 @@ export type PublicStorefrontResponse = {
   settings: OnlineStoreSettings;
   menus: Record<string, OnlineStoreMenuItem[]>;
   page: OnlineStorePage;
+  theme?: OnlineStoreTheme | null;
+};
+
+export type StorefrontResourceType = "home" | "product" | "collection" | "page" | "search" | "cart" | "not_found";
+
+export type OnlineStoreTemplate = {
+  id: string;
+  theme_id: string;
+  name: string;
+  key: string;
+  resource_type: StorefrontResourceType;
+  is_default: boolean;
+  settings: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  sections: OnlineStoreSection[];
+};
+
+export type OnlineStoreSectionGroup = {
+  id: string;
+  theme_id: string;
+  name: string;
+  group_type: "header" | "footer" | string;
+  created_at: string;
+  updated_at: string;
+  sections: OnlineStoreSection[];
+};
+
+export type OnlineStoreTheme = {
+  id: string;
+  name: string;
+  key: string;
+  status: "draft" | "published" | "archived";
+  version: string;
+  description?: string | null;
+  preview_image_url?: string | null;
+  settings: Partial<OnlineStoreSettings>;
+  created_by_id?: string | null;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  templates: OnlineStoreTemplate[];
+  section_groups: OnlineStoreSectionGroup[];
+  style_classes?: OnlineStoreStyleClass[];
+};
+
+export type OnlineStoreStyleClass = {
+  id: string;
+  theme_id: string;
+  name: string;
+  styles: Record<string, unknown>;
+  responsive: Record<string, Record<string, unknown>>;
+  states: Record<string, Record<string, unknown>>;
+  usage_count?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResolvedStorefrontTemplate = {
+  theme: OnlineStoreTheme;
+  template: OnlineStoreTemplate;
+  header_group?: OnlineStoreSectionGroup | null;
+  footer_group?: OnlineStoreSectionGroup | null;
+  resource_type: StorefrontResourceType;
+  resource_id?: string | null;
+  resource_slug?: string | null;
 };
 
 export type StorefrontOverview = {
@@ -260,6 +342,24 @@ export async function fetchPublicStorefrontSettings() {
 
 export async function fetchPublicStorefrontMenus() {
   return fetchJson<Record<string, OnlineStoreMenuItem[]>>("/public/storefront/menus");
+}
+
+export async function fetchPublicResolvedTemplate(resourceType: StorefrontResourceType, resourceSlug?: string) {
+  const search = new URLSearchParams();
+  if (resourceSlug) search.set("resource_slug", resourceSlug);
+  return fetchJson<ResolvedStorefrontTemplate>(`/public/storefront/theme/resolve/${resourceType}${search.size ? `?${search}` : ""}`);
+}
+
+export async function fetchAdminThemes() {
+  return fetchAdminJson<OnlineStoreTheme[]>("/admin/storefront/themes");
+}
+
+export async function fetchAdminTheme(themeId: string) {
+  return fetchAdminJson<OnlineStoreTheme>(`/admin/storefront/themes/${themeId}`);
+}
+
+export async function fetchAdminThemePreview(themeId: string, resourceType: StorefrontResourceType) {
+  return fetchAdminJson<ResolvedStorefrontTemplate>(`/admin/storefront/themes/${themeId}/preview?resource_type=${resourceType}`);
 }
 
 export async function fetchAdminStorefrontCoupons(params?: {

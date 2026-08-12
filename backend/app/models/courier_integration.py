@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -10,9 +10,12 @@ from app.core.database import Base
 
 class CourierProviderSetting(Base):
     __tablename__ = "courier_provider_settings"
+    __table_args__ = (
+        UniqueConstraint("store_id", "provider", name="uq_courier_provider_settings_store_provider"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    provider: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)

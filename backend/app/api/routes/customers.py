@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -52,7 +52,7 @@ def _segment_label(customer: Customer, orders: list[Order]) -> str:
     customer_type = (customer.customer_type or "").strip().lower()
     if customer_type == "vip":
         return "VIP"
-    if customer.follow_up_date is not None and customer.follow_up_date < date.today():
+    if customer.follow_up_date is not None and customer.follow_up_date < datetime.now(timezone.utc).date():
         return "At Risk"
     if len(orders) > 1:
         return "Repeat"
@@ -63,7 +63,7 @@ def _follow_up_state(customer: Customer, pending_follow_up_count: int) -> str:
     if customer.follow_up_date is None and pending_follow_up_count <= 0:
         return "none"
 
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     if customer.follow_up_date is not None:
         if customer.follow_up_date < today:
             return "overdue"
@@ -180,7 +180,7 @@ def _date_end_of_day(value: datetime | None) -> datetime | None:
 
 @router.get("/crm-summary", response_model=CustomerCRMSummaryRead)
 async def get_customer_crm_summary(db: DBSession) -> CustomerCRMSummaryRead:
-    today = date.today()
+    today = datetime.now(timezone.utc).date()
     now = datetime.now(timezone.utc)
     recent_threshold = now - timedelta(days=7)
 
@@ -294,7 +294,7 @@ async def list_customers(
         if normalized_segment == "vip":
             stmt = stmt.where(Customer.customer_type == "vip")
         elif normalized_segment == "at_risk":
-            stmt = stmt.where(Customer.follow_up_date.is_not(None), Customer.follow_up_date < date.today())
+            stmt = stmt.where(Customer.follow_up_date.is_not(None), Customer.follow_up_date < datetime.now(timezone.utc).date())
         elif normalized_segment == "repeat":
             stmt = stmt.where(Customer.orders.any())
         elif normalized_segment == "new":
@@ -310,9 +310,9 @@ async def list_customers(
         stmt = stmt.where(Customer.follow_up_date.is_(None))
 
     if follow_up_due is True:
-        stmt = stmt.where(Customer.follow_up_date.is_not(None), Customer.follow_up_date <= date.today())
+        stmt = stmt.where(Customer.follow_up_date.is_not(None), Customer.follow_up_date <= datetime.now(timezone.utc).date())
     elif follow_up_due is False:
-        stmt = stmt.where(or_(Customer.follow_up_date.is_(None), Customer.follow_up_date > date.today()))
+        stmt = stmt.where(or_(Customer.follow_up_date.is_(None), Customer.follow_up_date > datetime.now(timezone.utc).date()))
 
     if tag:
         stmt = stmt.where(Customer.tags.ilike(f"%{tag.strip()}%"))

@@ -35,8 +35,19 @@ SECTION_TYPES = (
     "testimonials",
     "brand_strip",
     "flexible_grid",
+    "announcement_bar",
+    "header",
+    "footer",
+    "product_main",
+    "collection_main",
+    "page_main",
+    "search_results",
+    "cart_main",
+    "not_found_main",
 )
-REVISION_TYPES = ("page", "template_apply", "publish", "theme_settings")
+REVISION_TYPES = ("page", "template_apply", "publish", "theme_settings", "theme_publish")
+THEME_STATUSES = ("draft", "published", "archived")
+TEMPLATE_RESOURCE_TYPES = ("home", "product", "collection", "page", "search", "cart", "not_found")
 MEDIA_TYPES = ("logo", "favicon", "banner", "category", "product", "section", "general")
 TEMPLATE_KEYS = ("live_shopping_classic", "minimal_fashion", "electronics_deals")
 TYPOGRAPHY_PRESETS = ("default_sans", "modern_commerce", "elegant_fashion", "bold_deal_store", "premium_editorial")
@@ -314,6 +325,7 @@ class StorefrontPageBase(BaseModel):
     seo_description: str | None = None
     status: str = "draft"
     is_system: bool = False
+    template_id: UUID | None = None
 
     @field_validator("page_type")
     @classmethod
@@ -338,6 +350,7 @@ class StorefrontPageUpdate(BaseModel):
     seo_title: str | None = None
     seo_description: str | None = None
     status: str | None = None
+    template_id: UUID | None = None
 
     @field_validator("page_type")
     @classmethod
@@ -396,7 +409,9 @@ class SectionsReorderInput(BaseModel):
 
 class StorefrontSectionRead(ORMBaseSchema):
     id: UUID
-    page_id: UUID
+    page_id: UUID | None = None
+    template_id: UUID | None = None
+    section_group_id: UUID | None = None
     type: str
     title: str | None = None
     subtitle: str | None = None
@@ -404,6 +419,214 @@ class StorefrontSectionRead(ORMBaseSchema):
     is_enabled: bool
     settings: dict[str, Any] | None = None
     content: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontThemeCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    key: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    description: str | None = Field(default=None, max_length=2000)
+    version: str = Field(default="1.0.0", min_length=1, max_length=50)
+    preview_image_url: str | None = Field(default=None, max_length=500)
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class StorefrontThemeUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    version: str | None = Field(default=None, min_length=1, max_length=50)
+    preview_image_url: str | None = Field(default=None, max_length=500)
+    settings: dict[str, Any] | None = None
+
+
+class StorefrontTemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    key: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    resource_type: Literal["home", "product", "collection", "page", "search", "cart", "not_found"]
+    is_default: bool = False
+    settings: dict[str, Any] = Field(default_factory=dict)
+    base_template_id: UUID | None = None
+
+
+class StorefrontTemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    key: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    is_default: bool | None = None
+    settings: dict[str, Any] | None = None
+
+
+class StorefrontSectionGroupRead(ORMBaseSchema):
+    id: UUID
+    theme_id: UUID
+    name: str
+    group_type: str
+    created_at: datetime
+    updated_at: datetime
+    sections: list[StorefrontSectionRead] = Field(default_factory=list)
+
+
+class StorefrontTemplateRead(ORMBaseSchema):
+    id: UUID
+    theme_id: UUID
+    name: str
+    key: str
+    resource_type: str
+    is_default: bool
+    settings: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    sections: list[StorefrontSectionRead] = Field(default_factory=list)
+
+
+STYLE_PROPERTY_KEYS = {
+    "display", "width", "minWidth", "maxWidth", "height", "minHeight", "maxHeight", "aspectRatio", "flexDirection", "flexWrap",
+    "justifyContent", "alignItems", "alignContent", "gap", "rowGap", "columnGap", "flexGrow", "flexShrink", "flexBasis",
+    "gridColumns", "gridTemplateColumns", "gridAutoRows", "gridAutoFlow", "placeItems", "position", "top", "right", "bottom",
+    "left", "zIndex", "overflow", "overflowX", "overflowY", "fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight",
+    "letterSpacing", "textTransform", "textDecoration", "textAlign", "color", "whiteSpace", "backgroundColor", "backgroundGradient",
+    "backgroundImageValue", "backgroundOverlay", "borderStyle", "borderColor", "borderWidth", "borderTopWidth", "borderRightWidth", "borderBottomWidth",
+    "borderLeftWidth", "borderRadius", "borderTopLeftRadius", "borderTopRightRadius", "borderBottomRightRadius", "borderBottomLeftRadius",
+    "shadow", "opacity", "visibility", "transformValue", "transitionValue", "filters", "objectFit", "objectPosition", "margin", "padding",
+}
+
+
+def _validate_style_dict(value: dict[str, Any]) -> dict[str, Any]:
+    unknown = set(value) - STYLE_PROPERTY_KEYS
+    if unknown:
+        raise ValueError(f"Unsupported style properties: {', '.join(sorted(unknown))}")
+    return value
+
+
+def _validate_style_states(value: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    unknown = set(value) - {"base", "hover", "focus", "active"}
+    if unknown:
+        raise ValueError(f"Unsupported style states: {', '.join(sorted(unknown))}")
+    return {state: _validate_style_dict(rules) for state, rules in value.items()}
+
+
+def _validate_responsive_styles(value: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    unknown = set(value) - {"desktop", "tablet", "mobile"}
+    if unknown:
+        raise ValueError(f"Unsupported breakpoints: {', '.join(sorted(unknown))}")
+    return {breakpoint: _validate_style_states(states) for breakpoint, states in value.items()}
+
+
+class StorefrontStyleClassCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+    styles: dict[str, Any] = Field(default_factory=dict)
+    responsive: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    states: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("styles")
+    @classmethod
+    def validate_styles(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validate_style_dict(value)
+
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, value: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        return _validate_style_states(value)
+
+    @field_validator("responsive")
+    @classmethod
+    def validate_responsive(cls, value: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        return _validate_responsive_styles(value)
+
+
+class StorefrontStyleClassUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-zA-Z][a-zA-Z0-9_-]*$")
+    styles: dict[str, Any] | None = None
+    responsive: dict[str, dict[str, Any]] | None = None
+    states: dict[str, dict[str, Any]] | None = None
+
+    @field_validator("styles")
+    @classmethod
+    def validate_styles(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return _validate_style_dict(value) if value is not None else None
+
+    @field_validator("states")
+    @classmethod
+    def validate_states(cls, value: dict[str, dict[str, Any]] | None) -> dict[str, dict[str, Any]] | None:
+        return _validate_style_states(value) if value is not None else None
+
+    @field_validator("responsive")
+    @classmethod
+    def validate_responsive(cls, value: dict[str, dict[str, Any]] | None) -> dict[str, dict[str, Any]] | None:
+        return _validate_responsive_styles(value) if value is not None else None
+
+
+class StorefrontStyleClassRead(ORMBaseSchema):
+    id: UUID
+    theme_id: UUID
+    name: str
+    styles: dict[str, Any] = Field(default_factory=dict)
+    responsive: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    states: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    usage_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class StorefrontThemeRead(ORMBaseSchema):
+    id: UUID
+    name: str
+    key: str
+    status: str
+    version: str
+    description: str | None = None
+    preview_image_url: str | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+    created_by_id: UUID | None = None
+    published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    templates: list[StorefrontTemplateRead] = Field(default_factory=list)
+    section_groups: list[StorefrontSectionGroupRead] = Field(default_factory=list)
+    style_classes: list[StorefrontStyleClassRead] = Field(default_factory=list)
+
+
+class StorefrontThemePublishResponse(BaseModel):
+    theme: StorefrontThemeRead
+    revision_id: UUID
+    message: str
+
+
+class StorefrontResourceAssignment(BaseModel):
+    template_id: UUID | None = None
+
+
+class StorefrontResolvedTemplateRead(BaseModel):
+    theme: StorefrontThemeRead
+    template: StorefrontTemplateRead
+    header_group: StorefrontSectionGroupRead | None = None
+    footer_group: StorefrontSectionGroupRead | None = None
+    resource_type: str
+    resource_id: UUID | None = None
+    resource_slug: str | None = None
+
+
+class StorefrontSavedSectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    category: str = Field(default="custom", min_length=1, max_length=100)
+    snapshot: dict = Field(default_factory=dict)
+
+
+class StorefrontSavedSectionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    category: str | None = Field(default=None, min_length=1, max_length=100)
+    snapshot: dict | None = None
+
+
+class StorefrontSavedSectionRead(ORMBaseSchema):
+    id: UUID
+    name: str
+    description: str | None = None
+    category: str
+    snapshot: dict
+    created_by_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -419,6 +642,7 @@ class StorefrontPageRead(ORMBaseSchema):
     status: str
     is_system: bool
     last_published_at: datetime | None = None
+    template_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
     sections: list[StorefrontSectionRead] = []
@@ -588,9 +812,11 @@ class PublicStorefrontMenuItem(BaseModel):
 
 
 class PublicStorefrontSection(BaseModel):
+    id: UUID
     type: str
     title: str | None = None
     subtitle: str | None = None
+    sort_order: int
     settings: dict[str, Any] | None = None
     content: dict[str, Any] | None = None
     products: list["PublicStorefrontProductCard"] = []
@@ -602,6 +828,7 @@ class PublicStorefrontPage(BaseModel):
     seo_title: str | None = None
     seo_description: str | None = None
     content: str | None = None
+    custom_fields: dict[str, Any] = {}
     sections: list[PublicStorefrontSection] = []
 
 
@@ -609,6 +836,7 @@ class PublicStorefrontResponse(BaseModel):
     settings: "PublicStorefrontSetting"
     menus: dict[str, list[PublicStorefrontMenuItem]]
     page: PublicStorefrontPage
+    theme: StorefrontThemeRead | None = None
 
 
 class PublicStorefrontSetting(BaseModel):
@@ -804,7 +1032,8 @@ class StorefrontTemplateApplyInput(BaseModel):
 class StorefrontRevisionRead(BaseModel):
     id: UUID
     page_id: UUID | None = None
-    revision_type: Literal["page", "template_apply", "publish", "theme_settings"]
+    theme_id: UUID | None = None
+    revision_type: Literal["page", "template_apply", "publish", "theme_settings", "theme_publish"]
     title: str
     snapshot: dict[str, Any]
     created_by_id: UUID | None = None

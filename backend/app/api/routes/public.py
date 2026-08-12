@@ -12,11 +12,13 @@ from app.api.utils import fetch_one_or_404, normalize_pagination
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.product import Product
+from app.models.storefront import StorefrontContentEntry, StorefrontContentModel, StorefrontCustomFieldDefinition, StorefrontCustomFieldValue
 from app.schemas.public_storefront import (
     PublicBrandRead,
     PublicCategoryRead,
     PublicProductListResponse,
     PublicProductRead,
+    PublicProductVariantRead,
 )
 
 
@@ -134,6 +136,7 @@ def _serialize_product(product: Product) -> PublicProductRead:
         id=product.id,
         name=product.name,
         slug=product.slug,
+        sku=product.sku,
         price=base_price,
         sale_price=sale_price,
         image=product.image_url,
@@ -155,7 +158,32 @@ def _serialize_product(product: Product) -> PublicProductRead:
         ),
         is_active=is_public,
         is_public=is_public,
+        variants=[PublicProductVariantRead.model_validate(variant) for variant in product.variants],
     )
+
+
+async def _public_custom_fields(db: DBSession, owner_type: str, owner_ids: list[UUID]) -> dict[UUID, dict[str, object]]:
+    if not owner_ids: return {}
+    rows = (await db.execute(
+        select(StorefrontCustomFieldValue, StorefrontCustomFieldDefinition)
+        .join(StorefrontCustomFieldDefinition, StorefrontCustomFieldDefinition.id == StorefrontCustomFieldValue.definition_id)
+        .where(StorefrontCustomFieldValue.owner_type == owner_type, StorefrontCustomFieldValue.owner_id.in_(owner_ids), StorefrontCustomFieldDefinition.is_public.is_(True))
+    )).all()
+    references = [value.value for value, definition in rows if definition.value_type == "reference" and isinstance(value.value, dict)]
+    model_keys = {item.get("model_key") for item in references if isinstance(item.get("model_key"), str)}
+    handles = {item.get("entry_handle") for item in references if isinstance(item.get("entry_handle"), str)}
+    entry_map: dict[tuple[str, str], dict] = {}
+    if model_keys and handles:
+        entries = (await db.execute(select(StorefrontContentEntry, StorefrontContentModel.key).join(StorefrontContentModel).where(StorefrontContentModel.key.in_(model_keys), StorefrontContentEntry.handle.in_(handles), StorefrontContentEntry.status == "active"))).all()
+        entry_map = {(model_key, entry.handle): entry.values for entry, model_key in entries}
+    result: dict[UUID, dict[str, object]] = {}
+    for value, definition in rows:
+        resolved = value.value
+        if definition.value_type == "reference" and isinstance(resolved, dict):
+            expanded = entry_map.get((str(resolved.get("model_key")), str(resolved.get("entry_handle"))))
+            resolved = {**resolved, "values": expanded} if expanded is not None else resolved
+        result.setdefault(value.owner_id, {})[f"{definition.namespace}.{definition.key}"] = resolved
+    return result
 
 
 @router.get("/products", response_model=PublicProductListResponse)
@@ -205,7 +233,9 @@ async def list_public_products(
         .limit(limit)
     )
     result = await db.execute(products_query)
-    items = [_serialize_product(product) for product in result.scalars().unique().all()]
+    products = result.scalars().unique().all()
+    custom = await _public_custom_fields(db, "product", [product.id for product in products])
+    items = [_serialize_product(product).model_copy(update={"custom_fields": custom.get(product.id, {})}) for product in products]
 
     return PublicProductListResponse(
         items=items,
@@ -226,7 +256,8 @@ async def get_public_product(product_id: UUID, db: DBSession) -> PublicProductRe
         ),
         "Public product not found",
     )
-    return _serialize_product(product)
+    custom = await _public_custom_fields(db, "product", [product.id])
+    return _serialize_product(product).model_copy(update={"custom_fields": custom.get(product.id, {})})
 
 
 @router.get("/products/slug/{slug}", response_model=PublicProductRead)
@@ -239,11 +270,12 @@ async def get_public_product_by_slug(slug: str, db: DBSession) -> PublicProductR
         ),
         "Public product not found",
     )
-    return _serialize_product(product)
+    custom = await _public_custom_fields(db, "product", [product.id])
+    return _serialize_product(product).model_copy(update={"custom_fields": custom.get(product.id, {})})
 
 
 @router.get("/categories", response_model=list[PublicCategoryRead])
-async def list_public_categories(db: DBSession) -> list[Category]:
+async def list_public_categories(db: DBSession) -> list[PublicCategoryRead]:
     result = await db.execute(
         select(Category)
         .join(Product, Product.category_id == Category.id)
@@ -251,7 +283,9 @@ async def list_public_categories(db: DBSession) -> list[Category]:
         .distinct()
         .order_by(Category.name.asc())
     )
-    return list(result.scalars().all())
+    categories = list(result.scalars().all())
+    custom = await _public_custom_fields(db, "collection", [item.id for item in categories])
+    return [PublicCategoryRead.model_validate(item).model_copy(update={"custom_fields": custom.get(item.id, {})}) for item in categories]
 
 
 @router.get("/brands", response_model=list[PublicBrandRead])

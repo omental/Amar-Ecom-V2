@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 from starlette.datastructures import UploadFile
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, get_entitlement_context
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404
 from app.models.storefront import (
     StorefrontBanner,
@@ -17,10 +17,13 @@ from app.models.storefront import (
     StorefrontMenuItem,
     StorefrontPage,
     StorefrontRevision,
+    StorefrontSavedSection,
     StorefrontSection,
+    StorefrontSectionGroup,
     StorefrontSetting,
 )
 from app.models.user import User
+from app.services.commercial_access_service import EntitlementService
 from app.schemas.storefront import (
     MenuItemsReorderInput,
     PublicStorefrontResponse,
@@ -49,6 +52,9 @@ from app.schemas.storefront import (
     StorefrontSectionCreate,
     StorefrontSectionRead,
     StorefrontSectionUpdate,
+    StorefrontSavedSectionCreate,
+    StorefrontSavedSectionRead,
+    StorefrontSavedSectionUpdate,
     StorefrontSettingRead,
     StorefrontSettingUpdate,
     StorefrontTemplateApplyInput,
@@ -67,10 +73,21 @@ from app.services.storefront_service import (
     save_storefront_media,
 )
 from app.services.storefront_template_service import apply_template_preset, list_template_presets
+from app.services.storefront_theme_service import ensure_draft_theme, get_template_or_404, get_theme_or_404, validate_template_assignment
 from datetime import datetime, timezone
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def _saved_section_snapshot(value: dict) -> dict:
+    allowed = ("type", "title", "subtitle", "is_enabled", "settings", "content")
+    snapshot = {key: value[key] for key in allowed if key in value}
+    if not isinstance(snapshot.get("type"), str) or not snapshot["type"].strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Saved section snapshot requires a section type")
+    snapshot["settings"] = snapshot.get("settings") if isinstance(snapshot.get("settings"), dict) else {}
+    snapshot["content"] = snapshot.get("content") if isinstance(snapshot.get("content"), dict) else {}
+    return snapshot
 
 
 def _ensure_admin(user: User) -> None:
@@ -128,6 +145,7 @@ def _revision_read(revision: StorefrontRevision) -> StorefrontRevisionRead:
     return StorefrontRevisionRead(
         id=revision.id,
         page_id=revision.page_id,
+        theme_id=revision.theme_id,
         revision_type=revision.revision_type,
         title=revision.title,
         snapshot=revision.snapshot or {},
@@ -413,6 +431,7 @@ async def create_storefront_page(
     _ensure_admin(current_user)
     await ensure_unique(db, StorefrontPage, "slug", page_in.slug, "Storefront page slug already exists")
     payload = page_in.model_dump()
+    await validate_template_assignment(db, payload.get("template_id"), "page")
     payload["content"] = sanitize_storefront_html(payload.get("content"))
     page = StorefrontPage(**payload)
     db.add(page)
@@ -442,6 +461,8 @@ async def update_storefront_page(
     _ensure_admin(current_user)
     page = await fetch_one_or_404(db, select(StorefrontPage).where(StorefrontPage.id == page_id), "Storefront page not found")
     payload = page_in.model_dump(exclude_unset=True)
+    if "template_id" in payload:
+        await validate_template_assignment(db, payload["template_id"], "page")
     if "slug" in payload:
         await ensure_unique(db, StorefrontPage, "slug", payload["slug"], "Storefront page slug already exists", exclude_id=page.id)
     if "content" in payload:
@@ -535,6 +556,8 @@ async def restore_revision(
         select(StorefrontRevision).where(StorefrontRevision.id == revision_id),
         "Storefront revision not found",
     )
+    if revision.revision_type == "theme_publish":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Theme publication revisions are immutable history. Republish the archived theme from the theme library instead.")
     page = await restore_storefront_revision(db, revision=revision)
     return StorefrontRevisionRestoreResponse(
         revision_id=revision.id,
@@ -718,6 +741,11 @@ async def update_storefront_section(
 ) -> StorefrontSection:
     _ensure_admin(current_user)
     section = await fetch_one_or_404(db, select(StorefrontSection).where(StorefrontSection.id == section_id), "Storefront section not found")
+    if section.template_id:
+        ensure_draft_theme((await get_template_or_404(db, section.template_id)).theme)
+    elif section.section_group_id:
+        group = await fetch_one_or_404(db, select(StorefrontSectionGroup).where(StorefrontSectionGroup.id == section.section_group_id), "Section group not found")
+        ensure_draft_theme(await get_theme_or_404(db, group.theme_id))
     for field, value in section_in.model_dump(exclude_unset=True).items():
         setattr(section, field, value)
     await commit_or_409(db, "Could not update storefront section")
@@ -733,6 +761,11 @@ async def delete_storefront_section(
 ) -> Response:
     _ensure_admin(current_user)
     section = await fetch_one_or_404(db, select(StorefrontSection).where(StorefrontSection.id == section_id), "Storefront section not found")
+    if section.template_id:
+        ensure_draft_theme((await get_template_or_404(db, section.template_id)).theme)
+    elif section.section_group_id:
+        group = await fetch_one_or_404(db, select(StorefrontSectionGroup).where(StorefrontSectionGroup.id == section.section_group_id), "Section group not found")
+        ensure_draft_theme(await get_theme_or_404(db, group.theme_id))
     await db.delete(section)
     await commit_or_409(db, "Could not delete storefront section")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -755,6 +788,74 @@ async def reorder_storefront_sections(
             section.sort_order = index
     await commit_or_409(db, "Could not reorder storefront sections")
     return {"message": "Sections reordered"}
+
+
+@router.get("/saved-sections", response_model=list[StorefrontSavedSectionRead])
+async def list_saved_storefront_sections(
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> list[StorefrontSavedSection]:
+    _ensure_admin(current_user)
+    result = await db.execute(select(StorefrontSavedSection).order_by(StorefrontSavedSection.updated_at.desc()))
+    return list(result.scalars().all())
+
+
+@router.post("/saved-sections", response_model=StorefrontSavedSectionRead, status_code=status.HTTP_201_CREATED)
+async def create_saved_storefront_section(
+    payload: StorefrontSavedSectionCreate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+    access: EntitlementService = Depends(get_entitlement_context),
+) -> StorefrontSavedSection:
+    _ensure_admin(current_user)
+    await access.require_feature("saved_sections")
+    item = StorefrontSavedSection(
+        name=payload.name.strip(),
+        description=payload.description,
+        category=payload.category.strip(),
+        snapshot=_saved_section_snapshot(payload.snapshot),
+        created_by_id=current_user.id,
+    )
+    db.add(item)
+    await commit_or_409(db, "Could not save reusable storefront section")
+    await db.refresh(item)
+    return item
+
+
+@router.put("/saved-sections/{saved_section_id}", response_model=StorefrontSavedSectionRead)
+async def update_saved_storefront_section(
+    saved_section_id: UUID,
+    payload: StorefrontSavedSectionUpdate,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> StorefrontSavedSection:
+    _ensure_admin(current_user)
+    item = await fetch_one_or_404(db, select(StorefrontSavedSection).where(StorefrontSavedSection.id == saved_section_id), "Saved storefront section not found")
+    values = payload.model_dump(exclude_unset=True)
+    if "name" in values and values["name"] is not None:
+        values["name"] = values["name"].strip()
+    if "category" in values and values["category"] is not None:
+        values["category"] = values["category"].strip()
+    if "snapshot" in values and values["snapshot"] is not None:
+        values["snapshot"] = _saved_section_snapshot(values["snapshot"])
+    for field, value in values.items():
+        setattr(item, field, value)
+    await commit_or_409(db, "Could not update reusable storefront section")
+    await db.refresh(item)
+    return item
+
+
+@router.delete("/saved-sections/{saved_section_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_saved_storefront_section(
+    saved_section_id: UUID,
+    db: DBSession,
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    _ensure_admin(current_user)
+    item = await fetch_one_or_404(db, select(StorefrontSavedSection).where(StorefrontSavedSection.id == saved_section_id), "Saved storefront section not found")
+    await db.delete(item)
+    await commit_or_409(db, "Could not delete reusable storefront section")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/banners", response_model=list[StorefrontBannerRead])

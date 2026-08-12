@@ -7,6 +7,9 @@ import { Toaster } from "sonner";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
 import { AuthorizationProvider } from "@/components/dashboard/authorization-provider";
+import { DashboardStoreProvider } from "@/components/dashboard/store-provider";
+import { EntitlementProvider } from "@/components/dashboard/entitlement-provider";
+import { TrialBanner } from "@/components/dashboard/trial-banner";
 import { DashboardBreadcrumbs } from "@/components/dashboard/breadcrumbs";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { LoadingState } from "@/components/ui/loading-state";
@@ -19,6 +22,8 @@ import {
 } from "@/lib/auth";
 import { can } from "@/lib/capabilities";
 import { getNavigationEntry } from "@/lib/navigation";
+import { api } from "@/lib/api";
+import type { AccountState } from "@/lib/onboarding";
 
 const sidebarExpandableItems = [
   {
@@ -63,6 +68,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getUser());
   const [isLoading, setIsLoading] = useState(true);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
@@ -82,7 +88,14 @@ export default function DashboardLayout({
       try {
         const user = await fetchCurrentUser();
         if (!isMounted) return;
+        const accountState = await api.get<AccountState>("/onboarding/account-state");
+        if (!isMounted) return;
+        if (!accountState.has_store) {
+          router.replace("/onboarding/setup");
+          return;
+        }
         setCurrentUser(user);
+        setWorkspaceReady(true);
       } catch {
         logout();
         if (isMounted) {
@@ -142,7 +155,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (typeof window === "undefined" || !hasToken || isLoading) {
+  if (typeof window === "undefined" || !hasToken || isLoading || !workspaceReady) {
     return (
       <div className="app-shell flex min-h-screen items-center justify-center p-6">
         <div className="card-base px-6 py-5 text-sm font-medium text-[var(--color-txt-sec)]">
@@ -158,7 +171,7 @@ export default function DashboardLayout({
   return (
     <div className="dashboard-shell min-h-screen overflow-x-hidden">
       <Toaster position="top-right" richColors closeButton />
-      <div className="flex min-h-screen bg-[var(--color-surf)] transition-colors duration-300">
+      <DashboardStoreProvider><EntitlementProvider><div className="flex min-h-screen bg-[var(--color-surf)] transition-colors duration-300">
         <DashboardSidebar
           user={currentUser}
           isCollapsed={effectiveSidebarCollapsed}
@@ -182,6 +195,7 @@ export default function DashboardLayout({
             <div className="mx-auto w-full max-w-[1600px] min-w-0 max-w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
               <AuthorizationProvider user={currentUser}>
                 <DashboardBreadcrumbs />
+                <TrialBanner />
                 <div className="min-w-0 w-full max-w-full overflow-x-hidden">
                   {canViewRoute ? children : <ErrorAlert title="Permission denied" message="You do not have permission to view this workspace. Ask an administrator to update your access." persistent />}
                 </div>
@@ -189,7 +203,7 @@ export default function DashboardLayout({
             </div>
           </main>
         </div>
-      </div>
+      </div></EntitlementProvider></DashboardStoreProvider>
     </div>
   );
 }

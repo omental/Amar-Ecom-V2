@@ -13,6 +13,7 @@ export type LegacyPermissions = {
   settings: boolean;
   team: boolean;
   pos: boolean;
+  inbox: boolean;
 };
 
 export type AuthUser = {
@@ -57,6 +58,7 @@ function getDefaultLegacyPermissions(): LegacyPermissions {
     settings: false,
     team: false,
     pos: false,
+    inbox: false,
   };
 }
 
@@ -136,6 +138,7 @@ export function clearUser() {
 export function logout() {
   clearToken();
   clearUser();
+  if (canUseStorage()) window.localStorage.removeItem("amar_current_store");
 }
 
 export function isAuthenticated() {

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -6,6 +7,7 @@ from sqlalchemy import select
 from app.api.deps import DBSession, get_current_user
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, verify_password
+from app.core.tenant import activate_tenant, deactivate_tenant
 from app.models.user import User
 from app.schemas.user import AuthMeResponse, LoginRequest, TokenResponse, UserCreate, UserRead
 from app.services.permission_service import (
@@ -14,6 +16,7 @@ from app.services.permission_service import (
     get_user_permissions,
 )
 from app.services.notification_service import notify_admins
+from app.services.tenant_service import add_user_to_primary_store
 
 
 router = APIRouter()
@@ -21,6 +24,11 @@ router = APIRouter()
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate, db: DBSession) -> User:
+    if os.environ.get("AMAR_ECOM_TESTING") != "1":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Use the merchant signup flow or an organization invitation",
+        )
     existing_user = await db.execute(select(User).where(User.email == user_in.email))
     if existing_user.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
@@ -29,23 +37,30 @@ async def register(user_in: UserCreate, db: DBSession) -> User:
         full_name=user_in.full_name,
         email=user_in.email,
         hashed_password=get_password_hash(user_in.password),
-        role=user_in.role,
+        role=user_in.role if user_in.role in {"admin", "staff"} else "staff",
         is_active=user_in.is_active,
+        email_verified_at=datetime.now(timezone.utc),
     )
     db.add(user)
+    await db.flush()
+    store = await add_user_to_primary_store(db, user)
     await db.commit()
     await db.refresh(user)
 
     if not user.is_active:
-        await notify_admins(
-            db,
-            title="New user pending approval",
-            message=f"{user.full_name} registered and is waiting for approval.",
-            notification_type="info",
-            link="/dashboard/users",
-            module="team",
-            metadata={"user_id": str(user.id), "email": user.email, "role": user.role},
-        )
+        tokens = activate_tenant(store_id=store.id, organization_id=store.organization_id)
+        try:
+            await notify_admins(
+                db,
+                title="New user pending approval",
+                message=f"{user.full_name} registered and is waiting for approval.",
+                notification_type="info",
+                link="/dashboard/users",
+                module="team",
+                metadata={"user_id": str(user.id), "email": user.email, "role": user.role},
+            )
+        finally:
+            deactivate_tenant(tokens)
         await db.commit()
 
     return user
@@ -57,6 +72,8 @@ async def login(login_in: LoginRequest, db: DBSession) -> TokenResponse:
     user = result.scalar_one_or_none()
     if user is None or not verify_password(login_in.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if user.email_verified_at is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required")
 
     access_token = create_access_token(
         subject=str(user.id),

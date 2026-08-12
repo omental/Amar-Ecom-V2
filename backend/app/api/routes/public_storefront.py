@@ -1,16 +1,18 @@
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession
+from app.api.deps import DBSession, get_public_store_context
 from app.api.utils import commit_or_409, ensure_unique
 from app.api.utils import fetch_one_or_404
 from app.models.customer import Customer
 from app.models.order import Order, OrderEvent, OrderItem
 from app.models.product import Product
+from app.models.category import Category
 from app.models.storefront import (
     StorefrontBanner,
     StorefrontCoupon,
@@ -31,6 +33,10 @@ from app.schemas.storefront import (
     PublicStorefrontSetting,
     PublicStorefrontTrackedOrder,
     PublicStorefrontTrackedOrderItem,
+    StorefrontResolvedTemplateRead,
+    StorefrontSectionGroupRead,
+    StorefrontTemplateRead,
+    StorefrontThemeRead,
 )
 from app.services.notification_service import notify_admins
 from app.services.storefront_checkout_service import (
@@ -53,9 +59,28 @@ from app.services.storefront_product_service import (
     get_public_product_stock_status,
     resolve_storefront_section_products,
 )
+from app.services.storefront_theme_service import PRESENTATION_SETTING_FIELDS, resolve_template
+from app.services.store_domain_service import get_primary_domain, get_storefront_url_for_hostname
+from app.services.tenant_service import PublicStoreContext
+from app.schemas.store_domain import PublicStoreDomainContextRead
 
 
 router = APIRouter()
+
+
+@router.get("/context", response_model=PublicStoreDomainContextRead)
+async def get_public_domain_context(
+    context: Annotated[PublicStoreContext, Depends(get_public_store_context)],
+    db: DBSession,
+) -> PublicStoreDomainContextRead:
+    primary = await get_primary_domain(db, context.store.id)
+    return PublicStoreDomainContextRead(
+        store_name=context.store.name,
+        store_slug=context.store.slug,
+        hostname=context.domain.hostname,
+        canonical_url=get_storefront_url_for_hostname(primary.hostname),
+        redirect_to_primary=context.domain.id != primary.id and context.domain.redirect_to_primary,
+    )
 
 
 def _generate_public_order_code() -> str:
@@ -193,9 +218,11 @@ async def _section_payload(db: DBSession, section: StorefrontSection) -> PublicS
             settings=section.settings or {},
         )
     return PublicStorefrontSection(
+        id=section.id,
         type=section.type,
         title=section.title,
         subtitle=section.subtitle,
+        sort_order=section.sort_order,
         settings=section.settings or {},
         content=section.content or {},
         products=products,
@@ -203,12 +230,15 @@ async def _section_payload(db: DBSession, section: StorefrontSection) -> PublicS
 
 
 async def _page_response(db: DBSession, page: StorefrontPage) -> PublicStorefrontPage:
+    from app.api.routes.public import _public_custom_fields
+    custom = await _public_custom_fields(db, "page", [page.id])
     return PublicStorefrontPage(
         title=page.title,
         slug=page.slug,
         seo_title=page.seo_title,
         seo_description=page.seo_description,
         content=sanitize_storefront_html(page.content),
+        custom_fields=custom.get(page.id, {}),
         sections=[
             await _section_payload(db, section)
             for section in sorted(page.sections, key=lambda item: (item.sort_order, item.created_at))
@@ -217,8 +247,8 @@ async def _page_response(db: DBSession, page: StorefrontPage) -> PublicStorefron
     )
 
 
-def _settings_payload(settings) -> PublicStorefrontSetting:
-    return PublicStorefrontSetting(
+def _settings_payload(settings, theme_settings: dict | None = None) -> PublicStorefrontSetting:
+    payload = PublicStorefrontSetting(
         brand_name=settings.brand_name,
         logo_url=settings.logo_url,
         favicon_url=settings.favicon_url,
@@ -254,6 +284,8 @@ def _settings_payload(settings) -> PublicStorefrontSetting:
         seo_title=settings.seo_title,
         seo_description=settings.seo_description,
     )
+    overrides = {field: value for field, value in (theme_settings or {}).items() if field in PRESENTATION_SETTING_FIELDS and value is not None}
+    return payload.model_copy(update=overrides)
 
 
 async def _storefront_response_for_page(db: DBSession, page: StorefrontPage) -> PublicStorefrontResponse:
@@ -261,11 +293,22 @@ async def _storefront_response_for_page(db: DBSession, page: StorefrontPage) -> 
     if not settings.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Storefront is inactive")
 
+    resource_type = "home" if page.page_type == "home" else "page"
+    theme, template = await resolve_template(db, resource_type, assigned_template_id=page.template_id if resource_type == "page" else None)
     menus = await _public_menus_map(db)
+    page_payload = await _page_response(db, page)
+    template_sections = [
+        await _section_payload(db, section)
+        for section in sorted(template.sections, key=lambda item: (item.sort_order, item.created_at))
+        if section.is_enabled
+    ]
+    if resource_type == "home":
+        page_payload.sections = template_sections
     return PublicStorefrontResponse(
-        settings=_settings_payload(settings),
+        settings=_settings_payload(settings, theme.settings),
         menus=menus,
-        page=await _page_response(db, page),
+        page=page_payload,
+        theme=StorefrontThemeRead.model_validate(theme),
     )
 
 
@@ -275,7 +318,45 @@ async def get_public_storefront_settings(db: DBSession) -> PublicStorefrontSetti
     settings = await get_or_create_storefront_settings(db)
     if not settings.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Storefront is inactive")
-    return _settings_payload(settings)
+    theme, _ = await resolve_template(db, "home")
+    return _settings_payload(settings, theme.settings)
+
+
+@router.get("/theme/resolve/{resource_type}", response_model=StorefrontResolvedTemplateRead)
+async def resolve_public_theme_template(
+    resource_type: str,
+    db: DBSession,
+    resource_slug: str | None = Query(default=None),
+) -> StorefrontResolvedTemplateRead:
+    assigned_template_id = None
+    resource_id = None
+    if resource_type == "product" and resource_slug:
+        resource = (await db.execute(select(Product).where(Product.slug == resource_slug, Product.status.in_(PUBLIC_PRODUCT_STATUSES)))).scalar_one_or_none()
+        if resource is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public product not found")
+        assigned_template_id, resource_id = resource.storefront_template_id, resource.id
+    elif resource_type == "collection" and resource_slug:
+        resource = (await db.execute(select(Category).where(Category.slug == resource_slug))).scalar_one_or_none()
+        if resource is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+        assigned_template_id, resource_id = resource.storefront_template_id, resource.id
+    elif resource_type == "page" and resource_slug:
+        resource = (await db.execute(select(StorefrontPage).where(StorefrontPage.slug == resource_slug, StorefrontPage.status == "published"))).scalar_one_or_none()
+        if resource is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public storefront page not found")
+        assigned_template_id, resource_id = resource.template_id, resource.id
+    theme, template = await resolve_template(db, resource_type, assigned_template_id=assigned_template_id)
+    header = next((group for group in theme.section_groups if group.group_type == "header"), None)
+    footer = next((group for group in theme.section_groups if group.group_type == "footer"), None)
+    return StorefrontResolvedTemplateRead(
+        theme=StorefrontThemeRead.model_validate(theme),
+        template=StorefrontTemplateRead.model_validate(template),
+        header_group=StorefrontSectionGroupRead.model_validate(header) if header else None,
+        footer_group=StorefrontSectionGroupRead.model_validate(footer) if footer else None,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        resource_slug=resource_slug,
+    )
 
 
 @router.get("/menus")

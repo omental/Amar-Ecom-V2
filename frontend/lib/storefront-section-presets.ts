@@ -1,4 +1,5 @@
 import type { OnlineStoreSection } from "@/lib/online-store";
+import { normalizeSectionBlocks } from "@/lib/storefront-builder";
 
 export type StorefrontSectionPreset = {
   type: string;
@@ -187,9 +188,22 @@ const SECTION_PRESETS: StorefrontSectionPreset[] = [
     },
     defaultContent: {
       blocks: [
-        { type: "heading", text: "Flexible page builder", level: "h2", align: "left", column: 1 },
-        { type: "paragraph", text: "Use controlled blocks for landing-page storytelling without breaking the storefront design system.", align: "left", column: 1 },
-        { type: "button", label: "Shop Now", href: "/products", style: "primary", align: "left", column: 1 },
+        {
+          type: "container",
+          props: { max_width: "default", align: "center", padding: "md", gap: "md", background_preset: "transparent" },
+          responsive: { mobile: { padding: "sm", gap: "sm" } },
+          children: [
+            {
+              type: "stack",
+              props: { direction: "vertical", gap: "md", align: "stretch", justify: "start", wrap: false },
+              children: [
+                { type: "heading", props: { text: "Flexible page builder", level: "h2", align: "left" }, children: [] },
+                { type: "paragraph", props: { text: "Build responsive storefront content with safe nested layouts.", align: "left" }, children: [] },
+                { type: "button", props: { label: "Shop Now", href: "/products", style: "primary", align: "left" }, children: [] },
+              ],
+            },
+          ],
+        },
       ],
     },
   },
@@ -214,7 +228,7 @@ export function buildSectionFromPreset(type: string): Pick<OnlineStoreSection, "
     };
   }
 
-  return {
+  const section = {
     type: preset.type,
     title: preset.defaultTitle,
     subtitle: preset.defaultSubtitle || "",
@@ -222,4 +236,5 @@ export function buildSectionFromPreset(type: string): Pick<OnlineStoreSection, "
     settings: JSON.parse(JSON.stringify(preset.defaultSettings)),
     content: JSON.parse(JSON.stringify(preset.defaultContent)),
   };
+  return preset.type === "flexible_grid" ? normalizeSectionBlocks(section) : section;
 }

@@ -15,6 +15,8 @@ export type CartItem = {
   stockStatus: StoreProduct["stock_status"];
   selectedSize?: string;
   selectedColor?: string;
+  selectedVariantId?: string;
+  selectedVariantSku?: string;
 };
 
 export function createCartItemFromProduct(
@@ -23,11 +25,15 @@ export function createCartItemFromProduct(
     quantity?: number;
     selectedSize?: string;
     selectedColor?: string;
+    selectedVariantId?: string;
+    selectedVariantSku?: string;
+    price?: number;
   },
 ): CartItem {
   return {
     id: [
       product.id,
+      options?.selectedVariantId || "base-variant",
       options?.selectedColor || "default-color",
       options?.selectedSize || "default-size",
     ].join("::"),
@@ -36,12 +42,14 @@ export function createCartItemFromProduct(
     name: product.name,
     image: product.image || product.thumbnail || product.gallery[0] || null,
     categoryName: product.category?.name || null,
-    price: Number(product.sale_price),
+    price: Number(options?.price ?? product.sale_price),
     regularPrice: Number(product.price),
     quantity: Math.max(1, options?.quantity || 1),
     stockStatus: product.stock_status,
     selectedSize: options?.selectedSize,
     selectedColor: options?.selectedColor,
+    selectedVariantId: options?.selectedVariantId,
+    selectedVariantSku: options?.selectedVariantSku,
   };
 }
 

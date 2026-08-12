@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DBSession, get_current_user, require_permission
+from app.api.deps import DBSession, get_current_user, get_entitlement_context, require_permission
 from app.api.utils import (
     commit_or_409,
     ensure_no_duplicates,
@@ -13,6 +13,8 @@ from app.api.utils import (
     normalize_pagination,
 )
 from app.models.product import Product, ProductVariant
+from app.models.category import Category
+from app.models.brand import Brand
 from app.schemas.product import (
     ProductCreate,
     ProductRead,
@@ -21,6 +23,8 @@ from app.schemas.product import (
     ProductVariantRead,
     ProductVariantUpdate,
 )
+from app.services.storefront_theme_service import validate_template_assignment
+from app.services.commercial_access_service import EntitlementService
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -55,7 +59,13 @@ async def get_product(product_id: UUID, db: DBSession) -> Product:
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("products", "create"))])
-async def create_product(product_in: ProductCreate, db: DBSession) -> Product:
+async def create_product(product_in: ProductCreate, db: DBSession, access: EntitlementService = Depends(get_entitlement_context)) -> Product:
+    await access.require_capacity("product_limit")
+    if product_in.category_id:
+        await fetch_one_or_404(db, select(Category).where(Category.id == product_in.category_id), "Category not found")
+    if product_in.brand_id:
+        await fetch_one_or_404(db, select(Brand).where(Brand.id == product_in.brand_id), "Brand not found")
+    await validate_template_assignment(db, product_in.storefront_template_id, "product")
     await ensure_unique(db, Product, "slug", product_in.slug, "Product slug already exists")
     await ensure_unique(db, Product, "sku", product_in.sku, "Product SKU already exists")
     ensure_no_duplicates([variant.sku for variant in product_in.variants], "Duplicate variant SKU in request")
@@ -79,6 +89,12 @@ async def create_product(product_in: ProductCreate, db: DBSession) -> Product:
 async def update_product(product_id: UUID, product_in: ProductUpdate, db: DBSession) -> Product:
     product = await fetch_one_or_404(db, select(Product).where(Product.id == product_id), "Product not found")
     payload = product_in.model_dump(exclude_unset=True)
+    if "storefront_template_id" in payload:
+        await validate_template_assignment(db, payload["storefront_template_id"], "product")
+    if payload.get("category_id"):
+        await fetch_one_or_404(db, select(Category).where(Category.id == payload["category_id"]), "Category not found")
+    if payload.get("brand_id"):
+        await fetch_one_or_404(db, select(Brand).where(Brand.id == payload["brand_id"]), "Brand not found")
 
     if "slug" in payload:
         await ensure_unique(db, Product, "slug", payload["slug"], "Product slug already exists", exclude_id=product.id)

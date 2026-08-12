@@ -84,6 +84,14 @@ DEFAULT_PERMISSION_DEFINITIONS = [
     ("users", "view"),
     ("permissions", "view"),
     ("activity_logs", "view"),
+    ("inbox", "view"),
+    ("inbox", "reply"),
+    ("inbox", "assign"),
+    ("inbox", "manage"),
+    ("inbox", "notes"),
+    ("inbox", "channels"),
+    ("inbox", "ai_manage"),
+    ("inbox", "ai_view_logs"),
 ]
 
 LEGACY_PERMISSION_MODULES = (
@@ -98,6 +106,7 @@ LEGACY_PERMISSION_MODULES = (
     "settings",
     "team",
     "pos",
+    "inbox",
 )
 
 LEGACY_PERMISSION_LABELS = {
@@ -112,6 +121,7 @@ LEGACY_PERMISSION_LABELS = {
     "settings": "Settings",
     "team": "Team",
     "pos": "POS",
+    "inbox": "Inbox",
 }
 
 LEGACY_PERMISSION_KEY_MAP = {
@@ -126,6 +136,7 @@ LEGACY_PERMISSION_KEY_MAP = {
     "settings": {"settings.view"},
     "team": {"team.view", "users.view", "permissions.view", "activity_logs.view"},
     "pos": {"pos.view"},
+    "inbox": {"inbox.view"},
 }
 
 

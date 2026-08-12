@@ -12,6 +12,8 @@ class PublicCategoryRead(ORMBaseSchema):
     name: str
     slug: str
     description: str | None = None
+    image: str | None = None
+    custom_fields: dict[str, object] = {}
 
 
 class PublicBrandRead(ORMBaseSchema):
@@ -25,6 +27,7 @@ class PublicProductRead(ORMBaseSchema):
     id: UUID
     name: str
     slug: str
+    sku: str | None = None
     price: Decimal
     sale_price: Decimal
     image: str | None = None
@@ -42,6 +45,16 @@ class PublicProductRead(ORMBaseSchema):
     demo_notice: str | None = None
     is_active: bool
     is_public: bool
+    variants: list["PublicProductVariantRead"] = []
+    custom_fields: dict[str, object] = {}
+
+
+class PublicProductVariantRead(ORMBaseSchema):
+    id: UUID
+    name: str
+    sku: str
+    price: Decimal
+    stock_quantity: int
 
 
 class PublicProductListResponse(BaseModel):

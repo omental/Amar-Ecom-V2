@@ -3,7 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 
-from app.api.deps import DBSession, get_current_user
+from app.api.deps import DBSession, get_current_user, get_tenant_context
+from app.core.tenant import TenantContext
+from app.models.tenant import OrganizationMember
 from app.api.utils import commit_or_409, fetch_one_or_404
 from app.models.user import User
 from app.schemas.permission import (
@@ -29,6 +31,14 @@ from app.services.permission_service import (
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
+
+
+def _organization_user(ctx: TenantContext, user_id: UUID):
+    return select(User).join(OrganizationMember, OrganizationMember.user_id == User.id).where(
+        User.id == user_id,
+        OrganizationMember.organization_id == ctx.organization.id,
+        OrganizationMember.status == "active",
+    )
 
 
 def _ensure_admin(user: User) -> None:
@@ -93,8 +103,8 @@ async def seed_default_permissions(
 
 
 @router.get("/users/{user_id}/permissions", response_model=UserPermissionAssignmentRead)
-async def get_permissions_for_user(user_id: UUID, db: DBSession) -> UserPermissionAssignmentRead:
-    user = await fetch_one_or_404(db, select(User).where(User.id == user_id), "User not found")
+async def get_permissions_for_user(user_id: UUID, db: DBSession, ctx: TenantContext = Depends(get_tenant_context)) -> UserPermissionAssignmentRead:
+    user = await fetch_one_or_404(db, _organization_user(ctx, user_id), "User not found")
     assigned_permission_keys = await get_user_permissions(db, user.id)
     all_permissions = await get_all_permissions(db)
     key_to_id = {f"{permission.module}.{permission.action}": permission.id for permission in all_permissions}
@@ -109,9 +119,10 @@ async def update_user_permissions(
     db: DBSession,
     request: Request,
     current_user: User = Depends(get_current_user),
+    ctx: TenantContext = Depends(get_tenant_context),
 ) -> UserPermissionAssignmentRead:
     _ensure_admin(current_user)
-    user = await fetch_one_or_404(db, select(User).where(User.id == user_id), "User not found")
+    user = await fetch_one_or_404(db, _organization_user(ctx, user_id), "User not found")
     assigned_permission_keys = await set_user_permissions(
         db,
         user.id,
@@ -158,9 +169,10 @@ async def update_user_legacy_permissions(
     db: DBSession,
     request: Request,
     current_user: User = Depends(get_current_user),
+    ctx: TenantContext = Depends(get_tenant_context),
 ) -> UserPermissionAssignmentRead:
     _ensure_admin(current_user)
-    user = await fetch_one_or_404(db, select(User).where(User.id == user_id), "User not found")
+    user = await fetch_one_or_404(db, _organization_user(ctx, user_id), "User not found")
     assigned_permission_keys = await set_user_permissions(
         db,
         user.id,

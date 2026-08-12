@@ -7,6 +7,7 @@ from app.api.deps import DBSession, get_current_user, require_permission
 from app.api.utils import commit_or_409, ensure_unique, fetch_one_or_404, normalize_pagination
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
+from app.services.storefront_theme_service import validate_template_assignment
 
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
@@ -30,6 +31,7 @@ async def get_category(category_id: UUID, db: DBSession) -> Category:
 
 @router.post("", response_model=CategoryRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("categories", "create"))])
 async def create_category(category_in: CategoryCreate, db: DBSession) -> Category:
+    await validate_template_assignment(db, category_in.storefront_template_id, "collection")
     await ensure_unique(db, Category, "slug", category_in.slug, "Category slug already exists")
     category = Category(**category_in.model_dump())
     db.add(category)
@@ -42,6 +44,8 @@ async def create_category(category_in: CategoryCreate, db: DBSession) -> Categor
 async def update_category(category_id: UUID, category_in: CategoryUpdate, db: DBSession) -> Category:
     category = await fetch_one_or_404(db, select(Category).where(Category.id == category_id), "Category not found")
     payload = category_in.model_dump(exclude_unset=True)
+    if "storefront_template_id" in payload:
+        await validate_template_assignment(db, payload["storefront_template_id"], "collection")
 
     if "slug" in payload:
         await ensure_unique(db, Category, "slug", payload["slug"], "Category slug already exists", exclude_id=category.id)

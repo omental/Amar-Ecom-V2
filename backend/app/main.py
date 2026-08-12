@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,10 @@ app.add_middleware(
         settings.FRONTEND_URL,
         "http://localhost:3000",
     ],
+    allow_origin_regex=(
+        rf"^https://[a-z0-9](?:[a-z0-9-]{{0,61}}[a-z0-9])?\.{re.escape(settings.STOREFRONT_BASE_DOMAIN)}$"
+        rf"|^http://[a-z0-9](?:[a-z0-9-]{{0,61}}[a-z0-9])?\.{re.escape(settings.STOREFRONT_DEV_BASE_DOMAIN)}(?::{settings.STOREFRONT_DEV_PORT})?$"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

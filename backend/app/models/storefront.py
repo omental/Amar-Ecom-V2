@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, JSON, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -85,10 +85,11 @@ class StorefrontMenuItem(Base):
 
 class StorefrontPage(Base):
     __tablename__ = "storefront_pages"
+    __table_args__ = (UniqueConstraint("store_id", "slug", name="uq_storefront_pages_store_slug"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     page_type: Mapped[str] = mapped_column(String(50), nullable=False, default="custom", server_default="custom")
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     seo_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -96,18 +97,188 @@ class StorefrontPage(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
     is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     last_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_templates.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     sections = relationship("StorefrontSection", back_populates="page", cascade="all, delete-orphan")
     revisions = relationship("StorefrontRevision", back_populates="page")
+    template = relationship("StorefrontTemplate", foreign_keys=[template_id])
+
+
+class StorefrontTheme(Base):
+    __tablename__ = "storefront_themes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft", index=True)
+    version: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0.0", server_default="1.0.0")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preview_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    templates = relationship("StorefrontTemplate", back_populates="theme", cascade="all, delete-orphan")
+    section_groups = relationship("StorefrontSectionGroup", back_populates="theme", cascade="all, delete-orphan")
+    style_classes = relationship("StorefrontStyleClass", back_populates="theme", cascade="all, delete-orphan")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
+    __table_args__ = (
+        UniqueConstraint("store_id", "key", name="uq_storefront_themes_store_key"),
+        Index("uq_storefront_one_published_theme", "store_id", "status", unique=True, postgresql_where=text("status = 'published'")),
+    )
+
+
+class StorefrontTemplate(Base):
+    __tablename__ = "storefront_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    theme_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_themes.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    theme = relationship("StorefrontTheme", back_populates="templates")
+    sections = relationship("StorefrontSection", back_populates="template", cascade="all, delete-orphan", foreign_keys="StorefrontSection.template_id")
+
+    __table_args__ = (
+        UniqueConstraint("theme_id", "key", name="uq_storefront_template_theme_key"),
+        Index("uq_storefront_template_default", "theme_id", "resource_type", unique=True, postgresql_where=text("is_default = true")),
+    )
+
+
+class StorefrontSectionGroup(Base):
+    __tablename__ = "storefront_section_groups"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    theme_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_themes.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    group_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    theme = relationship("StorefrontTheme", back_populates="section_groups")
+    sections = relationship("StorefrontSection", back_populates="section_group", cascade="all, delete-orphan", foreign_keys="StorefrontSection.section_group_id")
+
+    __table_args__ = (UniqueConstraint("theme_id", "group_type", name="uq_storefront_section_group_theme_type"),)
+
+
+class StorefrontStyleClass(Base):
+    __tablename__ = "storefront_style_classes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    theme_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_themes.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    styles: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    responsive: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    states: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    theme = relationship("StorefrontTheme", back_populates="style_classes")
+
+    __table_args__ = (UniqueConstraint("theme_id", "name", name="uq_storefront_style_class_theme_name"),)
+
+
+class StorefrontCustomFieldDefinition(Base):
+    __tablename__ = "storefront_custom_field_definitions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    namespace: Mapped[str] = mapped_column(String(100), nullable=False, default="custom", server_default="custom")
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    value_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    validation: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    values = relationship("StorefrontCustomFieldValue", back_populates="definition", cascade="all, delete-orphan")
+    __table_args__ = (UniqueConstraint("store_id", "owner_type", "namespace", "key", name="uq_storefront_custom_field_store_owner_key"),)
+
+
+class StorefrontCustomFieldValue(Base):
+    __tablename__ = "storefront_custom_field_values"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    definition_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_custom_field_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    value: Mapped[object] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    definition = relationship("StorefrontCustomFieldDefinition", back_populates="values")
+    __table_args__ = (UniqueConstraint("definition_id", "owner_id", name="uq_storefront_custom_field_value_owner"),)
+
+
+class StorefrontContentModel(Base):
+    __tablename__ = "storefront_content_models"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    fields = relationship("StorefrontContentFieldDefinition", back_populates="model", cascade="all, delete-orphan")
+    entries = relationship("StorefrontContentEntry", back_populates="model", cascade="all, delete-orphan")
+    __table_args__ = (UniqueConstraint("store_id", "key", name="uq_storefront_content_models_store_key"),)
+
+
+class StorefrontContentFieldDefinition(Base):
+    __tablename__ = "storefront_content_field_definitions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_content_models.id", ondelete="CASCADE"), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    validation: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    model = relationship("StorefrontContentModel", back_populates="fields")
+    __table_args__ = (UniqueConstraint("model_id", "key", name="uq_storefront_content_field_model_key"),)
+
+
+class StorefrontContentEntry(Base):
+    __tablename__ = "storefront_content_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    model_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_content_models.id", ondelete="CASCADE"), nullable=False, index=True)
+    handle: Mapped[str] = mapped_column(String(120), nullable=False)
+    values: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    model = relationship("StorefrontContentModel", back_populates="entries")
+    __table_args__ = (UniqueConstraint("model_id", "handle", name="uq_storefront_content_entry_model_handle"),)
 
 
 class StorefrontSection(Base):
     __tablename__ = "storefront_sections"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    page_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_pages.id", ondelete="CASCADE"), nullable=False, index=True)
+    page_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_pages.id", ondelete="CASCADE"), nullable=True, index=True)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_templates.id", ondelete="CASCADE"), nullable=True, index=True)
+    section_group_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_section_groups.id", ondelete="CASCADE"), nullable=True, index=True)
     type: Mapped[str] = mapped_column(String(100), nullable=False)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     subtitle: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -119,6 +290,30 @@ class StorefrontSection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     page = relationship("StorefrontPage", back_populates="sections")
+    template = relationship("StorefrontTemplate", back_populates="sections", foreign_keys=[template_id])
+    section_group = relationship("StorefrontSectionGroup", back_populates="sections", foreign_keys=[section_group_id])
+
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN page_id IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN template_id IS NOT NULL THEN 1 ELSE 0 END + CASE WHEN section_group_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_storefront_section_exactly_one_owner",
+        ),
+    )
+
+
+class StorefrontSavedSection(Base):
+    __tablename__ = "storefront_saved_sections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(100), nullable=False, default="custom", server_default="custom", index=True)
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    created_by = relationship("User")
 
 
 class StorefrontBanner(Base):
@@ -163,7 +358,9 @@ class StorefrontCoupon(Base):
     __tablename__ = "storefront_coupons"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    __table_args__ = (UniqueConstraint("store_id", "code", name="uq_storefront_coupons_store_code"),)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     value: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     min_order_amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0, server_default="0")
@@ -182,6 +379,7 @@ class StorefrontRevision(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     page_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_pages.id", ondelete="SET NULL"), nullable=True, index=True)
+    theme_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("storefront_themes.id", ondelete="SET NULL"), nullable=True, index=True)
     revision_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)

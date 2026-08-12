@@ -26,27 +26,29 @@ import { MotionReveal } from "./MotionReveal";
 
 type ProductDetailViewProps = {
   productSlug: string;
+  initialProduct?: StoreProduct | null;
 };
 
-export function ProductDetailView({ productSlug }: ProductDetailViewProps) {
+export function ProductDetailView({ productSlug, initialProduct }: ProductDetailViewProps) {
   const router = useRouter();
   const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
-  const [selectedImage, setSelectedImage] = useState("");
-  const [selectedColor, setSelectedColor] = useState("");
-  const [selectedSize, setSelectedSize] = useState("");
+  const [selectedImage, setSelectedImage] = useState(() => initialProduct ? getProductPrimaryImage(initialProduct) || "" : "");
+  const [selectedColor, setSelectedColor] = useState(() => initialProduct?.colors[0] || "");
+  const [selectedSize, setSelectedSize] = useState(() => initialProduct?.sizes[0] || "");
   const [added, setAdded] = useState(false);
   const [state, setState] = useState<{
     loading: boolean;
     error: string | null;
     product: StoreProduct | null;
   }>({
-    loading: true,
+    loading: !initialProduct,
     error: null,
-    product: null,
+    product: initialProduct || null,
   });
 
   useEffect(() => {
+    if (initialProduct) return;
     let cancelled = false;
 
     async function loadProduct() {
@@ -78,7 +80,7 @@ export function ProductDetailView({ productSlug }: ProductDetailViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [productSlug]);
+  }, [initialProduct, productSlug]);
 
   const gallery = useMemo(() => {
     if (!state.product) {
